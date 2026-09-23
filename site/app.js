@@ -705,8 +705,7 @@
     publicado: { rot: "Acórdão publicado", selo: "Acórdão publicado", longo: "Acórdão de repetitivo publicado", cls: "acomp", peso: 55 },
     julgado: { rot: "Julgados", selo: "Julgado", longo: "Julgados das Turmas e Seções", cls: "pri", peso: 40 },
   };
-  const AREA_COR = { "proc-civil": 226, civil: 208, consumidor: 24, familia: 330, empresarial: 262, bancario: 190, tributario: 150, administrativo: 42, previdenciario: 172, ambiental: 105, penal: 356, trabalho: 290 };
-  const PERIODOS = [[0, "Qualquer data"], [3, "Últimos 3 dias"], [7, "Últimos 7 dias"], [15, "Últimos 15 dias"], [30, "Últimos 30 dias"]];
+    const PERIODOS = [[0, "Qualquer data"], [3, "Últimos 3 dias"], [7, "Últimos 7 dias"], [15, "Últimos 15 dias"], [30, "Últimos 30 dias"]];
   const FILTRO_VAZIO = () => ({ ar: [], tp: [], per: 0, tese: "", org: [], rel: "" });
   const feedJulgados = () => carregar("atualize").catch(() => destaques());
 
@@ -757,7 +756,7 @@
       if (hit) it.radar = hit.termo;
       const gosto = it.ar.length ? Math.max(...it.ar.map((a) => pw[a] || 0)) : 0;
       it.gosto = gosto;
-      it.p0 = FEED_TIPOS[it.tipo].peso + (it.r ? Math.min(it.r.s || 0, 20) + (it.tese ? 8 : 0) : 0)
+      it.p0 = FEED_TIPOS[it.tipo].peso + (it.r ? Math.min(it.r.fs ?? it.r.s ?? 0, 20) + (it.tese ? 4 : 0) : 0)
         + (it.tipo === "pauta" ? 20 - idade(it.d) : -idade(it.d) * 0.9) + gosto * 3 + (hit ? 18 : 0);
     }
     itens.sort((a, b) => b.p0 - a.p0);
@@ -792,25 +791,12 @@
     try { const it = await itensFeed(); const f = feedF(); return it.filter((x) => !lidos()[x.k] && passaFeed(x, f)).length; } catch { return 0; }
   }
 
-  // Marca-texto: realça as expressões que dizem o que foi decidido.
-  const RE_CHAVE = /(?<!\p{L})(?:não\s+)?(?:(?:é|são|será|serão|revela-se|mostra-se|afigura-se|reveste-se)\s+(?:de\s+)?(?:in|im|i)?(?:devid[oa]s?|cabíve(?:l|is)|possíve(?:l|is)|válid[oa]s?|legítim[oa]s?|lícit[oa]s?|admissíve(?:l|is)|nul[oa]s?|abusiv[oa]s?|vedad[oa]s?|obrigatóri[oa]s?|necessári[oa]s?|exigíve(?:l|is)|aplicáve(?:l|is)|competente|prescritíve(?:l|is)|eficaz(?:es)?|oponíve(?:l|is)|penhoráve(?:l|is)|constitucional|legal|ilegal|irregular|regular)|incidem?|cabem?|prescrevem?|configuram?|caracterizam?|dispensam?|exigem?|depende|independe|prevalecem?|respondem?|admite-se|aplicam?-se|devem?\s+ser|podem?\s+ser|t[eê]m\s+direito|autorizam?|afasta|legitima|impõe-se|compete)(?!\p{L})(?:[  ]+[^\s.;:,()]+){0,7}/giu;
-  function marcaTexto(html, max = 2) {
-    let n = 0;
-    return html.replace(RE_CHAVE, (m) => {
-      if (n >= max || m.length < 7 || /s[úu]mula|\bart(s)?\b|\bn$/i.test(m)) return m;
-      let corpo = m, resto = "";
-      const FIM = /(\s+(?:quanto|que|de|do|da|dos|das|em|a|o|e|ao|aos|à|às|na|no|nas|nos|para|por|pelo|pela|com|se|sobre|entre|quando|como|um|uma))+\s*$|[\s,]+$/i;
-      const f2 = FIM.exec(corpo); if (f2) { resto = corpo.slice(f2.index); corpo = corpo.slice(0, f2.index); }
-      n++; return `<mark class="mt">${corpo}</mark>${resto}`;
-    });
-  }
   const tempoLeitura = (txt) => { const w = String(txt || "").split(/\s+/).length; const s = Math.max(10, Math.round((w / 210) * 60 / 5) * 5); return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`; };
   const saudacao = () => { const h = new Date().getHours(); return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite"; };
 
   function cartaoFeed(it, i, total) {
     const tp = FEED_TIPOS[it.tipo];
-    const cor = AREA_COR[it.ar[0]] ?? 222;
-    const areas = it.ar.slice(0, 2).map((k) => `<button type="button" class="selo area" data-f="area" data-ar="${k}" style="--h:${AREA_COR[k] ?? 222}" title="Ler só ${esc(AREAS[k] || k)}">${esc(AREAS[k] || k)}</button>`).join("");
+    const areas = it.ar.slice(0, 2).map((k) => `<button type="button" class="selo area" data-f="area" data-ar="${k}" title="Ler só ${esc(AREAS[k] || k)}">${esc(AREAS[k] || k)}</button>`).join("");
     let kicker = "", principal = "", apoio = "", meta = "", acoes = "", rotTexto = "", marcar = false;
     if (it.t) {
       const x = it.t;
@@ -841,11 +827,11 @@
       const tese = r.tese || r.tj;
       const cab = frase((r.em || r.h || "").split("\n")[0]);
       rotTexto = tese ? (r.tese ? "Tese jurídica" : "Tese de julgamento") : "O que foi decidido";
-      principal = tese ? esc(String(tese).trim().replace(/^["“']+|["”']+$/g, "")).replace(/\n+/g, "<br>") : esc(cab);
+      principal = tese ? esc(String(tese).trim().replace(/^["“']+/, "").replace(/["”']+(?=\.?$)/, "")).replace(/\n+/g, "<br>") : esc(cab);
       marcar = !!tese;
       apoio = tese ? esc(cab) : "";
       const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 2).map((k) => MOTIVOS[k]).join(" · ");
-      meta = `${r.rel ? esc(relatorFmt(r.rel)) + " · " : ""}${r.dd ? `julgado em ${fmtData(r.dd)} · ` : ""}publicado em ${fmtData(r.dj)}${motivos ? ` · ${esc(motivos)}` : ""}`;
+      meta = `${r.tjp ? "Só os itens com conteúdo próprio; a tese completa está na ementa. " : ""}${r.rel ? esc(relatorFmt(r.rel)) + " · " : ""}${r.dd ? `julgado em ${fmtData(r.dd)} · ` : ""}publicado em ${fmtData(r.dj)}${motivos ? ` · ${esc(motivos)}` : ""}`;
       acoes = `<button type="button" class="btn btn-claro btn-peq" data-f="acordao">${ico("arquivo")} Ler a ementa</button>
         <a class="btn btn-claro btn-peq so-largo" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor ${ico("externo")}</a>`;
     }
@@ -855,12 +841,12 @@
     const pers = it.radar ? `<span class="selo radar" title="Corresponde a um termo do Meu radar">${ico("radar")} ${esc(it.radar.length > 28 ? it.radar.slice(0, 26) + "…" : it.radar)}</span>`
       : it.gosto >= 4 ? `<span class="selo gosto">Do seu interesse</span>` : "";
     const txtPrinc = principal.replace(/<[^>]+>/g, " ");
-    return `<article class="reel" data-k="${esc(it.k)}" data-i="${i}" style="--h:${cor}" aria-label="Novidade ${i + 1} de ${total}">
+    return `<article class="reel" data-k="${esc(it.k)}" data-i="${i}" aria-label="Novidade ${i + 1} de ${total}">
       <div class="reel-in">
         <header class="reel-cab"><span class="selo ${tp.cls}">${tp.selo}</span>${areas}${pers}${novo ? '<span class="novo">Novo</span>' : ""}<span class="reel-tempo">${ico("raio")} ${tempoLeitura(txtPrinc + " " + apoio)}</span></header>
         <p class="reel-kicker">${kicker}</p>
         <p class="reel-rot">${rotTexto}</p>
-        <div class="reel-texto${txtPrinc.length > 420 ? " longo" : ""}"><p>${marcar ? marcaTexto(principal) : principal}</p></div>
+        <div class="reel-texto${txtPrinc.length > 420 ? " longo" : ""}"><p>${principal}</p></div>
         <button type="button" class="reel-mais" data-f="mais" hidden>Continuar lendo ${ico("seta")}</button>
         ${apoio ? `<p class="reel-apoio">${apoio}</p>` : ""}
         <p class="reel-meta">${meta}</p>
@@ -868,7 +854,7 @@
           ${acoes}
           <span class="dir">
             <button type="button" class="menos" data-f="menos" title="Mostrar menos desta matéria">Menos disso</button>
-            <button type="button" class="btn-ico" data-f="copiar" title="Copiar" aria-label="Copiar">${ico("copiar")}</button>
+            <button type="button" class="btn-ico so-largo" data-f="copiar" title="Copiar" aria-label="Copiar">${ico("copiar")}</button>
             <button type="button" class="btn-ico" data-f="compartilhar" title="Compartilhar" aria-label="Compartilhar">${ico("link")}</button>
             <button type="button" class="btn-ico btn-salvar" data-f="salvar" aria-pressed="${salvo}" title="Salvar (ou toque duas vezes no cartão)" aria-label="Salvar">${ico("salvar")}</button>
           </span>
@@ -883,7 +869,7 @@
     const por = (tps) => vis.filter((x) => tps.includes(x.tipo) && !lidos()[x.k]).length;
     const blocos = [
       [["tese", "publicado"], "teses firmadas", "ok"], [["afetacao"], "temas afetados", "rel"],
-      [["pauta"], "repetitivos em pauta", "alta"], [["julgado"], "julgados com tese ou destaque", "pri"],
+      [["pauta"], "repetitivos em pauta", "alta"], [["julgado"], "julgados relevantes", "pri"],
     ].map(([tps, rot, cls]) => ({ tps, rot, cls, n: por(tps) })).filter((b) => b.n);
     const contA = {}; vis.forEach((x) => { if (!lidos()[x.k]) x.ar.forEach((a) => (contA[a] = (contA[a] || 0) + 1)); });
     const top = Object.entries(contA).sort((a, b) => b[1] - a[1]).slice(0, 4);
@@ -894,7 +880,7 @@
         const partes = [rep ? `<b>${fmtInt(rep)}</b> movimento${rep > 1 ? "s" : ""} nos repetitivos` : "", jul ? `<b>${fmtInt(jul)}</b> julgado${jul > 1 ? "s" : ""} para ler` : ""].filter(Boolean);
         return `${nFiltros(f) ? "Nos filtros escolhidos: " : "Há "}${partes.join(" e ")}.`; })()}</h2>
       ${blocos.length ? `<div class="capa-grade">${blocos.map((b) => `<button type="button" class="capa-bloco ${b.cls}" data-capa-tp="${b.tps.join(",")}"><b>${fmtInt(b.n)}</b><span>${b.rot}</span></button>`).join("")}</div>` : ""}
-      ${top.length ? `<p class="reel-rot" style="margin-top:22px">Em alta nas matérias</p><div class="capa-areas">${top.map(([a, n]) => `<button type="button" class="chip area" style="--h:${AREA_COR[a] ?? 222}" data-capa-ar="${a}"><i></i>${esc(AREAS[a] || a)} <span class="n">${n}</span></button>`).join("")}</div>` : ""}
+      ${top.length ? `<p class="reel-rot" style="margin-top:22px">Em alta nas matérias</p><div class="capa-areas">${top.map(([a, n]) => `<button type="button" class="chip" data-capa-ar="${a}">${esc(AREAS[a] || a)} <span class="n">${n}</span></button>`).join("")}</div>` : ""}
       <p class="capa-dica">${naoLidos ? `Role para começar ${ico("seta")}` : "Desative “Só não lidos” para rever o que já passou."}</p>
     </div></article>`;
   }
@@ -909,7 +895,6 @@
     const sessao = { lidos: new Set(), areas: {} };
     main.innerHTML = `
       <div class="feed-barra">
-        <div class="chips rolagem fd-areas" id="fd-areas" aria-label="Matérias"></div>
         <div class="fd-filtros rolagem" id="fd-filtros"></div>
         <div class="fd-progl"><div class="feed-prog"><i id="fd-prog"></i></div><span class="feed-cont" id="fd-cont"></span></div>
       </div>
@@ -923,27 +908,26 @@
 
     // ------------------------------------------------------------ filtros
     const conta = (dim, pred) => todos.filter((x) => passaFeed(x, f, dim) && (!soNovos || !lidos()[x.k]) && pred(x)).length;
-    const desenharAreas = () => {
-      const base = todos.filter((x) => passaFeed(x, f, "ar") && (!soNovos || !lidos()[x.k]));
-      const cont = {}; base.forEach((x) => x.ar.forEach((a) => (cont[a] = (cont[a] || 0) + 1)));
-      $("#fd-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!f.ar.length}">Todas <span class="n">${fmtInt(base.length)}</span></button>`
-        + Object.keys(AREAS).filter((a) => cont[a] || f.ar.includes(a)).sort((a, b) => (cont[b] || 0) - (cont[a] || 0))
-          .map((a) => `<button type="button" class="chip area" style="--h:${AREA_COR[a] ?? 222}" data-ar="${a}" aria-pressed="${f.ar.includes(a)}"><i></i>${AREAS[a]} <span class="n">${fmtInt(cont[a] || 0)}</span></button>`).join("");
-    };
     const rotulo = {
+      ar: () => (f.ar.length === 1 ? AREAS[f.ar[0]] || "Matéria" : f.ar.length ? `Matéria · ${f.ar.length}` : "Matéria"),
       tp: () => (f.tp.length === 1 ? FEED_TIPOS[f.tp[0]].rot : f.tp.length ? `Tipo · ${f.tp.length}` : "Tipo"),
       per: () => (f.per ? PERIODOS.find((p) => p[0] === f.per)[1] : "Período"),
       tese: () => (f.tese === "com" ? "Com tese" : f.tese === "sem" ? "Sem tese" : "Tese"),
       org: () => (f.org.length === 1 ? f.org[0] : f.org.length ? `Órgão · ${f.org.length}` : "Órgão"),
       rel: () => (f.rel ? relatorFmt(f.rel) : "Relator"),
     };
-    const ativo = { tp: () => f.tp.length, per: () => f.per, tese: () => f.tese, org: () => f.org.length, rel: () => f.rel };
+    const ativo = { ar: () => f.ar.length, tp: () => f.tp.length, per: () => f.per, tese: () => f.tese, org: () => f.org.length, rel: () => f.rel };
     const desenharFiltros = () => {
       $("#fd-filtros").innerHTML = `<button type="button" class="fpill novos" id="fd-novos" aria-pressed="${soNovos}">${ico("raio")} Só não lidos</button>` + Object.keys(rotulo).map((k) => `<button type="button" class="fpill" data-fp="${k}" aria-pressed="${!!ativo[k]()}" aria-haspopup="dialog">${esc(rotulo[k]())}${ico("seta")}</button>`).join("")
         + (nFiltros(f) ? `<button type="button" class="fpill limpar" id="fd-limpar">${ico("x")} Limpar</button>` : "");
     };
     const opcao = (dim, val, txt, n, marcado) => `<button type="button" class="chip" data-op="${dim}" data-val="${esc(val)}" aria-pressed="${marcado}">${esc(txt)} <span class="n">${n === "" ? "" : fmtInt(n)}</span></button>`;
     function conteudoPop(dim) {
+      if (dim === "ar") {
+        const c = {}; todos.filter((x) => passaFeed(x, f, "ar") && (!soNovos || !lidos()[x.k])).forEach((x) => x.ar.forEach((a) => (c[a] = (c[a] || 0) + 1)));
+        const lista = Object.keys(AREAS).filter((a) => c[a] || f.ar.includes(a)).sort((a, b) => (c[b] || 0) - (c[a] || 0));
+        return `<h3>Matéria</h3><div class="chips">${f.ar.length ? opcao("ar", "", "Todas", "", false) : ""}${lista.map((a) => opcao("ar", a, AREAS[a], c[a] || 0, f.ar.includes(a))).join("")}</div>`;
+      }
       if (dim === "tp") return `<h3>Tipo de novidade</h3><div class="chips">${Object.entries(FEED_TIPOS).map(([k, v]) => opcao("tp", k, v.longo, conta("tp", (x) => x.tipo === k), f.tp.includes(k))).join("")}</div>`;
       if (dim === "per") return `<h3>Período</h3><div class="chips">${PERIODOS.map(([d, txt]) => opcao("per", d, txt, conta("per", (x) => !d || Math.abs((new Date(hojeISO()) - new Date(x.d)) / 864e5) <= d), f.per === d)).join("")}</div><p class="nota">Pautas contam pela proximidade da sessão.</p>`;
       if (dim === "tese") return `<h3>Tese</h3><div class="chips">${[["", "Todas"], ["com", "Com tese firmada ou de julgamento"], ["sem", "Sem tese"]].map(([v, txt]) => opcao("tese", v, txt, conta("tese", (x) => !v || (v === "com") === x.tese), f.tese === v)).join("")}</div>`;
@@ -981,17 +965,18 @@
       pop.classList.remove("vis"); veu.classList.remove("vis"); popDim = "";
       setTimeout(() => { if (!pop.classList.contains("vis")) { pop.hidden = true; veu.hidden = true; } }, 200);
     }
-    const aplicar = () => { salvarP(); desenharAreas(); desenharFiltros(); montar(); };
+    const aplicar = () => { salvarP(); desenharFiltros(); montar(); };
     pop.addEventListener("click", (e) => {
       if (e.target.closest("[data-fechar-pop]")) return fecharPop();
       const b = e.target.closest("[data-op]"); if (!b) return;
       const { op, val } = b.dataset;
-      if (op === "tp" || op === "org") { f[op] = f[op].includes(val) ? f[op].filter((x) => x !== val) : [...f[op], val]; }
+      if (op === "ar" && !val) f.ar = [];
+      else if (op === "tp" || op === "org" || op === "ar") { f[op] = f[op].includes(val) ? f[op].filter((x) => x !== val) : [...f[op], val]; }
       if (op === "per") f.per = +val;
       if (op === "tese") f.tese = val;
       if (op === "rel") f.rel = norm(val) === norm(f.rel) ? "" : val;
       aplicar();
-      if (op === "per" || op === "tese" || op === "rel") fecharPop(); else abrirPop(op, $(`[data-fp="${op}"]`));
+      if (op === "per" || op === "tese" || op === "rel" || (op === "ar" && !val)) fecharPop(); else abrirPop(op, $(`[data-fp="${op}"]`));
     });
     veu.addEventListener("click", fecharPop);
     const foraPop = (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("[data-fp]")) fecharPop(); };
@@ -1003,14 +988,6 @@
       if (popDim === b.dataset.fp) return fecharPop();
       abrirPop(b.dataset.fp, b);
     });
-    $("#fd-areas").addEventListener("click", (e) => {
-      const b = e.target.closest("[data-ar]"); if (!b) return;
-      const a = b.dataset.ar;
-      f.ar = !a ? [] : f.ar.includes(a) ? f.ar.filter((x) => x !== a) : [...f.ar, a];
-      aplicar();
-    });
-
-
     // -------------------------------------------------------------- fila
     const fimHTML = () => {
       const top = Object.entries(sessao.areas).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([a, n]) => `${esc(AREAS[a] || a)} ${n}`).join(" · ");
@@ -1153,7 +1130,7 @@
       obs?.disconnect(); clearTimeout(timer); document.body.classList.remove("modo-feed");
       atualizarContadorFeed();
     };
-    desenharAreas(); desenharFiltros(); montar();
+    desenharFiltros(); montar();
     setTimeout(() => box.focus({ preventScroll: true }), 60);
   }
 
@@ -2005,6 +1982,7 @@
       </ul>
       <h3 style="font-family:var(--ui)">Como a relevância é calculada</h3>
       <p>Cada acórdão recebe uma pontuação automática. Somam pontos o julgamento pela Corte Especial (+5) ou por Seção (+4), a tese jurídica registrada (+6), a afetação ao rito repetitivo (+6), os embargos de divergência (+4), o tema repetitivo (+3) e as menções a superação ou mudança de entendimento e a questão nova (+4), a modulação e a distinção (+3) e a divergência (+2). Perdem pontos os agravos internos e os embargos de declaração (−1) e os fundamentos de rotina, como Súmula 7, Súmulas 283/284 do STF, embargos rejeitados e reexame de provas (até −4).</p>
+      <p>No Atualize-se, a tese de julgamento de cada acórdão é lida item por item. Saem da fila os julgados em que todos os itens apenas aplicam óbices ou entendimentos consolidados (Súmulas 5, 7, 83, 182, 211, 282 e 284, prequestionamento, embargos de declaração, prisão preventiva por fundamentação usual, dosimetria), e perdem posição os que repetem em série a mesma tese. Quando só parte dos itens tem conteúdo próprio, o cartão mostra apenas esses itens; a tese completa continua na ementa.</p>
       <p>Com 10 pontos ou mais, o acórdão é de <b>alta relevância</b>; de 6 a 9, <b>relevante</b>; de 2 a 5, marcado para <b>acompanhar</b>. A área do direito é identificada pelas palavras da verbetação. É uma triagem para orientar a leitura, e não uma avaliação jurídica.</p>
       <h3 style="font-family:var(--ui)">Privacidade</h3>
       <p>O seu radar (assuntos, processos e OAB) e os itens salvos ficam apenas no seu navegador. A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor.</p>
