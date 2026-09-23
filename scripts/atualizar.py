@@ -758,6 +758,92 @@ def atualizar_pautas() -> dict:
 
 
 # --------------------------------------------------------------------------
+# 5a. Relevância para o "Atualize-se": separa teses de julgamento que só
+#     aplicam óbices processuais ou entendimento consolidado.
+# --------------------------------------------------------------------------
+_SUMULAS_ADM = r"(?:5|7|13|83|115|123|126|182|187|207|211|279|280|281|282|283|284|356|315|316|518|568|691|735)"
+RE_GENERICO = re.compile("|".join([
+    r"sumulas? (?:n[.oº]* ?)?" + _SUMULAS_ADM + r"\b", r"sumulas? (?:n[.oº]* ?)?\d+ e " + _SUMULAS_ADM + r"\b",
+    r"enunciado n\. ?691", r"embargos de declaracao", r"omissao|obscuridade|contradicao|ambiguidade", r"rediscuss",
+    r"mero inconformismo", r"reexame (?:do |de )?(?:conjunto |acervo )?(?:fatic|de fatos|probat)", r"revolvimento",
+    r"fatico-probatori", r"prequestionament", r"inovacao recursal", r"preclusao consumativa",
+    r"impugna\w* (?:especific|integral|de forma especific)", r"arts?\. ?1\.?022", r"arts?\. ?489", r"arts?\. ?619",
+    r"art\. ?1\.?021, ?§ ?4", r"arts?\. ?1\.?026", r"habeas corpus substitutivo", r"flagrante ilegalidade",
+    r"supressao de instancia", r"dissidio jurisprudencial", r"cotejo analitico", r"similitude fatica",
+    r"deficiencia (?:de|na) fundamentacao", r"fundamentacao deficiente", r"decisao monocratica", r"colegialidade",
+    r"entendimento dominante", r"intempestiv|tempestividade|desercao|preparo recursal",
+    r"nao conhecimento do recurso|nao se conhece", r"prisao preventiva", r"custodia cautelar", r"periculum libertatis",
+    r"risco de reiteracao", r"ordem publica", r"condicoes pessoais favoraveis", r"pena-base", r"dosimetria",
+    r"fundamentos? (?:nao impugnad|suficientes? para manter)", r"agravo (?:interno|regimental) (?:nao|que nao|contra)",
+    r"negativa de prestacao jurisdicional", r"competencia (?:do|ao) relator", r"reformatio in pejus",
+    r"dispositivos? constituciona", r"materia constitucional", r"litigancia de ma-fe", r"multa (?:do|prevista no) art",
+    r"honorarios recursais", r"nao (?:e|sao) cabive\w* (?:o |a )?(?:agravo|recurso|embargos|em recurso especial)",
+    r"recurso especial (?:nao|e inadmissivel)", r"via (?:estreita|eleita) do habeas", r"nao comporta (?:o )?revolvimento",
+    r"irrisori|exorbitant", r"atos normativos secundarios",
+]))
+_PARE = set("a o os as de do da dos das e em no na nos nas que para por com se ao aos um uma ou nao sua seu art lei sob quando como mais ser sao".split())
+_CLASSES_MERITO = {"REsp", "EREsp", "EAREsp", "RMS", "CC", "MS", "HC", "RHC", "ProAfR", "IAC", "Pet", "Rcl", "SIRDR", "IDC", "AR", "APn"}
+
+
+def itens_tese(t: str) -> list[tuple[str, str]]:
+    """Divide a tese de julgamento em itens numerados: [(número, texto)]."""
+    t = (t or "").strip()
+    partes = re.split(r"(?:^|\s)(\d{1,2})\.\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])", t)
+    if len(partes) < 3:
+        return [("", t)] if t else []
+    out = []
+    if partes[0].strip():
+        out.append(("", partes[0].strip()))
+    for i in range(1, len(partes) - 1, 2):
+        txt = partes[i + 1].strip()
+        if len(txt) > 25:
+            out.append((partes[i], txt))
+    return out
+
+
+def itens_substantivos(r: dict) -> list[tuple[str, str]]:
+    return [(n, t) for n, t in itens_tese(r.get("tj") or "") if len(t) >= 70 and not RE_GENERICO.search(sem_acento(t))]
+
+
+def _assinatura(t: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]{4,}", sem_acento(t)) if w not in _PARE}
+
+
+def selecionar_feed(cands: list[dict]) -> list[dict]:
+    """Escolhe os acórdãos da fila: teses jurídicas, destaques e teses de julgamento
+    com conteúdo próprio, descontando os entendimentos reiterados em série."""
+    out, pool = [], []
+    for r in cands:
+        cl0 = (r.get("cl") or "").split(" ")[0]
+        sub = itens_substantivos(r)
+        if r.get("tese") or r.get("s", 0) >= LIMIAR_DESTAQUE:
+            if cl0 == "EDcl" and r.get("tj") and not sub:
+                continue
+            r["_fs"] = r.get("s", 0) + 6
+            r["_sub"] = sub
+            out.append(r)
+            continue
+        if cl0 == "EDcl" or not sub:
+            continue
+        r["_sub"] = sub
+        r["_sig"] = [_assinatura(t) for _, t in sub]
+        pool.append(r)
+    for r in pool:
+        r["_rep"] = 0
+    for i, a in enumerate(pool):
+        for b in pool[i + 1:]:
+            if any(len(x & y) / max(1, len(x | y)) >= 0.34 for x in a["_sig"] for y in b["_sig"]):
+                a["_rep"] += 1
+                b["_rep"] += 1
+    for r in pool:
+        cl0 = (r.get("cl") or "").split(" ")[0]
+        r["_fs"] = r.get("s", 0) + 2 * min(len(r["_sub"]), 3) + (3 if cl0 in _CLASSES_MERITO else 0) - 1.5 * min(r["_rep"], 5)
+        if r["_fs"] >= 2:
+            out.append(r)
+    return out
+
+
+# --------------------------------------------------------------------------
 # 5. Destaques e índice leve para o "Meu radar"
 # --------------------------------------------------------------------------
 LIMIAR_DESTAQUE = 6
@@ -782,21 +868,27 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
                     }))
     # Fila do "Atualize-se": acórdãos recentes com tese ou relevância alta.
     lim_feed = (dt.date.today() - dt.timedelta(days=80)).isoformat()
-    feed = []
+    cands = []
     for mes in recentes:
         for arq in sorted((SITE_DATA / "acordaos" / mes).glob("*.json")):
             for r in ler_json(arq, []):
-                if (r.get("dj") or "") < lim_feed:
-                    continue
-                if not (r.get("tese") or r.get("tj") or r.get("s", 0) >= LIMIAR_DESTAQUE):
-                    continue
-                feed.append(limpar_vazios({
-                    "id": r.get("id"), "m": mes, "o": r.get("o"), "cl": r.get("cl"), "n": r.get("n"),
-                    "reg": r.get("reg"), "dj": r.get("dj"), "dd": r.get("dd"), "rel": r.get("rel"),
-                    "s": r.get("s", 0), "ar": r.get("ar"), "rz": r.get("rz"),
-                    "h": (r.get("em") or "").split("\n", 1)[0][:320],
-                    "tese": (r.get("tese") or "")[:600], "tj": (r.get("tj") or "")[:900],
-                }))
+                if (r.get("dj") or "") >= lim_feed and (r.get("tese") or r.get("tj") or r.get("s", 0) >= LIMIAR_DESTAQUE):
+                    r["m"] = mes
+                    cands.append(r)
+    feed = []
+    for r in selecionar_feed(cands):
+        sub = r.get("_sub") or []
+        todos = itens_tese(r.get("tj") or "")
+        # Na fila, mostra só os itens com conteúdo próprio da tese de julgamento.
+        tj = "\n".join(f"{n}. {t}" if n else t for n, t in sub) if sub and len(sub) < len(todos) else (r.get("tj") or "")
+        feed.append(limpar_vazios({
+            "id": r.get("id"), "m": r["m"], "o": r.get("o"), "cl": r.get("cl"), "n": r.get("n"),
+            "reg": r.get("reg"), "dj": r.get("dj"), "dd": r.get("dd"), "rel": r.get("rel"),
+            "s": r.get("s", 0), "fs": round(r.get("_fs", 0), 1), "ar": r.get("ar"), "rz": r.get("rz"),
+            "h": (r.get("em") or "").split("\n", 1)[0][:320],
+            "tese": (r.get("tese") or "")[:600], "tj": tj[:900],
+            "tjp": 1 if tj != (r.get("tj") or "") else 0,
+        }))
     feed.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
     gravar_json(SITE_DATA / "atualize.json", feed)
     dest.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
