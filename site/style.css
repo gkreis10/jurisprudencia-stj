@@ -768,3 +768,57 @@ button.stat { font: inherit; color: inherit; width: 100%; }
   .sem-lista { break-inside: auto; } .sem-lista li { break-inside: avoid; }
 }
 svg.gira { transform: rotate(180deg); }
+/* v10: leitura confortável do Informativo e do Resumo da semana */
+.bloco-filtros { margin-bottom: 4px; }
+.notas, #sem-corpo { max-width: 880px; }
+.grupo-notas { margin: 0 0 34px; }
+.grupo-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin: 0 0 14px; padding: 0 2px 10px; border-bottom: 1px solid var(--linha); }
+.grupo-cab h2 { margin: 0; font: 700 19px/1.25 var(--serif); color: var(--tx); }
+.grupo-cab[style] h2 { color: hsl(var(--h) 60% 34%); }
+.grupo-cab span { font-size: 13px; color: var(--tx-3); }
+.grupo-cab .link-acao { margin-left: auto; font-size: 13px; }
+.lista-notas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.ncard { position: relative; background: var(--sup); border: 1px solid var(--linha); border-radius: 16px; box-shadow: var(--sombra-1); padding: 22px 26px 16px 28px; overflow: hidden; }
+.ncard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: hsl(var(--h) 70% 50%); opacity: .85; }
+.nota-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 12px; }
+.nota-org { font-size: 12.5px; color: var(--tx-3); margin-left: 2px; }
+.nota-tema { margin: 0 0 12px; font: 600 17px/1.45 var(--ui); letter-spacing: -.005em; color: var(--tx); text-wrap: pretty; }
+.nota-tema button { all: unset; cursor: pointer; }
+.nota-tema button:focus-visible { outline: 2px solid var(--pri); outline-offset: 3px; border-radius: 4px; }
+@media (hover: hover) and (pointer: fine) { .nota-tema button:hover { color: hsl(var(--h) 60% 36%); } }
+.nota-tese { font: 400 17px/1.7 var(--serif); color: var(--tx); }
+.nota-tese p { margin: 0 0 10px; }
+.nota-tese p:last-child { margin-bottom: 0; }
+.nota-tese.longa:not(.aberta) { display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
+.nota-mais { all: unset; cursor: pointer; margin-top: 8px; font: 600 13px/1 var(--ui); color: var(--pri); }
+.nota-rodape { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--linha); }
+.nota-proc { font-size: 13px; color: var(--tx-3); flex: 1; min-width: 200px; }
+.nota-rodape .dir { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.nota-rodape .link-acao { margin-right: 6px; }
+.chips.vertical { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 4px; }
+.chips.vertical .chip { justify-content: space-between; text-align: left; border-radius: 10px; }
+.pop-grupo { margin: 14px 0 8px; font: 700 11px/1 var(--ui); text-transform: uppercase; letter-spacing: .08em; color: var(--tx-3); }
+.pop-datas { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 12px; border: 1px solid var(--linha); border-radius: 12px; background: var(--sup-2); }
+.pop-datas label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--tx-3); flex: 1; min-width: 130px; }
+.pop-datas input { font: 500 14px var(--ui); padding: 8px 10px; border: 1px solid var(--linha-2); border-radius: 9px; background: var(--sup); color: var(--tx); }
+.sem-cab { align-items: flex-end; margin-bottom: 18px; }
+.sem-cab > div:first-child { flex: 1; min-width: 220px; }
+.sem-sobre { margin: 0 0 4px; font: 700 11px/1 var(--ui); text-transform: uppercase; letter-spacing: .1em; color: var(--tx-3); }
+.sem-cab h2 { font: 700 clamp(22px, 2.6vw, 28px)/1.2 var(--serif); }
+.sem-nav { align-items: center; flex-wrap: wrap; }
+.sem-nav .fd-filtros { margin: 0; }
+.sem-resumo .capa-bloco { cursor: pointer; }
+.sem-resumo .capa-bloco[aria-pressed="true"] { border-color: currentColor; box-shadow: inset 0 0 0 1px var(--linha-2); background: var(--sup); }
+.sem-ferr { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 22px; }
+.sem-ferr .fd-filtros { flex: 1; margin: 0; }
+.sem-acoes { display: flex; gap: 6px; }
+@media (max-width: 860px) {
+  .ncard { padding: 18px 16px 14px 20px; border-radius: 14px; }
+  .nota-tema { font-size: 16px; }
+  .nota-tese { font-size: 16px; line-height: 1.65; }
+  .lista-notas { gap: 14px; }
+  .grupo-cab h2 { font-size: 17px; }
+  .sem-acoes { width: 100%; }
+}
+@media (prefers-color-scheme: dark) { .grupo-cab[style] h2 { color: hsl(var(--h) 80% 74%); } }
+@media print { .sem-ferr, .sem-resumo, .nota-rodape .dir, .nota-mais { display: none !important; } .ncard { box-shadow: none; break-inside: avoid; } .nota-tese.longa { display: block !important; -webkit-line-clamp: unset !important; } }

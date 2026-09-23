@@ -1047,9 +1047,11 @@
   const saudacao = () => { const h = new Date().getHours(); return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite"; };
 
   // Tese pronta para leitura: sem aspas, sem "Tese:" e sem numeração quando há um item só.
-  function limparTese(t) {
+  function limparTeseTxt(t) { return limparTese(t, true); }
+  function limparTese(t, texto = false) {
     const itens = String(t).trim().replace(/^["“']+|["”']+$/g, "").replace(/^\s*tese(?:\s*\d+)?\s*[:.-]\s*/i, "").split(/\n+|\s(?=\d{1,2}\.\s*\p{Lu})/u).map((x) => x.trim().replace(/^["“']+|["”']+$/g, "").replace(/^\s*tese(?:\s*\d+)?\s*[:.-]\s*/i, "")).filter(Boolean);
-    return itens.map((x) => esc(x.replace(/^\d{1,2}\.\s*/, ""))).join("<br>");
+    const limpos = itens.map((x) => x.replace(/^\d{1,2}\.\s*/, ""));
+    return texto ? limpos.join("\n") : limpos.map((x) => esc(x)).join("<br>");
   }
   function cartaoFeed(it, i, total) {
     const tp = FEED_TIPOS[it.tipo];
@@ -1785,7 +1787,7 @@
       if (d.tipo === "multi") { const v = d.get(); const o = d.opcoes().find((x) => x.v === v[0]); return v.length === 1 ? (o?.t || d.rot) : `${d.rot} · ${v.length}`; }
       if (d.tipo === "texto") return `${d.rot}: ${d.get()}`;
       if (d.tipo === "materia") return rotMat(d.get());
-      const o = d.opcoes().find((x) => String(x.v) === String(d.get())); return o ? (o.curto || o.t) : d.rot;
+      const o = d.opcoes().find((x) => String(x.v) === String(d.get())); return o ? (o.curto || o.t) : d.rotValor ? d.rotValor(d.get()) : d.rot;
     };
     function desenhar() {
       const n = defs.filter((d) => ativo(d) && !d.semLimpar).length;
@@ -1803,8 +1805,16 @@
         ? htmlMaterias({ cont: d.cont ? d.cont() : null, sel: (x) => String(v || "") === x, aberta: POPF.aberta, todas: d.todas || "Todas as matérias" })
         : d.tipo === "texto"
         ? `<form class="adicionar" data-pil-form><input type="search" value="${esc(v || "")}" placeholder="${esc(d.ph || "")}"${d.lista ? ` list="${d.lista}"` : ""} autocomplete="off"><button class="btn btn-pri" type="submit">Aplicar</button></form>${ops.length ? `<div class="chips" style="margin-top:12px">${ops.slice(0, 24).map(chip).join("")}</div>` : ""}`
-        : `<div class="chips">${ops.map(chip).join("")}</div>`;
-      return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}`;
+        : d.grupos
+        ? d.grupos.map(([g, rotG]) => { const os = ops.filter((o) => (o.g || "") === g); return os.length ? `${rotG ? `<p class="pop-grupo">${esc(rotG)}</p>` : ""}<div class="chips${d.vertical ? " vertical" : ""}">${os.map(chip).join("")}</div>` : ""; }).join("")
+        : `<div class="chips${d.vertical ? " vertical" : ""}">${ops.map(chip).join("")}</div>`;
+      // Campo de data: um dia (ir para a semana) ou um intervalo (de/até).
+      const vd = String(v || "");
+      const datas = d.datas === "uma"
+        ? `<form class="pop-datas" data-pil-datas><label>${esc(d.rotData || "Escolher uma data")}<input type="date" name="a" value="${/^\d{4}-\d{2}-\d{2}$/.test(vd) ? vd : ""}" min="${d.min || ""}" max="${d.max || ""}" required></label><button class="btn btn-pri btn-peq" type="submit">Ir</button></form>`
+        : d.datas === "intervalo"
+        ? `<form class="pop-datas" data-pil-datas><label>De<input type="date" name="de" value="${vd.startsWith("d:") ? vd.split(":")[1] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label><label>Até<input type="date" name="ate" value="${vd.startsWith("d:") ? vd.split(":")[2] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label><button class="btn btn-pri btn-peq" type="submit">Aplicar</button></form>` : "";
+      return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${datas}${datas && ops.length ? `<p class="pop-grupo">${esc(d.rotAtalhos || "Atalhos")}</p>` : ""}${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}`;
     }
     function abrir(i, botao) {
       const d = defs[i];
@@ -1827,6 +1837,13 @@
         else d.set(String(d.get() ?? "") === String(val) && !d.obrigatorio ? vazioDe(d) : val);
         desenhar(); aoMudar();
         if (d.tipo === "multi" && val !== "") abrir(i, raiz.querySelector(`[data-pil="${i}"]`)); else fecharPopF();
+      };
+      const fd = $("[data-pil-datas]", POPF.el);
+      if (fd) fd.onsubmit = (e) => {
+        e.preventDefault();
+        if (d.datas === "uma") { if (!fd.a.value) return; d.set(fd.a.value); }
+        else { const de = fd.de.value || d.min || "", ate = fd.ate.value || d.max || ""; if (!de && !ate) return; d.set(`d:${de <= ate || !ate ? de : ate}:${de <= ate || !ate ? ate : de}`); }
+        desenhar(); aoMudar(); fecharPopF();
       };
       const fm = $("[data-pil-form]", POPF.el);
       if (fm) { const inp = $("input", fm); if (!folha) inp.focus(); fm.onsubmit = (e) => { e.preventDefault(); d.set(inp.value.trim()); desenhar(); aoMudar(); fecharPopF(); }; }
@@ -1863,18 +1880,22 @@
     $$("[data-ds-aba]", main).forEach((b) => b.addEventListener("click", () => { location.hash = b.dataset.dsAba ? "#destaques?aba=auto" : "#destaques"; }));
   }
   // Nota do Informativo: tema, destaque (a tese) e dados do julgado.
+  // Nota do Informativo: matéria, tema em destaque, a tese e os dados do julgado.
+  const TIPO_INFO = (x) => (/repetitiv/i.test(x.sec) ? `Repetitivo${x.tr ? ` · Tema ${fmtNumProc(x.tr)}` : ""}` : /assun/i.test(x.sec) ? "IAC" : /s[uú]mula/i.test(x.sec) ? "Súmula" : "");
   function cardInformativo(x, termos = []) {
     const salvo = !!P.salvos[`i:${x.id}`];
-    const proc = x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}` : "Processo em segredo de justiça";
-    return `<li class="card item info" data-info="${esc(x.id)}">
-      <div class="item-cab"><button type="button" class="item-tit item-abrir" data-a-info="abrir">${esc(proc)}</button>
-        <span class="meta"><span>${esc(x.org || x.sec || "")}</span>${x.julg ? `<span>Julg. ${fmtData(x.julg)}</span>` : ""}<span>Informativo ${x.ed}</span></span></div>
-      <div class="item-sel">${/repetitiv/i.test(x.sec) ? `<span class="selo ok">Repetitivo${x.tr ? ` · Tema ${fmtNumProc(x.tr)}` : ""}</span>` : /assun/i.test(x.sec) ? `<span class="selo ok">IAC</span>` : ""}${seloMat(x.ar, x.sa)}</div>
-      <p class="info-tema">${destacar(esc(x.tema), termos)}</p>
-      <div class="tese compacta"><b>Destaque</b>${x.t.split("\n").map((l) => `<p>${destacar(esc(l), termos)}</p>`).join("")}</div>
-      <div class="acoes"><button type="button" class="link-acao" data-a-info="abrir">Ler a nota completa ${ico("seta")}</button>
-        <a class="link-acao" href="${URL_INFO(x.ed)}" target="_blank" rel="noopener">Informativo oficial ${ico("externo")}</a>
-        <span class="dir"><button type="button" class="btn-ico" data-a-info="copiar" title="Copiar destaque e referência" aria-label="Copiar">${ico("copiar")}</button>
+    const proc = x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}${x.p.length > 1 ? ` e mais ${x.p.length - 1}` : ""}` : "Processo em segredo de justiça";
+    const tipo = TIPO_INFO(x);
+    const longa = x.t.length > 700;
+    return `<li class="ncard" data-info="${esc(x.id)}" style="--h:${AREA_COR[(x.ar || [])[0]] ?? 222}">
+      <div class="nota-cab">${seloMat(x.ar, x.sa)}${tipo ? `<span class="selo ok">${esc(tipo)}</span>` : ""}<span class="nota-org">${esc(x.org || x.sec || "")}</span></div>
+      <h3 class="nota-tema"><button type="button" data-a-info="abrir">${destacar(esc(x.tema.replace(/\s*Tema\s+\d[\d.]*\.?\s*$/i, "")), termos)}</button></h3>
+      <div class="nota-tese${longa ? " longa" : ""}">${x.t.split("\n").map((l) => `<p>${destacar(esc(l), termos)}</p>`).join("")}</div>
+      ${longa ? `<button type="button" class="nota-mais" data-a-info="mais">Continuar lendo</button>` : ""}
+      <div class="nota-rodape"><span class="nota-proc">${esc(proc)}${x.rel ? ` · Rel. Min. ${esc(x.rel)}` : ""}${x.julg ? ` · julgado em ${fmtData(x.julg)}` : ""}</span>
+        <span class="dir"><button type="button" class="link-acao" data-a-info="abrir">Nota completa</button>
+          <a class="btn-ico" href="${URL_INFO(x.ed)}" target="_blank" rel="noopener" title="Informativo oficial" aria-label="Informativo oficial">${ico("externo")}</a>
+          <button type="button" class="btn-ico" data-a-info="copiar" title="Copiar destaque e referência" aria-label="Copiar">${ico("copiar")}</button>
           <button type="button" class="btn-ico btn-salvar" data-a-info="salvar" aria-pressed="${salvo}" title="${salvo ? "Remover dos salvos" : "Salvar"}" aria-label="Salvar">${ico("salvar")}</button></span></div></li>`;
   }
   const citInfo = (x) => `${x.t.replace(/\n/g, " ")}\n(STJ, ${x.proc ? x.proc.split(/\.\s*\(/)[0].replace(/\.$/, "") : x.org}. Informativo de Jurisprudência n. ${x.ed}.)`;
@@ -1883,6 +1904,7 @@
     const id = b.closest("[data-info]")?.dataset.info; const l = await informativos(); const x = l.idx.get(id); if (!x) return;
     const a = b.dataset.aInfo;
     if (a === "abrir") abrirInformativo(x);
+    if (a === "mais") { const t = b.closest(".ncard").querySelector(".nota-tese"); t.classList.toggle("aberta"); b.textContent = t.classList.contains("aberta") ? "Recolher" : "Continuar lendo"; }
     if (a === "copiar") copiar(citInfo(x), "Destaque e referência copiados.");
     if (a === "salvar") alternarSalvo(`i:${x.id}`, { k: "i", id: x.id }, b);
   });
@@ -1906,54 +1928,80 @@
     $("#gi-copiar").addEventListener("click", () => copiar(citInfo(x), "Destaque e referência copiados."));
     $("#gi-ementa")?.addEventListener("click", () => abrirAcordao({ id: noAcervo[4], m: ix.m[noAcervo[2]], o: ix.o[noAcervo[3]], cl: x.p[0].cl, n: noAcervo[0] }));
   }
+  const ORGAOS_INFO = ["Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção", "Primeira Turma", "Segunda Turma", "Terceira Turma", "Quarta Turma", "Quinta Turma", "Sexta Turma"];
+  const GRUPO_ORG = { rep: ["Repetitivos e IAC", (x) => /repetitiv|assun/i.test(x.sec)], secoes: ["Corte Especial e Seções", (x) => /corte especial|se[çc][ãa]o/i.test(x.org || "")], pub: ["Direito público (1ª e 2ª Turmas)", (x) => /^(primeira|segunda) turma/i.test(x.org || "")], priv: ["Direito privado (3ª e 4ª Turmas)", (x) => /^(terceira|quarta) turma/i.test(x.org || "")], pen: ["Direito penal (5ª e 6ª Turmas)", (x) => /^(quinta|sexta) turma/i.test(x.org || "")] };
+  const fmtDiaMes = (iso) => fmtData(iso).slice(0, 5);
   async function vInformativos(main, p) {
     const l = await informativos();
     const eds = [...new Set(l.map((x) => x.ed))].sort((a, b) => b - a);
-    const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "u4", o: p.get("o") || "", s: p.get("s") || "rec" };
+    const dataEd = new Map(l.map((x) => [x.ed, x.d]));
+    const dmin = l.reduce((m, x) => (x.d && x.d < m ? x.d : m), "9999"), dmax = l.reduce((m, x) => (x.d > m ? x.d : m), "");
+    const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "u4", o: p.get("o") || "", rl: p.get("rl") || "", s: p.get("s") || "rec" };
     main.innerHTML = `${abasDestaques("")}
-      <div id="if-f">
+      <div id="if-f" class="bloco-filtros">
         ${campoBusca("if-q", 'Tema ou tese. Ex.: "adjudicação compulsória" ou prescri$', f.q)}
         ${AJUDA_BUSCA}
         <div class="fd-filtros filtros-lista" id="if-pil"></div>
+        <datalist id="if-rels">${[...new Set(l.map((x) => x.rel).filter(Boolean))].sort().map((r) => `<option value="${esc(r)}">`).join("")}</datalist>
       </div>
-      <div class="barra-res"><p id="if-info"></p><span class="nota" title="O Informativo de Jurisprudência é publicado pelo STJ e reúne as teses selecionadas pela novidade e pela repercussão no meio jurídico.">Curadoria oficial do STJ</span></div>
-      <ol class="lista" id="if-lista"></ol>
+      <div class="barra-res"><p id="if-info" aria-live="polite"></p><span class="nota" title="O Informativo de Jurisprudência é publicado pelo STJ e reúne as teses selecionadas pela novidade e pela repercussão no meio jurídico.">Curadoria oficial do STJ</span></div>
+      <div id="if-lista" class="notas"></div>
       <button class="btn btn-claro btn-mais" id="if-mais" hidden>Mostrar mais</button>`;
     ligarAbasDestaques(main);
-    let lista = [], mostrados = 0, termos = [], ca = {};
-    const secs = [...new Set(l.map((x) => x.org || x.sec))].filter(Boolean);
-    const ordemOrg = ["Recursos Repetitivos", "Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção", "Primeira Turma", "Segunda Turma", "Terceira Turma", "Quarta Turma", "Quinta Turma", "Sexta Turma"];
-    const render = (reset) => {
-      const ul = $("#if-lista"); if (reset) { ul.innerHTML = ""; mostrados = 0; }
-      const lote = lista.slice(mostrados, mostrados + 20);
-      ul.insertAdjacentHTML("beforeend", lote.map((x) => cardInformativo(x, termos)).join(""));
-      mostrados += lote.length;
-      if (!lista.length) ul.innerHTML = vazio("destaques", "Nenhuma nota encontrada", "Amplie o período ou revise os termos e a matéria.");
-      const b = $("#if-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
+    let lista = [], lim = 30, termos = [], ca = {}, co = {}, grupoDe = null;
+    const noPeriodo = (x) => {
+      if (f.e === "todas") return true;
+      if (/^u\d+$/.test(f.e)) return x.ed >= eds[Math.min(eds.length, +f.e.slice(1)) - 1];
+      if (/^m\d+$/.test(f.e)) return x.d >= somaDias(hojeISO(), -30 * +f.e.slice(1));
+      if (f.e.startsWith("e:")) return x.ed === +f.e.slice(2);
+      if (f.e.startsWith("d:")) { const [, de, ate] = f.e.split(":"); return (!de || x.d >= de) && (!ate || x.d <= ate); }
+      return true;
+    };
+    const render = () => {
+      const box = $("#if-lista"); const vis = lista.slice(0, lim);
+      if (!lista.length) { box.innerHTML = vazio("destaques", "Nenhuma nota encontrada", "Amplie o período, troque a matéria ou revise os termos da busca."); $("#if-mais").hidden = true; return; }
+      const grupos = [];
+      for (const x of vis) { const g = grupoDe ? grupoDe(x) : null; const k = g ? g.k : "_"; if (!grupos.length || grupos[grupos.length - 1].k !== k) grupos.push({ ...(g || { k }), itens: [] }); grupos[grupos.length - 1].itens.push(x); }
+      box.innerHTML = grupos.map((g) => `<section class="grupo-notas">${g.tit ? `<header class="grupo-cab"${g.h != null ? ` style="--h:${g.h}"` : ""}><h2>${g.tit}</h2><span>${g.sub || ""}</span>${g.link ? `<a class="link-acao" href="${g.link}" target="_blank" rel="noopener">Edição oficial ${ico("externo")}</a>` : ""}</header>` : ""}
+        <ol class="lista-notas">${g.itens.map((x) => cardInformativo(x, termos)).join("")}</ol></section>`).join("");
+      const b = $("#if-mais"); b.hidden = lim >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - lim)})`;
     };
     const aplicar = () => {
       f.q = $("#if-q").value;
       gravarHash("destaques", { ...f, e: f.e === "u4" ? "" : f.e, s: f.s === "rec" ? "" : f.s });
       const c = Busca.compilar(f.q); termos = c.termos;
-      const lim = f.e === "todas" ? 0 : /^u(\d+)$/.test(f.e) ? eds[Math.min(eds.length, +f.e.slice(1)) - 1] : +f.e;
-      const base = l.filter((x) => (f.e === "todas" || (/^u/.test(f.e) ? x.ed >= lim : x.ed === lim)) && (!f.o || (f.o === "rep" ? /repetitiv|assun/i.test(x.sec) : x.org === f.o || x.sec === f.o)) && c.testa(x._n));
+      const rN = norm(f.rl);
+      const b0 = l.filter((x) => noPeriodo(x) && c.testa(x._n) && (!rN || norm(x.rel).includes(rN)));
+      co = { "": b0.length }; for (const x of b0) { for (const [k, [, fn]] of Object.entries(GRUPO_ORG)) if (fn(x)) co[k] = (co[k] || 0) + 1; if (x.org) co[x.org] = (co[x.org] || 0) + 1; }
+      const base = b0.filter((x) => !f.o || (GRUPO_ORG[f.o] ? GRUPO_ORG[f.o][1](x) : x.org === f.o));
       ca = contarMat(base, (x) => x.ar, (x) => x.sa);
       lista = base.filter((x) => casaMat(f.a, x.ar, x.sa));
-      const ord = { rec: (a, b) => b.ed - a.ed || a.id.localeCompare(b.id, "pt-BR", { numeric: true }), julg: (a, b) => (b.julg || "").localeCompare(a.julg || ""), rel: (a, b) => c.pontua(b._n, norm(b.tema)) - c.pontua(a._n, norm(a.tema)) || b.ed - a.ed }[c.vazio && f.s === "rel" ? "rec" : f.s];
-      lista.sort(ord);
-      $("#if-info").innerHTML = `<b>${fmtInt(lista.length)}</b> nota(s)${f.e === "u1" ? ` · Informativo ${eds[0]}` : /^\d+$/.test(f.e) ? ` · Informativo ${f.e}` : ""} ${explicacaoHTML(c)}`;
-      render(true);
+      const porId = (a, b) => b.ed - a.ed || a.id.localeCompare(b.id, "pt-BR", { numeric: true });
+      const ordem = c.vazio && f.s === "rel" ? "rec" : f.s;
+      if (ordem === "rec") { lista.sort(porId); grupoDe = (x) => ({ k: x.ed, tit: `Informativo nº ${x.ed}`, sub: `${x.d ? fmtDiaL(x.d).replace(/^\S+, /, "") : ""} · ${lista.filter((y) => y.ed === x.ed).length} nota(s)`, link: URL_INFO(x.ed) }); }
+      if (ordem === "julg") { lista.sort((a, b) => (b.julg || "").localeCompare(a.julg || "") || porId(a, b)); grupoDe = (x) => ({ k: (x.julg || "").slice(0, 7), tit: x.julg ? `Julgados em ${fmtMesL(x.julg.slice(0, 7))}` : "Sem data de julgamento" }); }
+      if (ordem === "mat") { const ordA = Object.keys(AREAS); const pos = (x) => { const i = ordA.indexOf((x.ar || [])[0]); return i < 0 ? 99 : i; }; lista.sort((a, b) => pos(a) - pos(b) || porId(a, b)); grupoDe = (x) => { const a = (x.ar || [])[0]; return { k: a || "-", tit: AREAS[a] || "Outras matérias", h: AREA_COR[a], sub: `${lista.filter((y) => (y.ar || [])[0] === a).length} nota(s)` }; }; }
+      if (ordem === "rel") { lista.sort((a, b) => c.pontua(b._n, norm(b.tema)) - c.pontua(a._n, norm(a.tema)) || porId(a, b)); grupoDe = null; }
+      const nEd = new Set(lista.map((x) => x.ed)).size;
+      $("#if-info").innerHTML = `<b>${fmtInt(lista.length)}</b> nota(s) em ${nEd} edição(ões) ${explicacaoHTML(c)}`;
+      lim = 30; render();
     };
+    const rotPer = (v) => (v.startsWith("e:") ? `Informativo ${v.slice(2)}` : v.startsWith("d:") ? (() => { const [, de, ate] = v.split(":"); return `${de ? fmtData(de) : "início"} a ${ate ? fmtData(ate) : "hoje"}`; })() : "Período");
     pilulas($("#if-pil"), [
       { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => ca },
-      { rot: "Edição", titulo: "Edições do Informativo", tipo: "um", padrao: "u4", obrigatorio: true, semLimpar: true, rotAtual: () => "Últimas 4 edições", get: () => f.e, set: (v) => (f.e = v),
-        opcoes: () => [{ v: "u1", t: `Última edição (nº ${eds[0]})`, curto: `Informativo ${eds[0]}` }, { v: "u4", t: "Últimas 4 edições" }, { v: "u13", t: "Últimos 3 meses (13 edições)", curto: "Últimos 3 meses" }, { v: "todas", t: `Todas as edições (${eds[eds.length - 1]} a ${eds[0]})`, curto: "Todas as edições" }, ...eds.slice(1, 12).map((e) => ({ v: String(e), t: `Informativo ${e}` }))],
-        nota: "O STJ publica o Informativo em edições periódicas, em regra semanais." },
-      { rot: "Órgão", tipo: "um", get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos" }, { v: "rep", t: "Repetitivos e IAC" }, ...ordemOrg.filter((o) => o !== "Recursos Repetitivos" && secs.includes(o)).map((o) => ({ v: o, t: o }))] },
-      defOrdem(() => f.s, (v) => (f.s = v), [{ v: "rec", t: "Edição mais recente" }, { v: "julg", t: "Julgamento mais recente" }, { v: "rel", t: "Mais aderentes à busca" }]),
+      { rot: "Período", titulo: "Período ou edição", tipo: "um", padrao: "u4", obrigatorio: true, semLimpar: true, rotAtual: () => "Últimas 4 edições", rotValor: rotPer, get: () => f.e, set: (v) => (f.e = v),
+        datas: "intervalo", min: dmin, max: dmax, rotAtalhos: "Atalhos", vertical: true, grupos: [["", ""], ["e", "Edição específica"]],
+        opcoes: () => [{ v: "u1", t: `Última edição (nº ${eds[0]}, ${fmtDiaMes(dataEd.get(eds[0]))})`, curto: `Informativo ${eds[0]}` }, { v: "u4", t: "Últimas 4 edições" }, { v: "m3", t: "Últimos 3 meses" }, { v: "m12", t: "Últimos 12 meses" }, { v: "todas", t: `Todas as edições (desde a nº ${eds[eds.length - 1]})`, curto: "Todas as edições" },
+          ...eds.map((e) => ({ g: "e", v: `e:${e}`, t: `Informativo ${e} · ${fmtData(dataEd.get(e))}`, curto: `Informativo ${e}` }))],
+        nota: "Informe as datas de publicação do Informativo ou escolha uma edição. O STJ publica, em regra, uma edição por semana." },
+      { rot: "Órgão", tipo: "um", vertical: true, grupos: [["", ""], ["o", "Órgão julgador"]], get: () => f.o, set: (v) => (f.o = v),
+        opcoes: () => [{ v: "", t: "Todos os órgãos", n: co[""] }, ...Object.entries(GRUPO_ORG).map(([k, [t]]) => ({ v: k, t, n: co[k] || 0 })), ...ORGAOS_INFO.filter((o) => co[o]).map((o) => ({ g: "o", v: o, t: o, n: co[o] }))] },
+      { rot: "Relator(a)", tipo: "texto", ph: "Nome do(a) ministro(a)", lista: "if-rels", get: () => f.rl, set: (v) => (f.rl = v) },
+      defOrdem(() => f.s, (v) => (f.s = v), [{ v: "rec", t: "Edição mais recente" }, { v: "julg", t: "Julgamento mais recente" }, { v: "mat", t: "Matéria" }, { v: "rel", t: "Mais aderentes à busca" }],
+        "Por edição e por julgamento, as notas aparecem agrupadas; por matéria, reunidas sob cada ramo do direito."),
     ], aplicar);
     $("#if-q").addEventListener("input", debounce(aplicar, 200));
-    $("#if-mais").addEventListener("click", () => render(false));
+    $("#if-mais").addEventListener("click", () => { lim += 30; render(); });
     ligarAjuda($("#if-f"), $("#if-q"), aplicar);
     aplicar();
   }
@@ -2142,60 +2190,112 @@
   // ======================================================= RESUMO DA SEMANA
   const segundaDe = (iso) => { const d = new Date(iso + "T12:00:00Z"); return somaDias(iso, -((d.getUTCDay() + 6) % 7)); };
   const fmtCurta = (iso) => { const d = new Date(iso + "T12:00:00Z"); return `${d.getUTCDate()} de ${MESES_L[d.getUTCMonth()]}`; };
+  const TIPOS_SEM = {
+    teses: { rot: "Teses firmadas", selo: "Tese firmada", cls: "ok", longo: "Teses firmadas em repetitivos" },
+    info: { rot: "Informativo", selo: "Informativo", cls: "info", longo: "Notas do Informativo do STJ" },
+    afet: { rot: "Temas afetados", selo: "Tema afetado", cls: "rel", longo: "Novos temas afetados" },
+    julg: { rot: "Julgados com tese", selo: "Julgado", cls: "pri", longo: "Julgados com tese publicados" },
+    sum: { rot: "Súmulas", selo: "Súmula", cls: "acomp", longo: "Súmulas aprovadas" },
+    prox: { rot: "Em pauta", selo: "Em pauta", cls: "alta", longo: "Repetitivos em pauta na semana seguinte" },
+  };
   async function vSemana(main, p) {
-    const ini = segundaDe(/^\d{4}-\d{2}-\d{2}$/.test(p.get("s") || "") ? p.get("s") : hojeISO()), fim = somaDias(ini, 6);
-    const naSemana = (d) => d && d >= ini && d <= fim;
+    const hoje = hojeISO(), esta = segundaDe(hoje);
+    const ini = segundaDe(/^\d{4}-\d{2}-\d{2}$/.test(p.get("s") || "") ? p.get("s") : hoje), fim = somaDias(ini, 6);
+    const f = { a: p.get("a") || "", tp: (p.get("tp") || "").split(",").filter((x) => TIPOS_SEM[x]), g: p.get("g") || "tipo" };
     const [t, pl, inf, sm, fj] = await Promise.all([temas(), pautas(), informativos().catch(() => []), sumulas().catch(() => []), feedJulgados().catch(() => [])]);
-    const teses = t.filter((x) => x.tp === "Tema" && naSemana(x.julg) && (x.tese || x._teseAguarda)).sort((a, b) => b.julg.localeCompare(a.julg));
-    const afet = t.filter((x) => naSemana(x.afet) && x.q).sort((a, b) => b.afet.localeCompare(a.afet));
-    const notas = inf.filter((x) => naSemana(x.d) && !/afeta/i.test(x.sec));
-    const julg = fj.filter((r) => naSemana(r.dj) && (r.tese || r.tj)).sort((a, b) => (b.fs ?? b.s ?? 0) - (a.fs ?? a.s ?? 0));
-    const sums = sm.filter((x) => naSemana(x.julg) || naSemana(x.pub));
-    const prox = [], vistos = new Set();
-    for (const x of pl) for (const [tp, n] of x.temas || []) {
-      if (x.d > fim && x.d <= somaDias(fim, 7) && !vistos.has(`${tp}${n}`)) { vistos.add(`${tp}${n}`); const tt = t.idx.get(`${tp}-${n}`); if (tt) prox.push({ x, tt }); }
+    // Todas as novidades de uma semana, no mesmo formato.
+    function novidades(i0) {
+      const i1 = somaDias(i0, 6), na = (d) => d && d >= i0 && d <= i1, out = [];
+      for (const x of t) {
+        if (x.tp === "Tema" && na(x.julg) && (x.tese || x._teseAguarda)) out.push({ tp: "teses", d: x.julg, ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.tese || "Julgado; a tese será divulgada com a publicação do acórdão.", m: `Julgado em ${fmtData(x.julg)}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ: ${x.tese || "julgado; tese a publicar"}` });
+        if (na(x.afet) && x.q) out.push({ tp: "afet", d: x.afet, ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.q, m: `Afetado em ${fmtData(x.afet)}${/suspens/i.test(x.info || "") ? " · com suspensão de processos" : ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ (afetado): ${x.q}` });
+      }
+      for (const x of inf) if (na(x.d) && !/afeta/i.test(x.sec)) out.push({ tp: "info", d: x.d, ar: x.ar, sa: x.sa, k: x.tema.replace(/\s*Tema\s+\d[\d.]*\.?\s*$/i, "").replace(/\.$/, ""), t: x.t, m: `${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)} · ` : ""}${x.org || x.sec} · Informativo ${x.ed}`, ab: `i:${x.id}`, txt: `${x.tema} ${x.t.replace(/\n/g, " ")} (${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}, ` : ""}${x.org || x.sec}; Informativo ${x.ed})` });
+      for (const r of fj) if (na(r.dj) && (r.tese || r.tj)) out.push({ tp: "julg", d: r.dj, s: r.fs ?? r.s ?? 0, ar: r.ar, sa: r.sa, k: r.as ? frase(r.as).replace(/\.\s+(?=\p{Lu})/gu, " · ") : `${r.cl} ${fmtNumProc(r.n)}`, t: limparTeseTxt(r.tese || r.tj), m: `${r.cl} ${fmtNumProc(r.n)} · ${D.orgaos[r.o] || ""} · publicado em ${fmtData(r.dj)}`, ab: `a:${r.id}`, txt: `${String(r.tese || r.tj).replace(/\n+/g, " ")} (${r.cl} ${fmtNumProc(r.n)}, ${D.orgaos[r.o] || ""})`, esc: true });
+      for (const x of sm) if (na(x.julg) || na(x.pub)) out.push({ tp: "sum", d: x.julg || x.pub, ar: x.ar, sa: x.sa, k: `Súmula ${x.n} · ${x.org || ""}`, t: x.t, m: x.julg ? `Aprovada em ${fmtData(x.julg)}` : `Publicada em ${fmtData(x.pub)}`, ab: `s:${x.n}`, txt: `Súmula ${x.n}/STJ: ${x.t}` });
+      const vistos = new Set();
+      for (const x of pl) for (const [tp, n] of x.temas || []) {
+        if (x.d > i1 && x.d <= somaDias(i1, 7) && !vistos.has(`${tp}${n}`)) { vistos.add(`${tp}${n}`); const tt = t.idx.get(`${tp}-${n}`);
+          if (tt) out.push({ tp: "prox", d: x.d, ar: tt.ar, sa: tt.sa, k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[x.o] || tt.org || ""}`, t: tt.q, m: `Sessão de ${fmtDiaL(x.d)}`, ab: `t:${tt.n}`, txt: `${tt.tp} ${tt.n}/STJ, em pauta em ${fmtData(x.d)}: ${tt.q}` }); }
+      }
+      return out;
     }
-    const h = (a) => AREA_COR[(a || [])[0]] ?? 222;
-    const secoes = [
-      { id: "teses", rot: "Teses firmadas em repetitivos", itens: teses.map((x) => ({ h: h(x.ar), k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.tese || "Tese aguardando a publicação do acórdão.", m: `Julgado em ${fmtData(x.julg)}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ: ${x.tese || "julgado; tese a publicar"}` })) },
-      { id: "info", rot: "Informativo do STJ", itens: notas.map((x) => ({ h: h(x.ar), k: x.tema.split(/\.\s+(?=\p{Lu})/u).slice(0, 3).join(" · ").replace(/\.$/, ""), t: x.t.replace(/\n/g, " "), m: `${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)} · ` : ""}${x.org || x.sec} · Informativo ${x.ed}`, ab: `i:${x.id}`, txt: `${x.tema}\n${x.t.replace(/\n/g, " ")} (${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}, ` : ""}${x.org || x.sec}; Informativo ${x.ed})` })) },
-      { id: "afet", rot: "Novos temas afetados", itens: afet.map((x) => ({ h: h(x.ar), k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.q, m: `Afetado em ${fmtData(x.afet)}${/suspens/i.test(x.info || "") ? " · com suspensão de processos" : ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ (afetado): ${x.q}` })) },
-      { id: "julg", rot: "Julgados em destaque", itens: julg.slice(0, 12).map((r) => ({ h: h(r.ar), k: r.as ? frase(r.as).replace(/\.\s+(?=\p{Lu})/gu, " · ") : `${r.cl} ${fmtNumProc(r.n)}`, t: String(r.tese || r.tj).replace(/^["“]+|["”]+$/g, "").replace(/\n+/g, " ").replace(/^\s*\d{1,2}\.\s*/, ""), m: `${r.cl} ${fmtNumProc(r.n)} · ${D.orgaos[r.o] || ""} · publicado em ${fmtData(r.dj)}`, ab: `a:${r.id}`, txt: `${String(r.tese || r.tj).replace(/\n+/g, " ")} (${r.cl} ${fmtNumProc(r.n)}, ${D.orgaos[r.o] || ""})` })) },
-      { id: "sum", rot: "Súmulas aprovadas", itens: sums.map((x) => ({ h: h(x.ar), k: `Súmula ${x.n} · ${x.org || ""}`, t: x.t, m: x.julg ? `Aprovada em ${fmtData(x.julg)}` : `Publicada em ${fmtData(x.pub)}`, ab: `s:${x.n}`, txt: `Súmula ${x.n}/STJ: ${x.t}` })) },
-      { id: "prox", rot: "Repetitivos em pauta na semana seguinte", itens: prox.sort((a, b) => a.x.d.localeCompare(b.x.d)).map(({ x, tt }) => ({ h: h(tt.ar), k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[x.o] || tt.org || ""}`, t: tt.q, m: `Sessão de ${fmtDiaL(x.d)}`, ab: `t:${tt.n}`, txt: `${tt.tp} ${tt.n}/STJ, em pauta em ${fmtData(x.d)}: ${tt.q}` })) },
-    ].filter((sx) => sx.itens.length);
-    const total = secoes.reduce((a, sx) => a + sx.itens.length, 0);
-    const MAX = 5;
-    const linha = (it) => `<li style="--h:${it.h}"><button type="button" class="lk" data-sem="${esc(it.ab)}"><span class="k">${esc(it.k)}</span><span class="t">${esc(it.t.length > 420 ? it.t.slice(0, 400).replace(/\s\S*$/, "") + "…" : it.t)}</span><span class="m">${esc(it.m)}</span></button></li>`;
+    const todos = novidades(ini);
+    const semanas = Array.from({ length: 16 }, (_, i) => somaDias(esta, -7 * i));
+    const contSem = new Map(semanas.map((w) => [w, w === ini ? todos.length : novidades(w).length]));
+    const intervalo = (w) => { const e = somaDias(w, 6); return `${+w.slice(8)}${w.slice(5, 7) !== e.slice(5, 7) ? ` de ${MESES_L[+w.slice(5, 7) - 1]}` : ""} a ${fmtCurta(e)}`; };
     main.innerHTML = `<div id="sem">
-      <div class="sem-cab"><h2>Semana de ${fmtCurta(ini)} a ${fmtCurta(fim)}${ini.slice(0, 4) !== hojeISO().slice(0, 4) ? ` de ${ini.slice(0, 4)}` : ""}</h2>
-        <div class="sem-nav"><a class="btn btn-claro btn-peq" href="#semana?s=${somaDias(ini, -7)}">${ico("seta", "gira")} Anterior</a>${fim < hojeISO() ? `<a class="btn btn-claro btn-peq" href="#semana?s=${somaDias(ini, 7)}">Seguinte ${ico("seta")}</a>` : ""}</div></div>
-      ${total ? `<div class="sem-resumo">${secoes.map((sx) => `<div class="capa-bloco ${{ teses: "ok", info: "info", afet: "rel", julg: "pri", sum: "acomp", prox: "alta" }[sx.id]}"><b>${fmtInt(sx.itens.length)}</b><span>${{ teses: "teses firmadas em repetitivos", info: "notas do Informativo", afet: "temas afetados", julg: "julgados com tese", sum: "súmulas aprovadas", prox: "repetitivos em pauta a seguir" }[sx.id]}</span></div>`).join("")}</div>
-      <div class="acoes" id="sem-acoes" style="margin:0 0 18px">
-        <button type="button" class="btn btn-pri btn-peq" id="sem-copiar">${ico("copiar")} Copiar resumo</button>
-        <button type="button" class="btn btn-claro btn-peq" id="sem-imprimir">${ico("arquivo")} Imprimir ou salvar em PDF</button>
-        <button type="button" class="btn btn-claro btn-peq" id="sem-link">${ico("link")} Copiar link</button></div>
-      ${secoes.map((sx) => `<section class="sem-sec"><h3>${esc(sx.rot)} <span class="n">${sx.itens.length}</span></h3>
-        <ul class="sem-lista">${sx.itens.slice(0, MAX).map(linha).join("")}</ul>
-        ${sx.itens.length > MAX ? `<button type="button" class="btn btn-claro btn-mais" data-sem-mais="${sx.id}">Mostrar mais (${sx.itens.length - MAX})</button>` : ""}</section>`).join("")}`
-      : vazio("destaques", "Semana sem novidades registradas", "Os dados de acórdãos chegam em lotes mensais; os repetitivos, as pautas e o Informativo, semanalmente. Veja a semana anterior.")}
-      <p class="nota" style="margin-top:8px">Inclui as teses de repetitivos julgados, as notas do Informativo publicadas, os temas afetados, os julgados com tese publicados, as súmulas aprovadas na semana e os repetitivos pautados para a semana seguinte.</p></div>`;
-    $("#sem").addEventListener("click", async (e) => {
-      const m = e.target.closest("[data-sem-mais]");
-      if (m) { const sx = secoes.find((z) => z.id === m.dataset.semMais); m.previousElementSibling.innerHTML = sx.itens.map(linha).join(""); m.remove(); return; }
+      <div class="sem-cab">
+        <div><p class="sem-sobre">${ini === esta ? "Esta semana" : ini === somaDias(esta, -7) ? "Semana passada" : "Semana"}</p><h2>${intervalo(ini)}${ini.slice(0, 4) !== hoje.slice(0, 4) ? ` de ${ini.slice(0, 4)}` : ""}</h2></div>
+        <div class="sem-nav">
+          <a class="btn btn-claro btn-peq" href="#semana?s=${somaDias(ini, -7)}" aria-label="Semana anterior">${ico("seta", "gira")}</a>
+          <span class="fd-filtros" id="sem-escolher"></span>
+          ${ini < esta ? `<a class="btn btn-claro btn-peq" href="#semana?s=${somaDias(ini, 7)}" aria-label="Semana seguinte">${ico("seta")}</a><a class="btn btn-claro btn-peq" href="#semana">Esta semana</a>` : ""}
+        </div>
+      </div>
+      <div class="sem-resumo" id="sem-resumo"></div>
+      <div class="sem-ferr"><div class="fd-filtros filtros-lista" id="sem-pil"></div>
+        <div class="sem-acoes" id="sem-acoes">
+          <button type="button" class="btn btn-pri btn-peq" id="sem-copiar">${ico("copiar")} Copiar resumo</button>
+          <button type="button" class="btn btn-claro btn-peq" id="sem-imprimir" title="Imprimir ou salvar em PDF">${ico("arquivo")} PDF</button>
+          <button type="button" class="btn btn-claro btn-peq" id="sem-link" title="Copiar link desta semana">${ico("link")}</button></div></div>
+      <div id="sem-corpo"></div></div>`;
+    let vis = [], cA = {};
+    // Seletor de semana: qualquer data do calendário ou uma das semanas recentes.
+    pilulas($("#sem-escolher"), [{ rot: "Escolher semana", titulo: "Escolher semana", tipo: "um", ico: "semana", obrigatorio: true, semLimpar: true, padrao: ini, rotAtual: () => "Escolher semana",
+      datas: "uma", rotData: "Qualquer dia da semana desejada", max: hoje, rotAtalhos: "Semanas recentes", vertical: true,
+      get: () => ini, set: (v) => { location.hash = `#semana?s=${segundaDe(v)}${f.a ? `&a=${f.a}` : ""}${f.tp.length ? `&tp=${f.tp.join(",")}` : ""}${f.g !== "tipo" ? `&g=${f.g}` : ""}`; },
+      opcoes: () => semanas.map((w) => ({ v: w, t: `${w === esta ? "Esta semana · " : ""}${intervalo(w)}`, n: contSem.get(w) })) }], () => {});
+    const linha = (it) => { const tp = TIPOS_SEM[it.tp], a = (it.ar || [])[0];
+      return `<li class="ncard ncard-sem" style="--h:${AREA_COR[a] ?? 222}"><div class="nota-cab"><span class="selo ${tp.cls}">${tp.selo}</span>${seloMat(it.ar, it.sa)}</div>
+        <h3 class="nota-tema"><button type="button" data-sem="${esc(it.ab)}">${esc(it.k)}</button></h3>
+        <div class="nota-tese${it.t.length > 600 ? " longa" : ""}">${it.t.split("\n").map((z) => `<p>${esc(z)}</p>`).join("")}</div>
+        ${it.t.length > 600 ? `<button type="button" class="nota-mais" data-sem-ler>Continuar lendo</button>` : ""}
+        <div class="nota-rodape"><span class="nota-proc">${esc(it.m)}</span><span class="dir"><button type="button" class="link-acao" data-sem="${esc(it.ab)}">Abrir ${ico("seta")}</button></span></div></li>`; };
+    function desenhar() {
+      gravarHash("semana", { s: ini === esta ? "" : ini, a: f.a, tp: f.tp.join(","), g: f.g === "tipo" ? "" : f.g });
+      const porMat = todos.filter((x) => casaMat(f.a, x.ar, x.sa));
+      cA = contarMat(todos.filter((x) => !f.tp.length || f.tp.includes(x.tp)), (x) => x.ar, (x) => x.sa);
+      const contT = {}; porMat.forEach((x) => (contT[x.tp] = (contT[x.tp] || 0) + 1));
+      vis = porMat.filter((x) => !f.tp.length || f.tp.includes(x.tp));
+      $("#sem-resumo").innerHTML = Object.entries(TIPOS_SEM).filter(([k]) => contT[k]).map(([k, v]) => `<button type="button" class="capa-bloco ${v.cls}" data-sem-tp="${k}" aria-pressed="${f.tp.includes(k)}"><b>${fmtInt(contT[k])}</b><span>${v.longo}</span></button>`).join("");
+      pil.desenhar();
+      let grupos = [];
+      if (f.g === "tipo") grupos = Object.entries(TIPOS_SEM).map(([k, v]) => ({ tit: v.longo, cls: v.cls, itens: vis.filter((x) => x.tp === k).sort((a, b) => (b.s || 0) - (a.s || 0) || b.d.localeCompare(a.d)) }));
+      if (f.g === "mat") grupos = [...Object.keys(AREAS), ""].map((a) => ({ tit: AREAS[a] || "Sem matéria identificada", h: AREA_COR[a], itens: vis.filter((x) => ((x.ar || [])[0] || "") === a) }));
+      if (f.g === "dia") { const dias = [...new Set(vis.map((x) => x.d))].sort().reverse(); grupos = dias.map((d) => ({ tit: fmtDiaL(d).replace(/^./, (c) => c.toUpperCase()), itens: vis.filter((x) => x.d === d) })); }
+      grupos = grupos.filter((g) => g.itens.length);
+      $("#sem-corpo").innerHTML = grupos.length ? grupos.map((g, gi) => `<section class="grupo-notas">
+          <header class="grupo-cab"${g.h != null ? ` style="--h:${g.h}"` : ""}><h2>${esc(g.tit)}</h2><span>${g.itens.length} ${g.itens.length > 1 ? "itens" : "item"}</span></header>
+          <ol class="lista-notas">${g.itens.slice(0, 6).map(linha).join("")}</ol>
+          ${g.itens.length > 6 ? `<button type="button" class="btn btn-claro btn-mais" data-sem-mais="${gi}">Mostrar mais (${g.itens.length - 6})</button>` : ""}</section>`).join("")
+        : vazio("destaques", todos.length ? "Nada neste filtro" : "Semana sem novidades registradas", todos.length ? "Troque a matéria ou o tipo de novidade." : "Os repetitivos, as pautas e o Informativo mudam toda semana; os julgados chegam em lotes mensais. Escolha outra semana.");
+      grupos.forEach((g, gi) => { $(`[data-sem-mais="${gi}"]`)?.addEventListener("click", (e) => { e.currentTarget.previousElementSibling.innerHTML = g.itens.map(linha).join(""); e.currentTarget.remove(); }); });
+    }
+    const pil = pilulas($("#sem-pil"), [
+      { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => cA },
+      { rot: "Tipo", titulo: "Tipo de novidade", tipo: "multi", get: () => f.tp, set: (v) => (f.tp = v), opcoes: () => Object.entries(TIPOS_SEM).map(([k, v]) => ({ v: k, t: v.rot, n: todos.filter((x) => x.tp === k && casaMat(f.a, x.ar, x.sa)).length })) },
+      defOrdem(() => f.g, (v) => (f.g = v), [{ v: "tipo", t: "Tipo de novidade" }, { v: "mat", t: "Matéria" }, { v: "dia", t: "Dia" }], "Escolha como agrupar as novidades da semana."),
+    ], desenhar);
+    $("#sem-resumo").addEventListener("click", (e) => { const b = e.target.closest("[data-sem-tp]"); if (!b) return; const k = b.dataset.semTp; f.tp = f.tp.includes(k) ? f.tp.filter((x) => x !== k) : [...f.tp, k]; desenhar(); });
+    $("#sem-corpo").addEventListener("click", async (e) => {
+      const ler = e.target.closest("[data-sem-ler]");
+      if (ler) { const tt = ler.closest(".ncard").querySelector(".nota-tese"); tt.classList.toggle("aberta"); ler.textContent = tt.classList.contains("aberta") ? "Recolher" : "Continuar lendo"; return; }
       const b = e.target.closest("[data-sem]"); if (!b) return;
       const [k, v] = [b.dataset.sem.slice(0, 1), b.dataset.sem.slice(2)];
-      if (k === "t") abrirTema("Tema", +v) ;
+      if (k === "t") abrirTema("Tema", +v);
       if (k === "s") abrirSumula(+v);
       if (k === "i") { const l = await informativos(); abrirInformativo(l.idx.get(v)); }
       if (k === "a") { const r = fj.find((x) => String(x.id) === v); if (r) abrirAcordao(r); }
     });
-    $("#sem-copiar")?.addEventListener("click", () => {
-      const txt = [`Resumo do STJ — semana de ${fmtCurta(ini)} a ${fmtCurta(fim)}`, ...secoes.map((sx) => `\n${sx.rot.toUpperCase()} (${sx.itens.length})\n${sx.itens.slice(0, 10).map((it) => `• ${it.txt}`).join("\n")}${sx.itens.length > 10 ? `\n• e mais ${sx.itens.length - 10}` : ""}`), `\nFonte: Radar STJ (${location.origin}${location.pathname}#semana?s=${ini})`].join("\n");
+    $("#sem-copiar").addEventListener("click", () => {
+      const tipos = Object.keys(TIPOS_SEM).filter((k) => vis.some((x) => x.tp === k));
+      const txt = [`Resumo do STJ — semana de ${intervalo(ini)}${f.a ? ` (${rotMat(f.a)})` : ""}`, ...tipos.map((k) => { const its = vis.filter((x) => x.tp === k); return `\n${TIPOS_SEM[k].longo.toUpperCase()} (${its.length})\n${its.slice(0, 12).map((it) => `• ${it.txt}`).join("\n")}${its.length > 12 ? `\n• e mais ${its.length - 12}` : ""}`; }), `\nFonte: Radar STJ — ${location.href}`].join("\n");
       copiar(txt, "Resumo copiado. Cole no e-mail ou no WhatsApp.");
     });
-    $("#sem-imprimir")?.addEventListener("click", () => window.print());
-    $("#sem-link")?.addEventListener("click", () => copiar(`${location.origin}${location.pathname}#semana?s=${ini}`, "Link da semana copiado."));
+    $("#sem-imprimir").addEventListener("click", () => window.print());
+    $("#sem-link").addEventListener("click", () => copiar(location.href, "Link desta semana copiado."));
+    desenhar();
   }
 
   // ============================================================== SÚMULAS
