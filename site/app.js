@@ -696,203 +696,464 @@
   }
 
   // ========================================================= ATUALIZE-SE
-  // Leitura em cartões: um julgado por tela, tese em destaque, progresso e
-  // controle do que já foi lido. A rolagem encaixa cartão a cartão (scroll-snap).
+  // Leitura em cartões: uma novidade por tela, tese em destaque com marca-texto
+  // nas expressões decisivas, filtros facetados e fila que aprende com a leitura.
   const FEED_TIPOS = {
-    tese: { rot: "Tese firmada em repetitivo", cls: "ok", peso: 100 },
-    afetacao: { rot: "Novo tema afetado", cls: "rel", peso: 75 },
-    pauta: { rot: "Vai a julgamento", cls: "alta", peso: 70 },
-    publicado: { rot: "Acórdão do repetitivo publicado", cls: "acomp", peso: 55 },
-    julgado: { rot: "Julgado relevante", cls: "pri", peso: 40 },
+    tese: { rot: "Tese firmada", selo: "Tese firmada", longo: "Tese firmada em repetitivo", cls: "ok", peso: 100 },
+    afetacao: { rot: "Tema afetado", selo: "Tema afetado", longo: "Novo tema afetado", cls: "rel", peso: 75 },
+    pauta: { rot: "Em pauta", selo: "Vai a julgamento", longo: "Repetitivo em pauta", cls: "alta", peso: 70 },
+    publicado: { rot: "Acórdão publicado", selo: "Acórdão publicado", longo: "Acórdão de repetitivo publicado", cls: "acomp", peso: 55 },
+    julgado: { rot: "Julgados", selo: "Julgado", longo: "Julgados das Turmas e Seções", cls: "pri", peso: 40 },
   };
+  const AREA_COR = { "proc-civil": 226, civil: 208, consumidor: 24, familia: 330, empresarial: 262, bancario: 190, tributario: 150, administrativo: 42, previdenciario: 172, ambiental: 105, penal: 356, trabalho: 290 };
+  const PERIODOS = [[0, "Qualquer data"], [3, "Últimos 3 dias"], [7, "Últimos 7 dias"], [15, "Últimos 15 dias"], [30, "Últimos 30 dias"]];
+  const FILTRO_VAZIO = () => ({ ar: [], tp: [], per: 0, tese: "", org: [], rel: "" });
+  const feedJulgados = () => carregar("atualize").catch(() => destaques());
+
+  function feedF() {
+    if (!P.feedF) { P.feedF = FILTRO_VAZIO(); if (P.feedAreas?.length) P.feedF.ar = [...P.feedAreas]; }
+    return P.feedF;
+  }
+  const pesos = () => (P.feedPeso = P.feedPeso || {});
+  function ajustarPeso(areas, d) {
+    const p = pesos();
+    for (const a of areas) p[a] = Math.max(-8, Math.min(12, (p[a] || 0) + d));
+    salvarP();
+  }
+
   async function itensFeed() {
-    const [t, ds, pl] = await Promise.all([temas(), destaques(), pautas()]);
+    const [t, ds, pl] = await Promise.all([temas(), feedJulgados(), pautas()]);
     const hoje = hojeISO(), desde = somaDias(hoje, -45);
     const itens = [];
-    const idade = (d) => Math.max(0, (new Date(hoje) - new Date(d)) / 864e5);
+    const idade = (d) => Math.abs((new Date(hoje) - new Date(d)) / 864e5);
+    const deTema = (x, extra) => ({ t: x, ar: x.ar || [], org: x.org || "", tese: !!x.tese, _n: norm(`${x.q || ""} ${x.tese || ""} ${x.ass || ""}`), ...extra });
     for (const x of t) {
-      if (x.julg >= desde && (x.tese || x._teseAguarda)) itens.push({ k: `tese:${x.tp}-${x.n}`, tipo: "tese", d: x.julg, t: x, ar: x.ar || [] });
-      else if (x.pub >= desde && x.tese) itens.push({ k: `pub:${x.tp}-${x.n}`, tipo: "publicado", d: x.pub, t: x, ar: x.ar || [] });
-      if (x.afet >= desde && x.q) itens.push({ k: `afet:${x.tp}-${x.n}`, tipo: "afetacao", d: x.afet, t: x, ar: x.ar || [] });
+      if (x.julg >= desde && (x.tese || x._teseAguarda)) itens.push(deTema(x, { k: `tese:${x.tp}-${x.n}`, tipo: "tese", d: x.julg }));
+      else if (x.pub >= desde && x.tese) itens.push(deTema(x, { k: `pub:${x.tp}-${x.n}`, tipo: "publicado", d: x.pub }));
+      if (x.afet >= desde && x.q) itens.push(deTema(x, { k: `afet:${x.tp}-${x.n}`, tipo: "afetacao", d: x.afet, tese: false }));
     }
     const lim = somaDias(hoje, 21);
     const vistosP = new Set();
     for (const p of pl) {
-      if (!p.temas?.length || p.d > lim) continue;
+      if (!p.temas?.length || p.d > lim || p.d < hoje) continue;
       for (const [tp, n] of p.temas) {
         const x = t.idx.get(`${tp}-${n}`); const k = `pauta:${tp}-${n}:${p.d}`;
-        if (x && !vistosP.has(k)) { vistosP.add(k); itens.push({ k, tipo: "pauta", d: p.d, t: x, p, ar: x.ar || [] }); }
+        if (x && !vistosP.has(k)) { vistosP.add(k); itens.push(deTema(x, { k, tipo: "pauta", d: p.d, p, org: D.orgaos[p.o] || x.org || "", rel: p.rel || "", tese: false })); }
       }
     }
-    const recentes = agrupar(ds.filter((r) => r.dj >= somaDias(hoje, -75))).filter((r) => r.s >= 8 || r.tese || r.tj);
-    for (const r of recentes) itens.push({ k: `ac:${r.id}`, tipo: "julgado", d: r.dj, r, ar: r.ar || [] });
-    for (const it of itens) it.p0 = FEED_TIPOS[it.tipo].peso + (it.r ? Math.min(it.r.s, 20) : 0) + (it.tipo === "pauta" ? 20 - idade(hoje) : -idade(it.d) * 0.9);
+    const vistosA = new Set();
+    for (const r of ds) {
+      if (r.dj < somaDias(hoje, -80)) continue;
+      const chave = `${r.o}|${r.dd || ""}|${(r.em || r.h || "").split("\n")[0].slice(0, 300)}|${String(r.tese || r.tj || "").slice(0, 160)}`;
+      if (vistosA.has(chave)) continue; vistosA.add(chave);
+      if (!(r.s >= 6 || r.tese || r.tj)) continue;
+      itens.push({ k: `ac:${r.id}`, tipo: "julgado", d: r.dj, r, ar: r.ar || [], org: D.orgaos[r.o] || "", rel: r.rel || "", tese: !!(r.tese || r.tj), _n: norm(`${r.h || (r.em || "").split("\n")[0]} ${r.tese || ""} ${r.tj || ""}`) });
+    }
+    // Termos do "Meu radar" viram prioridade na fila.
+    const radar = (P.termos || []).map((termo) => ({ termo, tm: /^tema\s*:?\s*(\d+)$/i.exec(termo.trim()), c: /^tema\s*:?\s*\d+$/i.test(termo.trim()) ? null : Busca.compilar(termo) })).filter((x) => x.tm || (x.c && !x.c.vazio && !x.c.erro));
+    const pw = pesos();
+    for (const it of itens) {
+      const hit = radar.find((q) => (q.tm ? it.t && it.t.n === +q.tm[1] : q.c.testa(it._n)));
+      if (hit) it.radar = hit.termo;
+      const gosto = it.ar.length ? Math.max(...it.ar.map((a) => pw[a] || 0)) : 0;
+      it.gosto = gosto;
+      it.p0 = FEED_TIPOS[it.tipo].peso + (it.r ? Math.min(it.r.s || 0, 20) + (it.tese ? 8 : 0) : 0)
+        + (it.tipo === "pauta" ? 20 - idade(it.d) : -idade(it.d) * 0.9) + gosto * 3 + (hit ? 18 : 0);
+    }
     itens.sort((a, b) => b.p0 - a.p0);
     // Intercala tipos para o ritmo da leitura não ficar monótono.
     const filas = {}; itens.forEach((i) => (filas[i.tipo] = filas[i.tipo] || []).push(i));
     const ordem = ["tese", "julgado", "afetacao", "julgado", "pauta", "julgado", "publicado", "julgado"];
-    const out = []; let vazias = 0, j = 0;
-    while (vazias < ordem.length) { const f = filas[ordem[j++ % ordem.length]]; if (f?.length) { out.push(f.shift()); vazias = 0; } else vazias++; }
+    const out = []; let vazias = 0, j = 0, ultArea = "";
+    const tirar = (f, tipo) => {
+      // Entre julgados, evita duas matérias iguais seguidas quando há alternativa próxima.
+      if (tipo !== "julgado") return f.shift();
+      const i = f.slice(0, 6).findIndex((x) => (x.ar[0] || "") !== ultArea);
+      const [x] = f.splice(Math.max(0, i), 1); ultArea = x.ar[0] || ""; return x;
+    };
+    while (vazias < ordem.length) { const tp = ordem[j++ % ordem.length], f = filas[tp]; if (f?.length) { out.push(tirar(f, tp)); vazias = 0; } else vazias++; }
     return out;
   }
-  function lidos() { return (P.lidos = P.lidos || {}); }
-  function marcarLido(k) { const l = lidos(); if (!l[k]) { l[k] = hojeISO(); const ks = Object.keys(l); if (ks.length > 3000) ks.slice(0, ks.length - 3000).forEach((x) => delete l[x]); salvarP(); } }
-  async function contarNaoLidos() {
-    try { const it = await itensFeed(); const a = P.feedAreas || []; return it.filter((x) => !lidos()[x.k] && (!a.length || x.ar.some((y) => a.includes(y)))).length; } catch { return 0; }
+  // Um item passa pelos filtros? `sem` ignora uma dimensão (contagem facetada).
+  function passaFeed(it, f, sem = "") {
+    if (sem !== "ar" && f.ar.length && !it.ar.some((a) => f.ar.includes(a))) return false;
+    if (sem !== "tp" && f.tp.length && !f.tp.includes(it.tipo)) return false;
+    if (sem !== "per" && f.per && Math.abs((new Date(hojeISO()) - new Date(it.d)) / 864e5) > f.per) return false;
+    if (sem !== "tese" && f.tese && (f.tese === "com") !== it.tese) return false;
+    if (sem !== "org" && f.org.length && !f.org.includes(it.org)) return false;
+    if (sem !== "rel" && f.rel && norm(it.rel) !== norm(f.rel)) return false;
+    return true;
   }
+  const nFiltros = (f) => f.ar.length + f.tp.length + (f.per ? 1 : 0) + (f.tese ? 1 : 0) + f.org.length + (f.rel ? 1 : 0);
+  function lidos() { return (P.lidos = P.lidos || {}); }
+  function marcarLido(k) { const l = lidos(); if (!l[k]) { l[k] = hojeISO(); const ks = Object.keys(l); if (ks.length > 4000) ks.slice(0, ks.length - 4000).forEach((x) => delete l[x]); salvarP(); } }
+  const lidosHoje = () => { const h = hojeISO(); return Object.values(lidos()).filter((d) => d === h).length; };
+  async function contarNaoLidos() {
+    try { const it = await itensFeed(); const f = feedF(); return it.filter((x) => !lidos()[x.k] && passaFeed(x, f)).length; } catch { return 0; }
+  }
+
+  // Marca-texto: realça as expressões que dizem o que foi decidido.
+  const RE_CHAVE = /(?<!\p{L})(?:não\s+)?(?:(?:é|são|será|serão|revela-se|mostra-se|afigura-se|reveste-se)\s+(?:de\s+)?(?:in|im|i)?(?:devid[oa]s?|cabíve(?:l|is)|possíve(?:l|is)|válid[oa]s?|legítim[oa]s?|lícit[oa]s?|admissíve(?:l|is)|nul[oa]s?|abusiv[oa]s?|vedad[oa]s?|obrigatóri[oa]s?|necessári[oa]s?|exigíve(?:l|is)|aplicáve(?:l|is)|competente|prescritíve(?:l|is)|eficaz(?:es)?|oponíve(?:l|is)|penhoráve(?:l|is)|constitucional|legal|ilegal|irregular|regular)|incidem?|cabem?|prescrevem?|configuram?|caracterizam?|dispensam?|exigem?|depende|independe|prevalecem?|respondem?|admite-se|aplicam?-se|devem?\s+ser|podem?\s+ser|t[eê]m\s+direito|autorizam?|afasta|legitima|impõe-se|compete)(?!\p{L})(?:[  ]+[^\s.;:,()]+){0,7}/giu;
+  function marcaTexto(html, max = 2) {
+    let n = 0;
+    return html.replace(RE_CHAVE, (m) => {
+      if (n >= max || m.length < 7 || /s[úu]mula|\bart(s)?\b|\bn$/i.test(m)) return m;
+      let corpo = m, resto = "";
+      const FIM = /(\s+(?:quanto|que|de|do|da|dos|das|em|a|o|e|ao|aos|à|às|na|no|nas|nos|para|por|pelo|pela|com|se|sobre|entre|quando|como|um|uma))+\s*$|[\s,]+$/i;
+      const f2 = FIM.exec(corpo); if (f2) { resto = corpo.slice(f2.index); corpo = corpo.slice(0, f2.index); }
+      n++; return `<mark class="mt">${corpo}</mark>${resto}`;
+    });
+  }
+  const tempoLeitura = (txt) => { const w = String(txt || "").split(/\s+/).length; const s = Math.max(10, Math.round((w / 210) * 60 / 5) * 5); return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`; };
+  const saudacao = () => { const h = new Date().getHours(); return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite"; };
+
   function cartaoFeed(it, i, total) {
     const tp = FEED_TIPOS[it.tipo];
-    const areas = it.ar.slice(0, 2).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
-    let kicker = "", principal = "", apoio = "", meta = "", acoes = "", rotTexto = "";
+    const cor = AREA_COR[it.ar[0]] ?? 222;
+    const areas = it.ar.slice(0, 2).map((k) => `<button type="button" class="selo area" data-f="area" data-ar="${k}" style="--h:${AREA_COR[k] ?? 222}" title="Ler só ${esc(AREAS[k] || k)}">${esc(AREAS[k] || k)}</button>`).join("");
+    let kicker = "", principal = "", apoio = "", meta = "", acoes = "", rotTexto = "", marcar = false;
     if (it.t) {
       const x = it.t;
-      kicker = `${x.tp} ${x.n} · ${esc(x.org || "")}`;
+      kicker = `${x.tp} ${x.n} · ${esc(it.org || x.org || "")}`;
       if (it.tipo === "tese" || it.tipo === "publicado") {
-        rotTexto = "Tese firmada";
+        rotTexto = x.tese ? "O STJ fixou" : "Tema julgado";
         principal = x.tese ? esc(x.tese) : `Julgado em ${fmtData(x.julg)}. A tese será divulgada com a publicação do acórdão.`;
+        marcar = !!x.tese;
         apoio = x.q ? `<b>Questão:</b> ${esc(x.q)}` : "";
         meta = it.tipo === "tese" ? `Julgado em ${fmtData(x.julg)}` : `Acórdão publicado em ${fmtData(x.pub)}`;
       } else if (it.tipo === "afetacao") {
-        rotTexto = "Questão submetida";
+        rotTexto = "O STJ vai decidir";
         principal = esc(x.q);
         apoio = /suspens/i.test(x.info || "") ? `<b>Atenção:</b> há determinação de suspensão de processos sobre a matéria.` : "";
         meta = `Afetado em ${fmtData(x.afet)}`;
       } else {
-        rotTexto = "Questão em julgamento";
+        rotTexto = "Em julgamento";
         principal = esc(x.q || "");
-        apoio = `${esc(it.p.p)}${it.p.pet ? " (" + esc(it.p.pet) + ")" : ""} · ${esc(D.orgaos[it.p.o] || "")} · Rel. ${esc(it.p.rel || "")}`;
+        apoio = `${esc(it.p.p)}${it.p.pet ? " (" + esc(it.p.pet) + ")" : ""} · ${esc(it.org)} · ${esc(relatorFmt(it.p.rel || ""))}`;
         meta = `Sessão de ${fmtDiaL(it.p.d)}`;
       }
       acoes = `<button type="button" class="btn btn-claro btn-peq" data-f="tema">${ico("repetitivos")} Linha do tempo</button>
-        <a class="btn btn-claro btn-peq" href="${URLS.tema(x.tp, x.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>`;
+        <a class="btn btn-claro btn-peq so-largo" href="${URLS.tema(x.tp, x.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>`;
     } else {
       const r = it.r;
       REG_AC.set(String(r.id), r);
-      kicker = `${esc(r.cl)} ${fmtNumProc(r.n)} · ${esc(D.orgaos[r.o] || "")}`;
+      kicker = `${esc(r.cl)} ${fmtNumProc(r.n)} · ${esc(it.org)}`;
       const tese = r.tese || r.tj;
+      const cab = frase((r.em || r.h || "").split("\n")[0]);
       rotTexto = tese ? (r.tese ? "Tese jurídica" : "Tese de julgamento") : "O que foi decidido";
-      principal = tese ? esc(tese).replace(/\n+/g, "<br>") : esc(frase(r.em.split("\n")[0]));
-      apoio = tese ? esc(frase(r.em.split("\n")[0])) : "";
-      const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 3).map((k) => MOTIVOS[k]).join(" · ");
-      meta = `Julgado em ${fmtData(r.dd)} · publicado em ${fmtData(r.dj)}${motivos ? ` · ${esc(motivos)}` : ""}`;
-      acoes = `<button type="button" class="btn btn-claro btn-peq" data-f="acordao">${ico("arquivo")} Ementa completa</button>
-        <a class="btn btn-claro btn-peq" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor ${ico("externo")}</a>`;
+      principal = tese ? esc(String(tese).trim().replace(/^["“']+|["”']+$/g, "")).replace(/\n+/g, "<br>") : esc(cab);
+      marcar = !!tese;
+      apoio = tese ? esc(cab) : "";
+      const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 2).map((k) => MOTIVOS[k]).join(" · ");
+      meta = `${r.rel ? esc(relatorFmt(r.rel)) + " · " : ""}${r.dd ? `julgado em ${fmtData(r.dd)} · ` : ""}publicado em ${fmtData(r.dj)}${motivos ? ` · ${esc(motivos)}` : ""}`;
+      acoes = `<button type="button" class="btn btn-claro btn-peq" data-f="acordao">${ico("arquivo")} Ler a ementa</button>
+        <a class="btn btn-claro btn-peq so-largo" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor ${ico("externo")}</a>`;
     }
     const salvoK = it.t ? `t:${it.t.tp}-${it.t.n}` : `a:${it.r.id}`;
     const salvo = !!P.salvos[salvoK];
-    return `<article class="reel" data-k="${esc(it.k)}" data-i="${i}" aria-label="Item ${i + 1} de ${total}">
+    const novo = it.d > (D.feedVistoAnt || "") && it.tipo !== "pauta" && !lidos()[it.k];
+    const pers = it.radar ? `<span class="selo radar" title="Corresponde a um termo do Meu radar">${ico("radar")} ${esc(it.radar.length > 28 ? it.radar.slice(0, 26) + "…" : it.radar)}</span>`
+      : it.gosto >= 4 ? `<span class="selo gosto">Do seu interesse</span>` : "";
+    const txtPrinc = principal.replace(/<[^>]+>/g, " ");
+    return `<article class="reel" data-k="${esc(it.k)}" data-i="${i}" style="--h:${cor}" aria-label="Novidade ${i + 1} de ${total}">
       <div class="reel-in">
-        <header class="reel-cab"><span class="selo ${tp.cls}">${tp.rot}</span>${areas}${lidos()[it.k] ? '<span class="selo canc">Lido</span>' : ""}</header>
+        <header class="reel-cab"><span class="selo ${tp.cls}">${tp.selo}</span>${areas}${pers}${novo ? '<span class="novo">Novo</span>' : ""}<span class="reel-tempo">${ico("raio")} ${tempoLeitura(txtPrinc + " " + apoio)}</span></header>
         <p class="reel-kicker">${kicker}</p>
         <p class="reel-rot">${rotTexto}</p>
-        <div class="reel-texto"><p>${principal}</p></div>
+        <div class="reel-texto${txtPrinc.length > 420 ? " longo" : ""}"><p>${marcar ? marcaTexto(principal) : principal}</p></div>
+        <button type="button" class="reel-mais" data-f="mais" hidden>Continuar lendo ${ico("seta")}</button>
         ${apoio ? `<p class="reel-apoio">${apoio}</p>` : ""}
         <p class="reel-meta">${meta}</p>
         <footer class="reel-acoes">
           ${acoes}
           <span class="dir">
+            <button type="button" class="menos" data-f="menos" title="Mostrar menos desta matéria">Menos disso</button>
             <button type="button" class="btn-ico" data-f="copiar" title="Copiar" aria-label="Copiar">${ico("copiar")}</button>
             <button type="button" class="btn-ico" data-f="compartilhar" title="Compartilhar" aria-label="Compartilhar">${ico("link")}</button>
-            <button type="button" class="btn-ico btn-salvar" data-f="salvar" aria-pressed="${salvo}" title="Salvar" aria-label="Salvar">${ico("salvar")}</button>
+            <button type="button" class="btn-ico btn-salvar" data-f="salvar" aria-pressed="${salvo}" title="Salvar (ou toque duas vezes no cartão)" aria-label="Salvar">${ico("salvar")}</button>
           </span>
         </footer>
+        <span class="estouro" aria-hidden="true">${ico("salvar")}</span>
       </div>
     </article>`;
   }
+
+  function capaFeed(vis, f) {
+    const naoLidos = vis.filter((x) => !lidos()[x.k]).length;
+    const por = (tps) => vis.filter((x) => tps.includes(x.tipo) && !lidos()[x.k]).length;
+    const blocos = [
+      [["tese", "publicado"], "teses firmadas", "ok"], [["afetacao"], "temas afetados", "rel"],
+      [["pauta"], "repetitivos em pauta", "alta"], [["julgado"], "julgados com tese ou destaque", "pri"],
+    ].map(([tps, rot, cls]) => ({ tps, rot, cls, n: por(tps) })).filter((b) => b.n);
+    const contA = {}; vis.forEach((x) => { if (!lidos()[x.k]) x.ar.forEach((a) => (contA[a] = (contA[a] || 0) + 1)); });
+    const top = Object.entries(contA).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const at = D.man?.atualizadoEm ? new Date(D.man.atualizadoEm) : null;
+    return `<article class="reel reel-capa" data-i="-1"><div class="reel-in">
+      <p class="reel-kicker">${esc(fmtDiaL(hojeISO()))}${at ? ` · base atualizada às ${at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}</p>
+      <h2 class="capa-tit">${saudacao()}. ${!naoLidos ? "Você está em dia." : (() => { const rep = naoLidos - por(["julgado"]), jul = por(["julgado"]);
+        const partes = [rep ? `<b>${fmtInt(rep)}</b> movimento${rep > 1 ? "s" : ""} nos repetitivos` : "", jul ? `<b>${fmtInt(jul)}</b> julgado${jul > 1 ? "s" : ""} para ler` : ""].filter(Boolean);
+        return `${nFiltros(f) ? "Nos filtros escolhidos: " : "Há "}${partes.join(" e ")}.`; })()}</h2>
+      ${blocos.length ? `<div class="capa-grade">${blocos.map((b) => `<button type="button" class="capa-bloco ${b.cls}" data-capa-tp="${b.tps.join(",")}"><b>${fmtInt(b.n)}</b><span>${b.rot}</span></button>`).join("")}</div>` : ""}
+      ${top.length ? `<p class="reel-rot" style="margin-top:22px">Em alta nas matérias</p><div class="capa-areas">${top.map(([a, n]) => `<button type="button" class="chip area" style="--h:${AREA_COR[a] ?? 222}" data-capa-ar="${a}"><i></i>${esc(AREAS[a] || a)} <span class="n">${n}</span></button>`).join("")}</div>` : ""}
+      <p class="capa-dica">${naoLidos ? `Role para começar ${ico("seta")}` : "Desative “Só não lidos” para rever o que já passou."}</p>
+    </div></article>`;
+  }
+
   async function vAtualize(main) {
     document.body.classList.add("modo-feed");
     const todos = await itensFeed();
-    P.feedAreas = P.feedAreas || [];
+    D.feedVistoAnt = P.feedVisto || somaDias(hojeISO(), -3);
+    if (P.feedVisto !== hojeISO()) { P.feedVisto = hojeISO(); salvarP(); }
+    const f = feedF();
     let soNovos = P.feedSoNovos !== false;
+    const sessao = { lidos: new Set(), areas: {} };
     main.innerHTML = `
       <div class="feed-barra">
-        <div class="chips rolagem" id="fd-areas"></div>
-        <div class="feed-ctrl">
-          <label class="alternar"><input type="checkbox" id="fd-novos"><span class="trilho"></span>Só não lidos</label>
-          <span class="feed-cont" id="fd-cont"></span>
-        </div>
-        <div class="feed-prog"><i id="fd-prog"></i></div>
+        <div class="chips rolagem fd-areas" id="fd-areas" aria-label="Matérias"></div>
+        <div class="fd-filtros rolagem" id="fd-filtros"></div>
+        <div class="fd-progl"><div class="feed-prog"><i id="fd-prog"></i></div><span class="feed-cont" id="fd-cont"></span></div>
       </div>
       <div class="feed" id="fd" tabindex="0" aria-label="Novidades da jurisprudência. Use as setas para navegar."></div>
+      <div class="fd-veu" id="fd-veu" hidden></div>
+      <div class="fd-pop" id="fd-pop" role="dialog" aria-modal="false" hidden></div>
       <div class="feed-nav"><button type="button" class="btn-ico" id="fd-ant" aria-label="Anterior">${ico("seta")}</button><button type="button" class="btn-ico" id="fd-prox" aria-label="Próximo">${ico("seta")}</button></div>`;
-    $("#fd-novos").checked = soNovos;
     const box = $("#fd");
-    let vis = [];
+    let vis = [], feitos = 0, atual = -1, obs = null, timer = null, ativoEl = null, ativoDesde = 0;
+    const LOTE = 25;
+
+    // ------------------------------------------------------------ filtros
+    const conta = (dim, pred) => todos.filter((x) => passaFeed(x, f, dim) && (!soNovos || !lidos()[x.k]) && pred(x)).length;
     const desenharAreas = () => {
-      const cont = {}; todos.forEach((x) => x.ar.forEach((a) => (cont[a] = (cont[a] || 0) + 1)));
-      $("#fd-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!P.feedAreas.length}">Todas as matérias</button>` + Object.keys(AREAS).filter((a) => cont[a]).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${P.feedAreas.includes(a)}">${AREAS[a]}</button>`).join("");
+      const base = todos.filter((x) => passaFeed(x, f, "ar") && (!soNovos || !lidos()[x.k]));
+      const cont = {}; base.forEach((x) => x.ar.forEach((a) => (cont[a] = (cont[a] || 0) + 1)));
+      $("#fd-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!f.ar.length}">Todas <span class="n">${fmtInt(base.length)}</span></button>`
+        + Object.keys(AREAS).filter((a) => cont[a] || f.ar.includes(a)).sort((a, b) => (cont[b] || 0) - (cont[a] || 0))
+          .map((a) => `<button type="button" class="chip area" style="--h:${AREA_COR[a] ?? 222}" data-ar="${a}" aria-pressed="${f.ar.includes(a)}"><i></i>${AREAS[a]} <span class="n">${fmtInt(cont[a] || 0)}</span></button>`).join("");
     };
-    const montar = () => {
-      const a = P.feedAreas;
-      vis = todos.filter((x) => (!a.length || x.ar.some((y) => a.includes(y))) && (!soNovos || !lidos()[x.k]));
-      box.innerHTML = vis.map((x, i) => cartaoFeed(x, i, vis.length)).join("") + `
-        <article class="reel reel-fim"><div class="reel-in">
-          <div class="vazio-ico" style="margin:0 0 14px">${ico("destaques")}</div>
-          <p class="reel-kicker">Fim da fila</p>
-          <div class="reel-texto"><p>Você está em dia com ${vis.length ? "estas novidades" : "as novidades das matérias escolhidas"}.</p></div>
-          <p class="reel-apoio">O STJ publica os acórdãos com ementa uma vez por mês e atualiza os repetitivos e as pautas todos os dias. Volte amanhã para ver o que entrou.</p>
-          <footer class="reel-acoes"><a class="btn btn-pri btn-peq" href="#destaques">Ver todos os destaques</a><a class="btn btn-claro btn-peq" href="#radar">Configurar meu radar</a>${soNovos ? `<button type="button" class="btn btn-fant btn-peq" id="fd-rever">Rever os já lidos</button>` : ""}</footer>
-        </div></article>`;
-      box.scrollTop = 0;
-      atual = 0; atualizarProg();
-      $("#fd-rever")?.addEventListener("click", () => { soNovos = false; $("#fd-novos").checked = false; P.feedSoNovos = false; salvarP(); montar(); });
-      observar();
+    const rotulo = {
+      tp: () => (f.tp.length === 1 ? FEED_TIPOS[f.tp[0]].rot : f.tp.length ? `Tipo · ${f.tp.length}` : "Tipo"),
+      per: () => (f.per ? PERIODOS.find((p) => p[0] === f.per)[1] : "Período"),
+      tese: () => (f.tese === "com" ? "Com tese" : f.tese === "sem" ? "Sem tese" : "Tese"),
+      org: () => (f.org.length === 1 ? f.org[0] : f.org.length ? `Órgão · ${f.org.length}` : "Órgão"),
+      rel: () => (f.rel ? relatorFmt(f.rel) : "Relator"),
     };
-    let atual = 0, obs = null, timer = null;
-    const atualizarProg = () => {
-      const n = vis.length;
-      $("#fd-cont").textContent = n ? `${Math.min(atual + 1, n)} de ${n}` : "Nada novo";
-      $("#fd-prog").style.transform = `scaleX(${n ? Math.min(1, (atual + 1) / n) : 1})`;
+    const ativo = { tp: () => f.tp.length, per: () => f.per, tese: () => f.tese, org: () => f.org.length, rel: () => f.rel };
+    const desenharFiltros = () => {
+      $("#fd-filtros").innerHTML = `<button type="button" class="fpill novos" id="fd-novos" aria-pressed="${soNovos}">${ico("raio")} Só não lidos</button>` + Object.keys(rotulo).map((k) => `<button type="button" class="fpill" data-fp="${k}" aria-pressed="${!!ativo[k]()}" aria-haspopup="dialog">${esc(rotulo[k]())}${ico("seta")}</button>`).join("")
+        + (nFiltros(f) ? `<button type="button" class="fpill limpar" id="fd-limpar">${ico("x")} Limpar</button>` : "");
     };
-    function observar() {
-      obs?.disconnect();
-      obs = new IntersectionObserver((ents) => {
-        for (const e of ents) {
-          if (!e.isIntersecting || e.intersectionRatio < 0.6) continue;
-          const el = e.target; atual = +(el.dataset.i ?? vis.length);
-          atualizarProg();
-          clearTimeout(timer);
-          if (el.dataset.k) timer = setTimeout(() => { marcarLido(el.dataset.k); el.querySelector(".reel-cab")?.insertAdjacentHTML("beforeend", el.querySelector(".selo.canc") ? "" : '<span class="selo canc">Lido</span>'); }, 1500);
-        }
-      }, { root: box, threshold: [0.6] });
-      $$(".reel", box).forEach((el) => obs.observe(el));
+    const opcao = (dim, val, txt, n, marcado) => `<button type="button" class="chip" data-op="${dim}" data-val="${esc(val)}" aria-pressed="${marcado}">${esc(txt)} <span class="n">${n === "" ? "" : fmtInt(n)}</span></button>`;
+    function conteudoPop(dim) {
+      if (dim === "tp") return `<h3>Tipo de novidade</h3><div class="chips">${Object.entries(FEED_TIPOS).map(([k, v]) => opcao("tp", k, v.longo, conta("tp", (x) => x.tipo === k), f.tp.includes(k))).join("")}</div>`;
+      if (dim === "per") return `<h3>Período</h3><div class="chips">${PERIODOS.map(([d, txt]) => opcao("per", d, txt, conta("per", (x) => !d || Math.abs((new Date(hojeISO()) - new Date(x.d)) / 864e5) <= d), f.per === d)).join("")}</div><p class="nota">Pautas contam pela proximidade da sessão.</p>`;
+      if (dim === "tese") return `<h3>Tese</h3><div class="chips">${[["", "Todas"], ["com", "Com tese firmada ou de julgamento"], ["sem", "Sem tese"]].map(([v, txt]) => opcao("tese", v, txt, conta("tese", (x) => !v || (v === "com") === x.tese), f.tese === v)).join("")}</div>`;
+      if (dim === "org") {
+        const c = {}; todos.filter((x) => passaFeed(x, f, "org") && (!soNovos || !lidos()[x.k]) && x.org).forEach((x) => (c[x.org] = (c[x.org] || 0) + 1));
+        const nomes = Object.values(D.orgaos).filter((o) => c[o] || f.org.includes(o));
+        return `<h3>Órgão julgador</h3><div class="chips">${nomes.map((o) => opcao("org", o, o, c[o] || 0, f.org.includes(o))).join("")}</div>`;
+      }
+      const c = {}; todos.filter((x) => passaFeed(x, f, "rel") && (!soNovos || !lidos()[x.k]) && x.rel).forEach((x) => { const k = titulo(x.rel); c[k] = (c[k] || 0) + 1; });
+      const lista = Object.entries(c).sort((a, b) => b[1] - a[1]);
+      return `<h3>Relator(a)</h3><input type="search" class="campo" id="fd-rel-q" placeholder="Digite o nome" autocomplete="off">
+        <div class="chips" id="fd-rel-l" style="margin-top:10px">${f.rel ? opcao("rel", "", "Todos", "", false) : ""}${lista.map(([nome, n]) => opcao("rel", nome, nome, n, norm(nome) === norm(f.rel))).join("")}</div>`;
     }
-    const ir = (d) => { const alvo = $$(".reel", box)[Math.max(0, Math.min(vis.length, atual + d))]; alvo?.scrollIntoView({ block: "start" }); };
-    $("#fd-ant").addEventListener("click", () => ir(-1));
-    $("#fd-prox").addEventListener("click", () => ir(1));
-    const tecla = (e) => {
-      if (!document.body.classList.contains("modo-feed") || /input|textarea|select/i.test(document.activeElement.tagName) || !$("#gaveta").hidden) return;
-      if (["ArrowDown", "j", "PageDown", " "].includes(e.key)) { e.preventDefault(); ir(1); }
-      if (["ArrowUp", "k", "PageUp"].includes(e.key)) { e.preventDefault(); ir(-1); }
-    };
-    document.addEventListener("keydown", tecla);
-    D.saiFeed = () => { document.removeEventListener("keydown", tecla); obs?.disconnect(); clearTimeout(timer); document.body.classList.remove("modo-feed"); atualizarContadorFeed(); };
+    const pop = $("#fd-pop"), veu = $("#fd-veu");
+    let popDim = "";
+    function abrirPop(dim, botao) {
+      popDim = dim;
+      pop.innerHTML = `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div>${conteudoPop(dim)}`;
+      const folha = matchMedia("(max-width: 860px)").matches;
+      pop.classList.toggle("folha", folha);
+      if (!folha) {
+        const r = botao.getBoundingClientRect();
+        pop.style.left = `${Math.min(r.left, innerWidth - 400)}px`; pop.style.top = `${r.bottom + 8}px`;
+      } else { pop.style.left = ""; pop.style.top = ""; }
+      pop.hidden = false; veu.hidden = !folha;
+      requestAnimationFrame(() => { pop.classList.add("vis"); veu.classList.add("vis"); });
+      const q = $("#fd-rel-q", pop);
+      if (q) {
+        if (!folha) q.focus();
+        q.addEventListener("input", () => { const t = norm(q.value); $$("#fd-rel-l [data-op]", pop).forEach((b) => { b.hidden = !!t && !norm(b.dataset.val).includes(t); }); });
+      }
+    }
+    function fecharPop() {
+      if (pop.hidden) return;
+      pop.classList.remove("vis"); veu.classList.remove("vis"); popDim = "";
+      setTimeout(() => { if (!pop.classList.contains("vis")) { pop.hidden = true; veu.hidden = true; } }, 200);
+    }
+    const aplicar = () => { salvarP(); desenharAreas(); desenharFiltros(); montar(); };
+    pop.addEventListener("click", (e) => {
+      if (e.target.closest("[data-fechar-pop]")) return fecharPop();
+      const b = e.target.closest("[data-op]"); if (!b) return;
+      const { op, val } = b.dataset;
+      if (op === "tp" || op === "org") { f[op] = f[op].includes(val) ? f[op].filter((x) => x !== val) : [...f[op], val]; }
+      if (op === "per") f.per = +val;
+      if (op === "tese") f.tese = val;
+      if (op === "rel") f.rel = norm(val) === norm(f.rel) ? "" : val;
+      aplicar();
+      if (op === "per" || op === "tese" || op === "rel") fecharPop(); else abrirPop(op, $(`[data-fp="${op}"]`));
+    });
+    veu.addEventListener("click", fecharPop);
+    const foraPop = (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("[data-fp]")) fecharPop(); };
+    document.addEventListener("pointerdown", foraPop);
+    $("#fd-filtros").addEventListener("click", (e) => {
+      if (e.target.closest("#fd-limpar")) { Object.assign(f, FILTRO_VAZIO()); fecharPop(); return aplicar(); }
+      if (e.target.closest("#fd-novos")) { soNovos = !soNovos; P.feedSoNovos = soNovos; fecharPop(); return aplicar(); }
+      const b = e.target.closest("[data-fp]"); if (!b) return;
+      if (popDim === b.dataset.fp) return fecharPop();
+      abrirPop(b.dataset.fp, b);
+    });
     $("#fd-areas").addEventListener("click", (e) => {
       const b = e.target.closest("[data-ar]"); if (!b) return;
       const a = b.dataset.ar;
-      P.feedAreas = !a ? [] : P.feedAreas.includes(a) ? P.feedAreas.filter((x) => x !== a) : [...P.feedAreas, a];
-      salvarP(); desenharAreas(); montar();
+      f.ar = !a ? [] : f.ar.includes(a) ? f.ar.filter((x) => x !== a) : [...f.ar, a];
+      aplicar();
     });
-    $("#fd-novos").addEventListener("change", (e) => { soNovos = e.target.checked; P.feedSoNovos = soNovos; salvarP(); montar(); });
+
+
+    // -------------------------------------------------------------- fila
+    const fimHTML = () => {
+      const top = Object.entries(sessao.areas).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([a, n]) => `${esc(AREAS[a] || a)} ${n}`).join(" · ");
+      return `<article class="reel reel-fim" data-i="${vis.length}"><div class="reel-in">
+        <div class="vazio-ico" style="margin:0 0 14px">${ico("destaques")}</div>
+        <p class="reel-kicker">Fim da fila</p>
+        <div class="reel-texto"><p>${vis.length ? "Você está em dia com estas novidades." : "Nada novo nos filtros escolhidos."}</p></div>
+        <p class="reel-apoio">${sessao.lidos.size ? `Nesta leitura: <b>${sessao.lidos.size}</b> novidade${sessao.lidos.size > 1 ? "s" : ""}${top ? ` — ${top}` : ""}. ` : ""}Os repetitivos e as pautas mudam todos os dias; os acórdãos com ementa chegam em lotes mensais.</p>
+        <footer class="reel-acoes">${nFiltros(f) ? `<button type="button" class="btn btn-pri btn-peq" id="fd-sem-filtro">Ver sem filtros</button>` : `<a class="btn btn-pri btn-peq" href="#destaques">Ver todos os destaques</a>`}<a class="btn btn-claro btn-peq" href="#radar">Meu radar e salvos</a>${soNovos ? `<button type="button" class="btn btn-fant btn-peq" id="fd-rever">Rever os já lidos</button>` : ""}</footer>
+      </div></article>`;
+    };
+    function anexar() {
+      if (feitos >= vis.length) return;
+      const ate = Math.min(vis.length, feitos + LOTE);
+      let html = "";
+      for (let i = feitos; i < ate; i++) html += cartaoFeed(vis[i], i, vis.length);
+      feitos = ate;
+      if (feitos >= vis.length) html += fimHTML();
+      box.insertAdjacentHTML("beforeend", html);
+      $$(".reel:not([data-obs])", box).forEach((el) => { el.dataset.obs = "1"; obs.observe(el); });
+      $("#fd-rever")?.addEventListener("click", () => { soNovos = false; P.feedSoNovos = false; aplicar(); });
+      $("#fd-sem-filtro")?.addEventListener("click", () => { Object.assign(f, FILTRO_VAZIO()); aplicar(); });
+    }
+    function montar() {
+      sairCartao();
+      vis = todos.filter((x) => passaFeed(x, f) && (!soNovos || !lidos()[x.k]));
+      feitos = 0; atual = -1;
+      obs?.disconnect(); criarObs();
+      box.innerHTML = capaFeed(vis, f);
+      anexar();
+      box.scrollTop = 0;
+      atualizarProg();
+    }
+    const atualizarProg = () => {
+      const n = vis.length, pos = Math.max(0, Math.min(atual + 1, n));
+      const hoje = lidosHoje();
+      $("#fd-cont").textContent = n ? `${pos ? `${pos} de ` : ""}${fmtInt(n)}${hoje ? ` · ${hoje} lido${hoje > 1 ? "s" : ""} hoje` : ""}` : "Nada novo";
+      $("#fd-prog").style.transform = `scaleX(${n ? pos / n : 1})`;
+    };
+    function sairCartao() {
+      if (!ativoEl) return;
+      const it = vis[+ativoEl.dataset.i];
+      const seg = (performance.now() - ativoDesde) / 1000;
+      if (it && seg > 7) ajustarPeso(it.ar, 0.6);
+      ativoEl.classList.remove("ativo"); ativoEl = null;
+    }
+    function entrarCartao(el) {
+      if (ativoEl === el) return;
+      sairCartao();
+      ativoEl = el; ativoDesde = performance.now();
+      el.classList.add("ativo", "visto");
+      atual = +(el.dataset.i ?? -1);
+      atualizarProg();
+      const txt = $(".reel-texto", el), par = $(".reel-texto p", el), mais = $(".reel-mais", el);
+      if (par && mais && !txt.classList.contains("aberto")) mais.hidden = par.scrollHeight <= par.clientHeight + 4;
+      if (atual >= feitos - 6) anexar();
+      clearTimeout(timer);
+      const it = vis[atual];
+      if (it) timer = setTimeout(() => {
+        marcarLido(it.k);
+        if (!sessao.lidos.has(it.k)) { sessao.lidos.add(it.k); it.ar.forEach((a) => (sessao.areas[a] = (sessao.areas[a] || 0) + 1)); }
+        $(".novo", el)?.remove(); atualizarProg();
+      }, 1500);
+    }
+    function criarObs() {
+      obs = new IntersectionObserver((ents) => {
+        for (const e of ents) if (e.isIntersecting && e.intersectionRatio >= 0.6) entrarCartao(e.target);
+      }, { root: box, threshold: [0.6] });
+    }
+    const ir = (d) => {
+      const els = $$(".reel", box);
+      const idx = els.indexOf(ativoEl) + d;
+      els[Math.max(0, Math.min(els.length - 1, idx))]?.scrollIntoView({ block: "start", behavior: "instant" });
+    };
+    $("#fd-ant").addEventListener("click", () => ir(-1));
+    $("#fd-prox").addEventListener("click", () => ir(1));
+
+    // ------------------------------------------------------------ ações
+    function salvarItem(it, botao, forcar = false) {
+      const k = it.t ? `t:${it.t.tp}-${it.t.n}` : `a:${it.r.id}`;
+      if (forcar && P.salvos[k]) return false;
+      if (it.t) alternarSalvo(k, { k: "t", tp: it.t.tp, n: it.t.n }, botao);
+      else alternarSalvo(k, minimoAcordao(it.r), botao);
+      if (P.salvos[k]) ajustarPeso(it.ar, 1.5);
+      return true;
+    }
+    function estourar(el) {
+      const s = $(".estouro", el); if (!s) return;
+      s.classList.remove("vai"); void s.offsetWidth; s.classList.add("vai");
+    }
+    let toque = { t: 0, x: 0, y: 0 };
+    box.addEventListener("pointerup", (e) => {
+      if (e.target.closest("button, a, input, .reel-capa")) return;
+      const el = e.target.closest(".reel[data-k]"); if (!el) return;
+      const agora = performance.now();
+      if (agora - toque.t < 320 && Math.hypot(e.clientX - toque.x, e.clientY - toque.y) < 30) {
+        const it = vis[+el.dataset.i];
+        if (it) { if (salvarItem(it, $(".btn-salvar", el), true)) estourar(el); else toast("Já está nos salvos."); }
+        getSelection()?.removeAllRanges();
+        toque.t = 0;
+      } else toque = { t: agora, x: e.clientX, y: e.clientY };
+    });
     box.addEventListener("click", async (e) => {
+      const capaTp = e.target.closest("[data-capa-tp]"), capaAr = e.target.closest("[data-capa-ar]");
+      if (capaTp) { f.tp = capaTp.dataset.capaTp.split(","); return aplicar(); }
+      if (capaAr) { f.ar = [capaAr.dataset.capaAr]; return aplicar(); }
       const b = e.target.closest("[data-f]"); if (!b) return;
       const el = b.closest(".reel"); const it = vis[+el.dataset.i]; if (!it) return;
-      const f = b.dataset.f;
+      const fn = b.dataset.f;
       const textoIt = it.t ? `${it.t.tp} ${it.t.n}/STJ — ${it.t.tese ? "Tese: " + it.t.tese : it.t.q}` : `${it.r.tese || it.r.tj ? (it.r.tese ? "Tese jurídica: " : "Tese de julgamento: ") + (it.r.tese || it.r.tj) + "\n" : ""}${citacao(it.r)}`;
-      if (f === "tema") abrirTema(it.t.tp, it.t.n);
-      if (f === "acordao") abrirAcordao(it.r);
-      if (f === "copiar") copiar(textoIt, "Copiado.");
-      if (f === "compartilhar") {
+      if (fn === "mais") { $(".reel-texto", el).classList.add("aberto"); b.hidden = true; }
+      if (fn === "area") { f.ar = [b.dataset.ar]; aplicar(); toast(`Lendo só ${AREAS[b.dataset.ar] || ""}.`); }
+      if (fn === "tema") abrirTema(it.t.tp, it.t.n);
+      if (fn === "acordao") abrirAcordao(it.r);
+      if (fn === "copiar") copiar(textoIt, "Copiado.");
+      if (fn === "menos") {
+        ajustarPeso(it.ar, -3);
+        toast(it.ar.length ? `Certo. ${AREAS[it.ar[0]] || "Esta matéria"} vai aparecer menos.` : "Certo, vamos mostrar menos disso.");
+        ir(1);
+      }
+      if (fn === "compartilhar") {
         const url = it.t ? URLS.tema(it.t.tp, it.t.n) : URLS.inteiroTeor(it.r.reg, it.r.dj);
         if (navigator.share) { try { await navigator.share({ title: "Radar STJ", text: textoIt, url }); } catch { /* cancelado */ } }
         else copiar(`${textoIt}\n${url}`, "Texto e link copiados para compartilhar.");
       }
-      if (f === "salvar") {
-        if (it.t) alternarSalvo(`t:${it.t.tp}-${it.t.n}`, { k: "t", tp: it.t.tp, n: it.t.n }, b);
-        else alternarSalvo(`a:${it.r.id}`, minimoAcordao(it.r), b);
-      }
+      if (fn === "salvar") salvarItem(it, b);
     });
-    desenharAreas(); montar();
+    const tecla = (e) => {
+      if (!document.body.classList.contains("modo-feed") || /input|textarea|select/i.test(document.activeElement.tagName) || !$("#gaveta").hidden) return;
+      if (e.key === "Escape") return fecharPop();
+      if (["ArrowDown", "j", "PageDown", " "].includes(e.key)) { e.preventDefault(); ir(1); }
+      if (["ArrowUp", "k", "PageUp"].includes(e.key)) { e.preventDefault(); ir(-1); }
+      if (e.key === "s" && ativoEl?.dataset.k) { const it = vis[+ativoEl.dataset.i]; if (it) { salvarItem(it, $(".btn-salvar", ativoEl)); } }
+      if ((e.key === "o" || e.key === "Enter") && ativoEl?.dataset.k) $('[data-f="acordao"], [data-f="tema"]', ativoEl)?.click();
+    };
+    document.addEventListener("keydown", tecla);
+    D.saiFeed = () => {
+      sairCartao();
+      document.removeEventListener("keydown", tecla); document.removeEventListener("pointerdown", foraPop);
+      obs?.disconnect(); clearTimeout(timer); document.body.classList.remove("modo-feed");
+      atualizarContadorFeed();
+    };
+    desenharAreas(); desenharFiltros(); montar();
     setTimeout(() => box.focus({ preventScroll: true }), 60);
   }
 
