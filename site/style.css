@@ -822,3 +822,15 @@ svg.gira { transform: rotate(180deg); }
 }
 @media (prefers-color-scheme: dark) { .grupo-cab[style] h2 { color: hsl(var(--h) 80% 74%); } }
 @media print { .sem-ferr, .sem-resumo, .nota-rodape .dir, .nota-mais { display: none !important; } .ncard { box-shadow: none; break-inside: avoid; } .nota-tese.longa { display: block !important; -webkit-line-clamp: unset !important; } }
+/* v11: datas nas notas e explicações */
+.nota-datas { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: -4px 0 10px; font-size: 12.5px; color: var(--tx-3); font-variant-numeric: tabular-nums; }
+.nota-datas b { font-weight: 600; color: var(--tx-2); margin-right: 3px; }
+.explica-box { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--linha); border-radius: 14px; background: var(--pri-bg); max-width: 880px; }
+.explica-box svg { width: 20px; height: 20px; color: var(--pri); margin-top: 2px; }
+.explica-box > div:nth-child(2) { flex: 1; }
+.explica-box > div > b { display: block; font-size: 14px; color: var(--tx); margin-bottom: 4px; }
+.explica-box p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--tx-2); }
+.explica-reabrir { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin: 0 0 12px; font-size: 13px; color: var(--pri); }
+.explica-reabrir svg { width: 15px; height: 15px; }
+@media (max-width: 860px) { .explica-box { flex-wrap: wrap; } .explica-box .btn { margin-left: 32px; } }
+.explica-box p b { font-weight: 600; color: var(--tx); }

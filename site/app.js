@@ -1887,12 +1887,15 @@
     const proc = x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}${x.p.length > 1 ? ` e mais ${x.p.length - 1}` : ""}` : "Processo em segredo de justiça";
     const tipo = TIPO_INFO(x);
     const longa = x.t.length > 700;
+    const dj = /DJEN?\s*(?:de\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(x.proc || "");
+    const datas = [x.julg ? `<span><b>Julgado</b> ${fmtData(x.julg)}</span>` : "", dj ? `<span><b>DJEN</b> ${String(dj[1]).padStart(2, "0")}/${String(dj[2]).padStart(2, "0")}/${dj[3]}</span>` : "", x.d ? `<span><b>Informativo ${x.ed}</b> ${fmtData(x.d)}</span>` : ""].filter(Boolean).join("");
     return `<li class="ncard" data-info="${esc(x.id)}" style="--h:${AREA_COR[(x.ar || [])[0]] ?? 222}">
       <div class="nota-cab">${seloMat(x.ar, x.sa)}${tipo ? `<span class="selo ok">${esc(tipo)}</span>` : ""}<span class="nota-org">${esc(x.org || x.sec || "")}</span></div>
+      ${datas ? `<div class="nota-datas">${datas}</div>` : ""}
       <h3 class="nota-tema"><button type="button" data-a-info="abrir">${destacar(esc(x.tema.replace(/\s*Tema\s+\d[\d.]*\.?\s*$/i, "")), termos)}</button></h3>
       <div class="nota-tese${longa ? " longa" : ""}">${x.t.split("\n").map((l) => `<p>${destacar(esc(l), termos)}</p>`).join("")}</div>
       ${longa ? `<button type="button" class="nota-mais" data-a-info="mais">Continuar lendo</button>` : ""}
-      <div class="nota-rodape"><span class="nota-proc">${esc(proc)}${x.rel ? ` · Rel. Min. ${esc(x.rel)}` : ""}${x.julg ? ` · julgado em ${fmtData(x.julg)}` : ""}</span>
+      <div class="nota-rodape"><span class="nota-proc">${esc(proc)}${x.rel ? ` · Rel. Min. ${esc(x.rel)}` : ""}</span>
         <span class="dir"><button type="button" class="link-acao" data-a-info="abrir">Nota completa</button>
           <a class="btn-ico" href="${URL_INFO(x.ed)}" target="_blank" rel="noopener" title="Informativo oficial" aria-label="Informativo oficial">${ico("externo")}</a>
           <button type="button" class="btn-ico" data-a-info="copiar" title="Copiar destaque e referência" aria-label="Copiar">${ico("copiar")}</button>
@@ -1928,6 +1931,23 @@
     $("#gi-copiar").addEventListener("click", () => copiar(citInfo(x), "Destaque e referência copiados."));
     $("#gi-ementa")?.addEventListener("click", () => abrirAcordao({ id: noAcervo[4], m: ix.m[noAcervo[2]], o: ix.o[noAcervo[3]], cl: x.p[0].cl, n: noAcervo[0] }));
   }
+  // Explicação curta no topo da tela; some quando o usuário clica em "Entendi".
+  function caixaExplica(chave, titulo, texto) {
+    P.dicas = P.dicas || {};
+    if (P.dicas[chave]) return `<button type="button" class="explica-reabrir" data-explica-abrir="${chave}">${ico("sobre")} Sobre o ${esc(titulo)}</button>`;
+    return `<div class="explica-box" data-explica="${chave}"><div>${ico("sobre")}</div><div><b>${esc(titulo)}</b><p>${texto}</p></div><button type="button" class="btn btn-claro btn-peq" data-explica-fechar="${chave}">Entendi</button></div>`;
+  }
+  document.addEventListener("click", (e) => {
+    const f = e.target.closest("[data-explica-fechar]"), a = e.target.closest("[data-explica-abrir]");
+    if (!f && !a) return;
+    P.dicas = P.dicas || {};
+    if (f) { P.dicas[f.dataset.explicaFechar] = 1; salvarP(); f.closest(".explica-box").outerHTML = caixaExplica(f.dataset.explicaFechar, f.closest(".explica-box").querySelector("b").textContent, ""); }
+    if (a) { const k = a.dataset.explicaAbrir; delete P.dicas[k]; salvarP(); a.outerHTML = caixaExplica(k, EXPLICA[k][0], EXPLICA[k][1]); }
+  });
+  const EXPLICA = {
+    info: ["Informativo do STJ", "O Informativo de Jurisprudência é a publicação periódica, em regra semanal, em que o próprio STJ seleciona os julgados mais importantes pela novidade da tese e pela repercussão. Cada nota traz o tema, o <b>destaque</b> (a tese decidida), o processo, o relator e as datas. É a curadoria oficial do Tribunal; a aba “Seleção automática” é a triagem feita pelo site sobre todos os acórdãos."],
+    semana: ["Resumo da semana", "Tudo o que mudou no STJ em uma semana, numa página só: teses firmadas em repetitivos, notas do Informativo, temas afetados, julgados com tese, súmulas aprovadas e repetitivos que vão a julgamento na semana seguinte. Serve para se atualizar em poucos minutos e para enviar à equipe ou ao cliente, por texto, PDF ou link."],
+  };
   const ORGAOS_INFO = ["Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção", "Primeira Turma", "Segunda Turma", "Terceira Turma", "Quarta Turma", "Quinta Turma", "Sexta Turma"];
   const GRUPO_ORG = { rep: ["Repetitivos e IAC", (x) => /repetitiv|assun/i.test(x.sec)], secoes: ["Corte Especial e Seções", (x) => /corte especial|se[çc][ãa]o/i.test(x.org || "")], pub: ["Direito público (1ª e 2ª Turmas)", (x) => /^(primeira|segunda) turma/i.test(x.org || "")], priv: ["Direito privado (3ª e 4ª Turmas)", (x) => /^(terceira|quarta) turma/i.test(x.org || "")], pen: ["Direito penal (5ª e 6ª Turmas)", (x) => /^(quinta|sexta) turma/i.test(x.org || "")] };
   const fmtDiaMes = (iso) => fmtData(iso).slice(0, 5);
@@ -1938,6 +1958,7 @@
     const dmin = l.reduce((m, x) => (x.d && x.d < m ? x.d : m), "9999"), dmax = l.reduce((m, x) => (x.d > m ? x.d : m), "");
     const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "u4", o: p.get("o") || "", rl: p.get("rl") || "", s: p.get("s") || "rec" };
     main.innerHTML = `${abasDestaques("")}
+      ${caixaExplica("info", ...EXPLICA.info)}
       <div id="if-f" class="bloco-filtros">
         ${campoBusca("if-q", 'Tema ou tese. Ex.: "adjudicação compulsória" ou prescri$', f.q)}
         ${AJUDA_BUSCA}
@@ -2233,6 +2254,7 @@
           ${ini < esta ? `<a class="btn btn-claro btn-peq" href="#semana?s=${somaDias(ini, 7)}" aria-label="Semana seguinte">${ico("seta")}</a><a class="btn btn-claro btn-peq" href="#semana">Esta semana</a>` : ""}
         </div>
       </div>
+      ${caixaExplica("semana", ...EXPLICA.semana)}
       <div class="sem-resumo" id="sem-resumo"></div>
       <div class="sem-ferr"><div class="fd-filtros filtros-lista" id="sem-pil"></div>
         <div class="sem-acoes" id="sem-acoes">
