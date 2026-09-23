@@ -834,3 +834,9 @@ svg.gira { transform: rotate(180deg); }
 .explica-reabrir svg { width: 15px; height: 15px; }
 @media (max-width: 860px) { .explica-box { flex-wrap: wrap; } .explica-box .btn { margin-left: 32px; } }
 .explica-box p b { font-weight: 600; color: var(--tx); }
+/* v13: ícones dos indicadores centralizados e coloridos */
+.stat .stat-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; line-height: 0; }
+.stat .stat-ico svg { width: 22px; height: 22px; stroke-width: 1.9; }
+.stat .stat-ico.ico-azul { color: var(--pri); } .stat .stat-ico.ico-verm { color: var(--alta); }
+.stat .stat-ico.ico-lar { color: var(--rel); } .stat .stat-ico.ico-verde { color: var(--ok); }
+@media (max-width: 1100px) and (min-width: 861px) { .stat .stat-ico { width: 38px; height: 38px; } .stat .stat-ico svg { width: 20px; height: 20px; } }
