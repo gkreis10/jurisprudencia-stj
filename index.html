@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jurisprudência STJ</title>
+<meta name="description" content="Acórdãos, precedentes qualificados e publicações recentes do Superior Tribunal de Justiça, a partir dos dados abertos oficiais, com atualização diária.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f3a5f'/%3E%3Cpath d='M16 6v20M9 10h14M9 10l-4 8h8zM23 10l-4 8h8z' stroke='%23fff' stroke-width='1.8' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="topo">
+  <div class="wrap topo-in">
+    <a class="marca" href="#inicio">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M16 6v20M9 10h14M9 10l-4 8h8zM23 10l-4 8h8z"/></svg>
+      <span><strong>Jurisprudência STJ</strong><small>dados abertos oficiais · atualização diária</small></span>
+    </a>
+    <nav class="abas" aria-label="Seções">
+      <a href="#inicio" data-aba="inicio">Início</a>
+      <a href="#acordaos" data-aba="acordaos">Acórdãos</a>
+      <a href="#repetitivos" data-aba="repetitivos">Repetitivos</a>
+      <a href="#radar" data-aba="radar">Radar DJEN</a>
+      <a href="#sobre" data-aba="sobre">Sobre</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="status" id="status">Carregando…</p>
+
+  <!-- INÍCIO -->
+  <section id="aba-inicio" class="aba" hidden>
+    <div class="grade-inicio">
+      <article class="painel largo">
+        <header class="painel-cab">
+          <h2>Precedentes qualificados: movimentações recentes</h2>
+          <select id="ini-janela" aria-label="Período">
+            <option value="15">últimos 15 dias</option>
+            <option value="30" selected>últimos 30 dias</option>
+            <option value="60">últimos 60 dias</option>
+            <option value="90">últimos 90 dias</option>
+          </select>
+        </header>
+        <div class="kpis" id="ini-kpis"></div>
+        <ol class="lista-eventos" id="ini-eventos"></ol>
+        <a class="mais" href="#repetitivos">Ver todos os precedentes →</a>
+      </article>
+      <article class="painel">
+        <header class="painel-cab"><h2>Acórdãos do último mês disponível</h2></header>
+        <p class="nota" id="ini-mes-nota"></p>
+        <ul class="barras" id="ini-orgaos"></ul>
+        <a class="mais" href="#acordaos">Pesquisar acórdãos →</a>
+      </article>
+      <article class="painel">
+        <header class="painel-cab"><h2>Radar: acórdãos publicados no DJEN</h2></header>
+        <p class="nota" id="ini-radar-nota"></p>
+        <ul class="barras" id="ini-radar"></ul>
+        <a class="mais" href="#radar">Abrir o radar →</a>
+      </article>
+    </div>
+  </section>
+
+  <!-- ACÓRDÃOS -->
+  <section id="aba-acordaos" class="aba" hidden>
+    <form class="filtros" id="f-ac" autocomplete="off">
+      <div class="campo busca">
+        <label for="ac-q">Pesquisa na ementa, tese e referências</label>
+        <input id="ac-q" type="search" placeholder='Ex.: "plano de saúde" rol taxativo -odontológico'>
+      </div>
+      <div class="campo">
+        <label for="ac-orgao">Órgão julgador</label>
+        <select id="ac-orgao"><option value="">Todos</option></select>
+      </div>
+      <div class="campo">
+        <label for="ac-periodo">Publicação</label>
+        <select id="ac-periodo"></select>
+      </div>
+      <div class="campo">
+        <label for="ac-classe">Classe</label>
+        <input id="ac-classe" list="ac-classes" placeholder="Ex.: REsp, AgInt, EREsp">
+        <datalist id="ac-classes"></datalist>
+      </div>
+      <div class="campo">
+        <label for="ac-rel">Relator(a)</label>
+        <input id="ac-rel" list="ac-rels" placeholder="Nome">
+        <datalist id="ac-rels"></datalist>
+      </div>
+      <div class="campo">
+        <label for="ac-proc">Número do processo</label>
+        <input id="ac-proc" inputmode="numeric" placeholder="Ex.: 2222623">
+      </div>
+      <div class="campo check">
+        <label><input type="checkbox" id="ac-qualif"> Só afetações, repetitivos e teses</label>
+      </div>
+      <div class="campo">
+        <label for="ac-ordem">Ordenar</label>
+        <select id="ac-ordem"><option value="data">Mais recentes</option><option value="rel">Relevância</option><option value="julg">Data de julgamento</option></select>
+      </div>
+    </form>
+    <div class="barra-res">
+      <p id="ac-info" aria-live="polite"></p>
+      <div class="progresso" id="ac-prog" hidden><span></span></div>
+      <button type="button" class="btn-sec" id="ac-link">Copiar link desta pesquisa</button>
+    </div>
+    <ol class="resultados" id="ac-lista"></ol>
+    <button type="button" class="btn-mais" id="ac-mais" hidden>Mostrar mais</button>
+  </section>
+
+  <!-- REPETITIVOS -->
+  <section id="aba-repetitivos" class="aba" hidden>
+    <form class="filtros" id="f-rp" autocomplete="off">
+      <div class="campo busca">
+        <label for="rp-q">Pesquisa na questão, tese, assuntos e anotações</label>
+        <input id="rp-q" type="search" placeholder="Ex.: prescrição intercorrente, ou o número do tema">
+      </div>
+      <div class="campo">
+        <label for="rp-tipo">Tipo</label>
+        <select id="rp-tipo">
+          <option value="Tema">Temas repetitivos</option>
+          <option value="Controvérsia">Controvérsias</option>
+          <option value="IAC">IAC</option>
+          <option value="SIRDR">SIRDR</option>
+          <option value="PUIL">PUIL</option>
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="rp-sit">Situação</label>
+        <select id="rp-sit">
+          <option value="">Todas</option>
+          <option value="andamento">Em andamento (afetado, em julgamento, pendente)</option>
+          <option value="julgado">Julgado (acórdão publicado, trânsito)</option>
+          <option value="cancelado">Cancelado, revisado ou prejudicado</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="rp-org">Órgão</label>
+        <select id="rp-org"><option value="">Todos</option><option>Corte Especial</option><option>Primeira Seção</option><option>Segunda Seção</option><option>Terceira Seção</option></select>
+      </div>
+      <div class="campo check">
+        <label><input type="checkbox" id="rp-susp"> Com determinação de suspensão</label>
+      </div>
+      <div class="campo">
+        <label for="rp-ordem">Ordenar</label>
+        <select id="rp-ordem"><option value="mov">Última movimentação</option><option value="num">Número (decrescente)</option></select>
+      </div>
+    </form>
+    <div class="barra-res"><p id="rp-info" aria-live="polite"></p><button type="button" class="btn-sec" id="rp-link">Copiar link desta pesquisa</button></div>
+    <ol class="resultados" id="rp-lista"></ol>
+    <button type="button" class="btn-mais" id="rp-mais" hidden>Mostrar mais</button>
+  </section>
+
+  <!-- RADAR -->
+  <section id="aba-radar" class="aba" hidden>
+    <p class="aviso">Lista de acórdãos publicados no Diário da Justiça nos últimos dias, extraída dos metadados das íntegras. A base não informa o órgão julgador nem a ementa; o filtro de Turma usa a Turma em que o relator mais julgou nos últimos meses e é apenas aproximado. A ementa aparece na aba Acórdãos quando o STJ divulga o espelho mensal.</p>
+    <form class="filtros" id="f-rd" autocomplete="off">
+      <div class="campo">
+        <label for="rd-dia">Data de publicação</label>
+        <select id="rd-dia"><option value="">Todas</option></select>
+      </div>
+      <div class="campo">
+        <label for="rd-turma">Turma do relator (aprox.)</label>
+        <select id="rd-turma"><option value="">Todas</option></select>
+      </div>
+      <div class="campo">
+        <label for="rd-rel">Relator(a)</label>
+        <input id="rd-rel" list="rd-rels" placeholder="Nome">
+        <datalist id="rd-rels"></datalist>
+      </div>
+      <div class="campo">
+        <label for="rd-q">Classe ou número</label>
+        <input id="rd-q" placeholder="Ex.: REsp, EREsp, 2281103">
+      </div>
+    </form>
+    <div class="barra-res"><p id="rd-info" aria-live="polite"></p></div>
+    <div class="tabela-wrap"><table class="tabela" id="rd-tab">
+      <thead><tr><th>Publicação</th><th>Processo</th><th>Recurso</th><th>Relator(a)</th><th>Resultado</th><th>Links</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <button type="button" class="btn-mais" id="rd-mais" hidden>Mostrar mais</button>
+  </section>
+
+  <!-- SOBRE -->
+  <section id="aba-sobre" class="aba texto" hidden>
+    <h2>Sobre este site</h2>
+    <p>O site reúne a jurisprudência do Superior Tribunal de Justiça a partir do <a href="https://dadosabertos.web.stj.jus.br/" target="_blank" rel="noopener">Portal de Dados Abertos do STJ</a>. Uma rotina automática consulta o portal todos os dias e publica os dados novos.</p>
+    <h3>Fontes e periodicidade</h3>
+    <ul>
+      <li><strong>Acórdãos (espelhos):</strong> ementa, relator, datas, referências legislativas e, quando houver, tese e tema. Abrange a Corte Especial, as três Seções e as seis Turmas. O STJ divulga um arquivo por mês e órgão, em geral poucos dias após o fim do mês. O site mantém os últimos 12 meses.</li>
+      <li><strong>Precedentes qualificados:</strong> temas repetitivos, controvérsias, IAC, SIRDR e PUIL, com a situação, a questão submetida e a tese firmada. A atualização é diária, e o site registra as mudanças de situação e de tese a partir da primeira execução.</li>
+      <li><strong>Radar DJEN:</strong> acórdãos publicados nos últimos 15 dias disponíveis, a partir dos metadados diários das íntegras, que chegam com cerca de duas semanas de defasagem.</li>
+    </ul>
+    <h3>Cautelas</h3>
+    <ul>
+      <li>O conteúdo reproduz os dados oficiais sem alterar o texto das ementas. Antes de citar qualquer julgado, confira o inteiro teor no site do STJ pelo link de cada resultado.</li>
+      <li>Os processos em segredo de justiça não constam da base aberta.</li>
+      <li>Este é um projeto independente, sem vínculo com o STJ.</li>
+    </ul>
+    <h3>Situação da base</h3>
+    <div id="sobre-base" class="nota"></div>
+  </section>
+</main>
+
+<footer class="rodape"><div class="wrap">Fonte: Portal de Dados Abertos do Superior Tribunal de Justiça. Projeto independente, sem vínculo com o STJ. Confira sempre o inteiro teor oficial.</div></footer>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

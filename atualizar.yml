@@ -1,0 +1,80 @@
+name: Atualizar e publicar
+
+on:
+  schedule:
+    # Todos os dias às 07h e às 19h (horário de Brasília = UTC-3).
+    - cron: "0 10 * * *"
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["site/**", "scripts/**", ".github/workflows/**"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Os dados ficam em cache entre as execuções; assim, a cada dia só se
+      # baixa o que for novo no Portal de Dados Abertos do STJ.
+      - name: Restaurar dados anteriores
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            site/data
+            .cache
+          key: dados-stj-${{ github.run_id }}
+          restore-keys: dados-stj-
+
+      - name: Atualizar dados
+        run: python scripts/atualizar.py --meses 12 --dias-radar 15
+
+      - name: Guardar dados
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            site/data
+            .cache
+          key: dados-stj-${{ github.run_id }}
+
+      # O GitHub desativa rotinas agendadas de repositórios sem atividade por
+      # 60 dias. Reativar a rotina a cada execução reinicia essa contagem.
+      - name: Manter a rotina agendada ativa
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/atualizar.yml/enable"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  publicar:
+    needs: atualizar
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
