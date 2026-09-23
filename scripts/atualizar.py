@@ -602,13 +602,21 @@ def atualizar_espelhos(meses: int, estado: dict) -> dict:
     def processar(item):
         slug, r, versao = item
         bruto = baixar(r["url"])
-        return slug, r, versao, json.loads(bruto.decode("utf-8"))
+        return slug, r, versao, _json_tolerante(bruto.decode("utf-8-sig"))
 
     # Agrupa em memória por (mês, órgão) e grava ao final de cada arquivo.
+    # Um arquivo defeituoso não interrompe os demais; é tentado de novo na próxima execução.
+    falhas = []
     with ThreadPoolExecutor(max_workers=3) as ex:
-        futs = [ex.submit(processar, p) for p in pendentes]
+        futs = {ex.submit(processar, p): p for p in pendentes}
         for f in as_completed(futs):
-            slug, r, versao, registros = f.result()
+            try:
+                slug, r, versao, registros = f.result()
+            except Exception as e:  # noqa: BLE001
+                slug, r, _ = futs[f]
+                falhas.append(f"{ORGAOS[slug]} {nome_recurso(r)}: {e}")
+                log(f"  ! {ORGAOS[slug]} {nome_recurso(r)}: {e}")
+                continue
             por_mes: dict[str, dict] = {}
             for reg in registros:
                 t = enriquecer(limpar_vazios(transformar_espelho(reg, slug)))
@@ -626,7 +634,43 @@ def atualizar_espelhos(meses: int, estado: dict) -> dict:
                 gravar_json(arq, lista)
             estado[r["id"]] = versao
             log(f"  + {ORGAOS[slug]} {nome_recurso(r)}: {len(registros)} acórdãos")
+    if falhas:
+        estado["_falhas_espelhos"] = falhas[:20]
+    else:
+        estado.pop("_falhas_espelhos", None)
     return ultimos
+
+
+def _json_tolerante(txt: str):
+    """Lê o JSON do STJ; se houver defeito pontual (vírgula ausente entre registros), recupera registro a registro."""
+    try:
+        return json.loads(txt)
+    except json.JSONDecodeError:
+        pass
+    try:
+        return json.loads(re.sub(r"\}\s*\n(\s*)\{", r"},\n\1{", txt))
+    except json.JSONDecodeError:
+        pass
+    dec, out = json.JSONDecoder(), []
+    i = txt.find("[") + 1
+    n = len(txt)
+    while i < n:
+        while i < n and txt[i] in " \t\r\n,":
+            i += 1
+        if i >= n or txt[i] == "]":
+            break
+        try:
+            obj, i = dec.raw_decode(txt, i)
+            out.append(obj)
+        except json.JSONDecodeError:
+            prox = txt.find("\n{", i + 1)  # descarta o trecho corrompido e segue para o próximo registro
+            if prox < 0:
+                break
+            i = prox + 1
+    if not out:
+        raise ValueError("arquivo JSON ilegível")
+    log(f"  (arquivo com defeito de formatação: {len(out)} registro(s) recuperado(s))")
+    return out
 
 
 def podar_meses(meses: int) -> list[str]:
@@ -1440,6 +1484,7 @@ def main():
     ultimos = {}
     try:
         ultimos = atualizar_espelhos(args.meses, estado)
+        erros += [f"espelhos: {x}" for x in estado.get("_falhas_espelhos", [])]
     except Exception as e:  # noqa: BLE001
         erros.append(f"espelhos: {e}")
         log("ERRO espelhos:", e)
