@@ -464,7 +464,7 @@ def extrair_tese(em: str) -> str:
 
 
 SINAIS = [
-    ("mudanca", 4, r"superacao|overruling|mudanca de (entendimento|orientacao|jurisprudencia)|alteracao (do|de) entendimento|revisao (da|de) (tese|jurisprudencia|entendimento)|nova orientacao|evolucao jurisprudencial"),
+    ("mudanca", 4, r"superacao (?:do|de|da|dos|das) (?:entendimento|precedente|jurisprudencia|tese|orientacao)|overruling|mudanca de (entendimento|orientacao|jurisprudencia)|alteracao (do|de) entendimento|revisao (da|de) (tese|jurisprudencia|entendimento)|nova orientacao|evolucao jurisprudencial"),
     ("inedito", 4, r"questao (nova|inedita)|primeira vez|tema inedito|nao ha precedentes"),
     ("repetitivo", 3, r"recursos? especia(l|is) repetitiv|rito dos (recursos )?repetitivos|tema repetitivo|representativo d[ae] controversia|precedente qualificado|incidente de assuncao de competencia"),
     ("modulacao", 3, r"modulacao"),
@@ -916,7 +916,16 @@ RE_GENERICO = re.compile("|".join([
     r"honorarios recursais", r"nao (?:e|sao) cabive\w* (?:o |a )?(?:agravo|recurso|embargos|em recurso especial)",
     r"recurso especial (?:nao|e inadmissivel)", r"via (?:estreita|eleita) do habeas", r"nao comporta (?:o )?revolvimento",
     r"irrisori|exorbitant", r"atos normativos secundarios",
+    r"honorarios (?:advocaticios )?(?:na via )?recursa", r"majoracao dos honorarios", r"§ ?11 do art\. ?85", r"art\. ?85, ?§ ?11",
+    r"perda (?:superveniente )?(?:do|de) (?:interesse|objeto)", r"indeferimento liminar", r"sucedaneo", r"regimento interno",
+    r"distinguir ou superar", r"sumula 343", r"nao conhec", r"inadmissibilidade", r"mera revisao", r"reexame de tese",
+    r"alegac\w* generica", r"razoes (?:do|de) (?:recurso|agravo)", r"juizo de admissibilidade", r"efeitos infringentes",
+    r"vicio (?:do|no) julgado", r"requisitos de admissibilidade", r"ausencia de interesse recursal",
+    r"paradigma", r"via eleita", r"aderencia estrita", r"pre-?constituida", r"embargos de divergencia (?:nao|exige|pressup|so|somente)",
+    r"inteiro teor do acordao", r"certidao de julgamento", r"meio de impugnacao",
+    r"nao ha (?:ofensa|violacao) (?:aos?|ao|as?) (?:arts?|dispositivos)", r"inviavel a analise", r"nao se admite a analise",
 ]))
+RE_DESFECHO_VAZIO = re.compile(r"(?:recurso|agravo|agravos|embargos|pedido|habeas corpus|ordem)[^.]{0,40}(?:nao conhecid|rejeitad|nao provid|desprovid|improvid|denegad|indeferid)\w*\.?\s*$")
 _PARE = set("a o os as de do da dos das e em no na nos nas que para por com se ao aos um uma ou nao sua seu art lei sob quando como mais ser sao".split())
 _CLASSES_MERITO = {"REsp", "EREsp", "EAREsp", "RMS", "CC", "MS", "HC", "RHC", "ProAfR", "IAC", "Pet", "Rcl", "SIRDR", "IDC", "AR", "APn"}
 
@@ -945,21 +954,60 @@ def _assinatura(t: str) -> set[str]:
     return {w for w in re.findall(r"[a-z]{4,}", sem_acento(t)) if w not in _PARE}
 
 
+def cabecalho(em: str | None, lim: int = 600) -> str:
+    """Verbetação sem cortar no meio da palavra."""
+    cab = (em or "").split("\n", 1)[0].strip()
+    if len(cab) <= lim:
+        return cab
+    corte = cab.rfind(". ", 0, lim)
+    return cab[: corte + 1] if corte > lim * 0.5 else cab[:lim].rsplit(" ", 1)[0] + "…"
+
+
+def assunto_curto(em: str | None) -> str:
+    """Até três segmentos de assunto da verbetação, sem ramo do direito,
+    classe processual nem desfecho: 'Previdência privada. Resgate de contribuições.'"""
+    cab = (em or "").split("\n", 1)[0]
+    segs = [x.strip() for x in re.split(r"\.\s+(?=[A-Za-zÀ-ÿ])", cab) if x.strip()]
+    out = []
+    for i, sg in enumerate(segs):
+        n = sem_acento(sg)
+        if re.match(r"^(ementa|tema|temas|controversia|iac)\b", n) or re.search(r"repetitiv|admissibilidade|dissidio|via eleita|nao demonstrad|aderencia estrita", n) or _segmento_rotulo(n) or (i < 4 and RE_CLASSE_SEG.match(n)) or RE_DESFECHO_VAZIO.search(n + ".") or re.search(r"provid|provimento|conhecid|rejeitad|concedid|denegad|parcialmente|procedente|improcedente|acolhid", n):
+            continue
+        if len(sg) > 60:
+            if out:
+                break
+            continue
+        out.append(sg.rstrip("."))
+        if len(out) == 3:
+            break
+    return ". ".join(out)
+
+
 def selecionar_feed(cands: list[dict]) -> list[dict]:
     """Escolhe os acórdãos da fila: teses jurídicas, destaques e teses de julgamento
     com conteúdo próprio, descontando os entendimentos reiterados em série."""
     out, pool = [], []
     for r in cands:
-        cl0 = (r.get("cl") or "").split(" ")[0]
-        sub = itens_substantivos(r)
-        if r.get("tese") or r.get("s", 0) >= LIMIAR_DESTAQUE:
-            if cl0 == "EDcl" and r.get("tj") and not sub:
+        toks = (r.get("cl") or "").split(" ")
+        cl0 = toks[0]
+        # Fora da fila: embargos de declaração, recursos extraordinários (juízo de
+        # admissibilidade para o STF) e propostas de afetação (já entram como tema).
+        if cl0 in ("EDcl", "ProAfR") or "RE" in toks:
+            if not r.get("tese"):
                 continue
-            r["_fs"] = r.get("s", 0) + 6
+        sub = itens_substantivos(r)
+        # A fila só traz julgados com uma tese legível: tese jurídica ou itens
+        # próprios da tese de julgamento. Os demais ficam nos Destaques.
+        if not r.get("tese") and not sub:
+            continue
+        cab = sem_acento((r.get("em") or "").split("\n", 1)[0])
+        r["_vazio"] = 1 if RE_DESFECHO_VAZIO.search(cab) else 0
+        if r["_vazio"] and not r.get("tese"):
+            continue
+        if r.get("tese") or r.get("s", 0) >= LIMIAR_DESTAQUE:
+            r["_fs"] = r.get("s", 0) + 6 + 2 * min(len(sub), 2)
             r["_sub"] = sub
             out.append(r)
-            continue
-        if cl0 == "EDcl" or not sub:
             continue
         r["_sub"] = sub
         r["_sig"] = [_assinatura(t) for _, t in sub]
@@ -973,7 +1021,7 @@ def selecionar_feed(cands: list[dict]) -> list[dict]:
                 b["_rep"] += 1
     for r in pool:
         cl0 = (r.get("cl") or "").split(" ")[0]
-        r["_fs"] = r.get("s", 0) + 2 * min(len(r["_sub"]), 3) + (3 if cl0 in _CLASSES_MERITO else 0) - 1.5 * min(r["_rep"], 5)
+        r["_fs"] = r.get("s", 0) + 2 * min(len(r["_sub"]), 3) + (3 if cl0 in _CLASSES_MERITO else 0) - 1.5 * min(r["_rep"], 5) - 4 * r["_vazio"]
         if r["_fs"] >= 2:
             out.append(r)
     return out
@@ -1011,8 +1059,13 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
                 if (r.get("dj") or "") >= lim_feed and (r.get("tese") or r.get("tj") or r.get("s", 0) >= LIMIAR_DESTAQUE):
                     r["m"] = mes
                     cands.append(r)
-    feed = []
-    for r in selecionar_feed(cands):
+    feed, vistos = [], set()
+    for r in sorted(selecionar_feed(cands), key=lambda x: -x.get("_fs", 0)):
+        # Vários recursos do mesmo repetitivo trazem a mesma tese: fica um só.
+        ass = " ".join(re.findall(r"[a-z0-9]{3,}", sem_acento(re.sub(r"^\W*tese\s*\d*\s*:?", "", r.get("tese") or r.get("tj") or "", flags=re.I))[:220]))[:120]
+        if ass in vistos:
+            continue
+        vistos.add(ass)
         sub = r.get("_sub") or []
         todos = itens_tese(r.get("tj") or "")
         # Na fila, mostra só os itens com conteúdo próprio da tese de julgamento.
@@ -1021,7 +1074,7 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
             "id": r.get("id"), "m": r["m"], "o": r.get("o"), "cl": r.get("cl"), "n": r.get("n"),
             "reg": r.get("reg"), "dj": r.get("dj"), "dd": r.get("dd"), "rel": r.get("rel"),
             "s": r.get("s", 0), "fs": round(r.get("_fs", 0), 1), "ar": r.get("ar"), "sa": r.get("sa"), "rz": r.get("rz"),
-            "h": (r.get("em") or "").split("\n", 1)[0][:320],
+            "h": cabecalho(r.get("em")), "as": assunto_curto(r.get("em")),
             "tese": (r.get("tese") or "")[:600], "tj": tj[:900],
             "tjp": 1 if tj != (r.get("tj") or "") else 0,
         }))
@@ -1033,6 +1086,24 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
     gravar_json(SITE_DATA / "indice.json", indice)
     log(f"Destaques: {len(dest)}; índice do radar: {len(indice)}; fila do Atualize-se: {len(feed)} ({', '.join(recentes)}).")
     return {"n": len(dest), "indice": len(indice), "feed": len(feed), "meses": recentes, "limiar": LIMIAR_DESTAQUE}
+
+# --------------------------------------------------------------------------
+# 6a. Índice de números de processo (todo o acervo), para a busca por número.
+# --------------------------------------------------------------------------
+def gerar_numeros(meses_disp: list[str]) -> int:
+    meses = sorted(meses_disp)
+    orgs = list(ORGAOS)
+    linhas = []
+    for mi, mes in enumerate(meses):
+        for oi, slug in enumerate(orgs):
+            for r in ler_json(SITE_DATA / "acordaos" / mes / f"{slug}.json", []):
+                n = re.sub(r"\D", "", str(r.get("n") or ""))
+                if n:
+                    linhas.append([n, str(r.get("reg") or ""), mi, oi, r.get("id")])
+    gravar_json(SITE_DATA / "numeros.json", {"m": meses, "o": orgs, "l": linhas})
+    log(f"Números de processo indexados: {len(linhas)}.")
+    return len(linhas)
+
 
 # --------------------------------------------------------------------------
 # 7. Súmulas do STJ (página oficial SCON). O site oficial costuma recusar
@@ -1155,6 +1226,12 @@ def main():
     except Exception as e:  # noqa: BLE001
         erros.append(f"destaques: {e}")
         log("ERRO destaques:", e)
+
+    try:
+        gerar_numeros(meses_disp)
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"números: {e}")
+        log("ERRO números:", e)
 
     temas = {}
     try:
