@@ -144,28 +144,221 @@
   };
 
   // ================================================================ consulta
-  function parseConsulta(q) {
-    const res = { inc: [], exc: [], tema: null };
-    const re = /(-?)"([^"]+)"|(-?)(\S+)/g; let m;
-    while ((m = re.exec(q || ""))) {
-      const neg = m[1] || m[3];
-      let termo = m[2] ?? m[4];
-      const tm = /^tema:(\d+)$/i.exec(termo);
-      if (tm && !neg) { res.tema = +tm[1]; continue; }
-      termo = norm(termo).trim();
-      if (!termo || (termo.length < 2 && !/\d/.test(termo))) continue;
-      (neg ? res.exc : res.inc).push(termo);
+  // Motor de pesquisa por termos, no estilo da pesquisa de jurisprudência do STJ:
+  //   palavras inteiras (prova ≠ corporal), "expressão exata", E, OU, NÃO (ou -termo),
+  //   parênteses, truncamento com $ (process$), ADJn (na ordem, até n palavras)
+  //   e PROXn (em qualquer ordem, até n palavras), além de tema:1234.
+  const Busca = (() => {
+    const cache = new Map();
+    const LIM = "[a-z0-9]";
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    function lex(q) {
+      const out = [];
+      const re = /\s*(\(|\)|"[^"]*"?|-(?=[^\s-])|[^\s()"]+)/g; let m;
+      while ((m = re.exec(q))) {
+        const s = m[1];
+        if (s === "(" || s === ")") { out.push({ t: s }); continue; }
+        if (s === "-") { out.push({ t: "op", v: "NAO" }); continue; }
+        if (s.startsWith('"')) {
+          const palavras = norm(s.replace(/"/g, "")).split(/[^a-z0-9$]+/).filter(Boolean);
+          if (palavras.length) out.push({ t: "frase", v: palavras });
+          continue;
+        }
+        const n = norm(s);
+        if (n === "e" || n === "and" || n === "&") { out.push({ t: "op", v: "E" }); continue; }
+        if (n === "ou" || n === "or" || n === "|") { out.push({ t: "op", v: "OU" }); continue; }
+        if (n === "nao" || n === "not") { out.push({ t: "op", v: "NAO" }); continue; }
+        let mm = /^adj(\d{0,2})$/.exec(n); if (mm) { out.push({ t: "op", v: "ADJ", n: +(mm[1] || 1) }); continue; }
+        mm = /^prox(\d{0,2})$/.exec(n); if (mm) { out.push({ t: "op", v: "PROX", n: +(mm[1] || 3) }); continue; }
+        mm = /^tema:(\d+)$/.exec(n); if (mm) { out.push({ t: "tema", v: +mm[1] }); continue; }
+        const partes = n.split(/[^a-z0-9$*]+/).filter(Boolean).map((p) => p.replace(/\*/g, "$"));
+        if (!partes.length) continue;
+        if (partes.length === 1) out.push({ t: "termo", v: partes[0] });
+        else out.push({ t: "frase", v: partes });
+      }
+      return out;
     }
-    return res;
-  }
-  const reTema = (n) => new RegExp(`(tema|controversia|iac)[^0-9]{0,30}(n[.ºo°]*\\s*)?${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "\\.?")}\\b`, "i");
+    function parse(q) {
+      const tk = lex(q); let i = 0;
+      const peek = () => tk[i];
+      const isOp = (x, v) => x && x.t === "op" && (!v || x.v === v);
+      function pOu() {
+        let a = pE();
+        while (isOp(peek(), "OU")) { i++; const b = pE(); if (!b) break; a = a ? { t: "ou", a: [a, b] } : b; }
+        return a;
+      }
+      function pE() {
+        let a = pNao();
+        while (peek() && peek().t !== ")" && !isOp(peek(), "OU")) {
+          if (isOp(peek(), "E")) { i++; if (!peek() || peek().t === ")") break; }
+          const b = pNao(); if (!b) break;
+          a = a ? { t: "e", a: [a, b] } : b;
+        }
+        return a;
+      }
+      function pNao() {
+        if (isOp(peek(), "NAO")) { i++; const x = pNao(); return x ? { t: "nao", a: [x] } : null; }
+        return pProx();
+      }
+      function pProx() {
+        let a = pAtomo();
+        while (isOp(peek(), "ADJ") || isOp(peek(), "PROX")) {
+          const op = tk[i++]; const b = pAtomo(); if (!b) break;
+          a = { t: op.v.toLowerCase(), n: op.n, a: [a, b] };
+        }
+        return a;
+      }
+      function pAtomo() {
+        const x = peek(); if (!x) return null;
+        if (x.t === "(") { i++; const e = pOu(); if (peek() && peek().t === ")") i++; else throw new Error("Parêntese não fechado."); return e; }
+        if (x.t === ")") { i++; return null; }
+        if (x.t === "op") { i++; return null; }
+        i++;
+        return x.t === "termo" ? { t: "termo", v: x.v } : x.t === "frase" ? { t: "frase", v: x.v } : { t: "tema", v: x.v };
+      }
+      const ast = pOu();
+      while (i < tk.length) { const extra = pOu(); if (!extra) { i++; continue; } }
+      return ast;
+    }
+    function reDe(no) {
+      const k = JSON.stringify(no);
+      if (cache.has(k)) return cache.get(k);
+      const pal = (w) => (w.endsWith("$") ? `${esc(w.slice(0, -1))}${LIM}*` : esc(w));
+      let src;
+      if (no.t === "termo") src = `(?<!${LIM})${pal(no.v)}(?!${LIM})`;
+      else src = `(?<!${LIM})${no.v.map(pal).join(`[^a-z0-9]+`)}(?!${LIM})`;
+      const re = new RegExp(src);
+      cache.set(k, re);
+      return re;
+    }
+    function posicoes(no, tokens) {
+      const ws = no.t === "termo" ? [no.v] : no.v;
+      const ok = (tok, w) => (w.endsWith("$") ? tok.startsWith(w.slice(0, -1)) : tok === w);
+      const res = [];
+      for (let i = 0; i + ws.length <= tokens.length; i++) {
+        let bate = true;
+        for (let j = 0; j < ws.length; j++) if (!ok(tokens[i + j], ws[j])) { bate = false; break; }
+        if (bate) res.push([i, i + ws.length - 1]);
+      }
+      return res;
+    }
+    function avaliar(no, doc) {
+      switch (no.t) {
+        case "termo": case "frase": return reDe(no).test(doc.t);
+        case "tema": return reTema(no.v).test(doc.t);
+        case "e": return no.a.every((x) => avaliar(x, doc));
+        case "ou": return no.a.some((x) => avaliar(x, doc));
+        case "nao": return !avaliar(no.a[0], doc);
+        case "adj": case "prox": {
+          const [x, y] = no.a;
+          const simples = (z) => z.t === "termo" || z.t === "frase";
+          if (!simples(x) || !simples(y)) return avaliar(x, doc) && avaliar(y, doc);
+          if (!avaliar(x, doc) || !avaliar(y, doc)) return false;
+          if (!doc.tok) doc.tok = doc.t.match(/[a-z0-9]+/g) || [];
+          const px = posicoes(x, doc.tok), py = posicoes(y, doc.tok);
+          for (const [a0, a1] of px) for (const [b0, b1] of py) {
+            if (no.t === "adj" && b0 > a1 && b0 - a1 <= no.n) return true;
+            if (no.t === "prox" && (b0 > a1 ? b0 - a1 : a0 - b1) >= 1 && (b0 > a1 ? b0 - a1 : a0 - b1) <= no.n) return true;
+          }
+          return false;
+        }
+        default: return true;
+      }
+    }
+    function positivos(no, neg = false, out = []) {
+      if (!no) return out;
+      if (no.t === "nao") return positivos(no.a[0], !neg, out);
+      if ((no.t === "termo" || no.t === "frase") && !neg) out.push(no);
+      (no.a || []).forEach((x) => positivos(x, neg, out));
+      return out;
+    }
+    function explicar(no) {
+      if (!no) return "";
+      const f = (x, topo) => {
+        switch (x.t) {
+          case "termo": return x.v.endsWith("$") ? `palavras começadas por “${x.v.slice(0, -1)}”` : `“${x.v}”`;
+          case "frase": return `a expressão exata “${x.v.join(" ")}”`;
+          case "tema": return `menção ao tema ${x.v}`;
+          case "e": { const s = x.a.map((y) => f(y)).join(" e "); return topo ? s : `(${s})`; }
+          case "ou": { const s = x.a.map((y) => f(y)).join(" ou "); return topo ? s : `(${s})`; }
+          case "nao": return `sem ${f(x.a[0])}`;
+          case "adj": return `${f(x.a[0])} seguido de ${f(x.a[1])} (até ${x.n} palavra${x.n > 1 ? "s" : ""})`;
+          case "prox": return `${f(x.a[0])} perto de ${f(x.a[1])} (até ${x.n} palavras)`;
+          default: return "";
+        }
+      };
+      return f(no, true);
+    }
+    function compilar(q) {
+      q = String(q || "").trim();
+      if (!q) return { vazio: true, termos: [], testa: () => true, pontua: () => 0, explicacao: "" };
+      let ast = null, erro = "";
+      try { ast = parse(q); } catch (e) { erro = e.message; ast = parse(q.replace(/[()]/g, " ")); }
+      const termos = positivos(ast);
+      const temTexto = !!ast;
+      return {
+        vazio: !temTexto, erro, ast, termos,
+        explicacao: explicar(ast),
+        temTema: JSON.stringify(ast || {}).includes('"t":"tema"'),
+        testa: (texto) => !ast || avaliar(ast, { t: texto }),
+        pontua(texto, cabeca = "") {
+          let s = 0;
+          for (const t of termos) {
+            const re = new RegExp(reDe(t).source, "g");
+            const n = (texto.match(re) || []).length;
+            s += Math.min(n, 6) + (cabeca && reDe(t).test(cabeca) ? 4 : 0);
+          }
+          // Bônus quando as palavras soltas aparecem juntas, na ordem digitada.
+          const soltas = termos.filter((t) => t.t === "termo").map((t) => t.v);
+          if (soltas.length > 1 && reDe({ t: "frase", v: soltas }).test(texto)) s += 8;
+          return s;
+        },
+      };
+    }
+    return { compilar };
+  })();
+  const reTema = (n) => new RegExp(`(tema|controversia|iac)[^0-9]{0,30}(n[.ºo°]*\\s*)?${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "\\.?")}(?![0-9])`, "i");
   function destacar(htmlEsc, termos) {
-    const t = (termos || []).filter((x) => x.length >= 2);
+    const t = (termos || []).filter((x) => (x.t === "termo" ? x.v.replace("$", "").length >= 2 : true));
     if (!t.length) return htmlEsc;
     const mapa = { a: "[aáàâãä]", e: "[eéèêë]", i: "[iíìîï]", o: "[oóòôõö]", u: "[uúùûü]", c: "[cç]", n: "[nñ]" };
-    const re = new RegExp(`(${t.map((x) => reEsc(x).replace(/[aeioucn]/g, (c) => mapa[c])).join("|")})`, "gi");
+    const pal = (w) => {
+      const pref = w.endsWith("$"); const base = pref ? w.slice(0, -1) : w;
+      return base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/[aeioucn]/g, (c) => mapa[c]) + (pref ? "[\\p{L}\\p{N}]*" : "");
+    };
+    const partes = t.map((x) => (x.t === "termo" ? pal(x.v) : x.v.map(pal).join("[^\\p{L}\\p{N}<>]+")));
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])(${partes.join("|")})(?![\\p{L}\\p{N}])`, "giu");
     return htmlEsc.split(/(<[^>]+>)/).map((seg) => (seg.startsWith("<") ? seg : seg.replace(re, "<mark>$1</mark>"))).join("");
   }
+  const AJUDA_BUSCA = `
+    <div class="ajuda-busca" hidden>
+      <p><b>Como pesquisar.</b> As palavras são buscadas inteiras: <code>oral</code> não encontra “corporal”.</p>
+      <table>
+        <tr><td><code>prova oral</code></td><td>as duas palavras, em qualquer lugar (E implícito)</td></tr>
+        <tr><td><code>"prova oral"</code></td><td>expressão exata</td></tr>
+        <tr><td><code>dano e moral</code></td><td>as duas palavras</td></tr>
+        <tr><td><code>guarda ou visitas</code></td><td>uma ou outra</td></tr>
+        <tr><td><code>alimentos não gravídicos</code> · <code>-gravídicos</code></td><td>exclui a palavra</td></tr>
+        <tr><td><code>(usucapião ou posse) e rural</code></td><td>agrupa com parênteses</td></tr>
+        <tr><td><code>prescri$</code></td><td>prescrição, prescricional, prescrito…</td></tr>
+        <tr><td><code>dano adj moral</code> · <code>adj2</code></td><td>na ordem, até 1 (ou 2) palavras de distância</td></tr>
+        <tr><td><code>juros prox5 mora</code></td><td>perto, em qualquer ordem, até 5 palavras</td></tr>
+        <tr><td><code>tema:1365</code></td><td>acórdãos que mencionam o tema</td></tr>
+      </table>
+      <div class="chips" style="margin-top:8px">
+        <button type="button" class="chip" aria-pressed="false" data-ex='"prova oral"'>"prova oral"</button>
+        <button type="button" class="chip" aria-pressed="false" data-ex="(plano de saúde) e (rol ou cobertura) não odontológico">plano de saúde…</button>
+        <button type="button" class="chip" aria-pressed="false" data-ex="prescri$ adj2 intercorrente">prescri$ adj2 intercorrente</button>
+      </div>
+    </div>`;
+  function ligarAjuda(raiz, campo, aplicar) {
+    const bt = raiz.querySelector("[data-ajuda]"), box = raiz.querySelector(".ajuda-busca");
+    if (!bt || !box) return;
+    bt.addEventListener("click", () => { box.hidden = !box.hidden; bt.setAttribute("aria-expanded", String(!box.hidden)); });
+    box.addEventListener("click", (e) => { const c = e.target.closest("[data-ex]"); if (!c) return; campo.value = c.dataset.ex; aplicar(); campo.focus(); });
+  }
+  const explicacaoHTML = (c) => (c.vazio ? "" : `<span class="explica">${c.erro ? `${esc(c.erro)} ` : ""}Buscando ${esc(c.explicacao)}</span>`);
 
   // ================================================================= dados
   const D = { man: null, orgaos: {}, shards: new Map(), cache: {} };
@@ -207,7 +400,7 @@
     return l;
   });
   const destaques = () => carregar("destaques");
-  const indice = () => carregar("indice", (l) => { for (const x of l) x._n = norm(`${x.h} ${x.tese || ""}`); return l; });
+  const indice = () => carregar("indice", (l) => { for (const x of l) x._n = norm(`${x.h} ${x.tese || ""} ${x.tj || ""}`); return l; });
   const djen = () => carregar("radar", (l) => { for (const x of l) x._p = norm(`${x.p} ${x.r || ""}`); return l; });
 
   function shard(mes, slug) {
@@ -256,9 +449,9 @@
     const add = (k, item) => { if (!out.has(k)) out.set(k, item); else if (ordNivel(item.nivel) < ordNivel(out.get(k).nivel)) out.set(k, item); };
     for (const termo of P.termos) {
       const tm = /^tema\s*:?\s*(\d+)$/i.exec(termo.trim());
-      const cons = tm ? null : parseConsulta(termo);
-      const casa = (txt) => cons.inc.every((w) => txt.includes(w)) && !cons.exc.some((w) => txt.includes(w));
-      if (cons && !cons.inc.length) continue;
+      const cons = tm ? null : Busca.compilar(termo);
+      if (cons && cons.vazio) continue;
+      const casa = (txt) => cons.testa(txt);
       for (const x of t) {
         if (tm ? x.n !== +tm[1] || x.tp !== "Tema" : !casa(x._n)) continue;
         const pts = emPauta.get(`${x.tp}-${x.n}`);
@@ -272,7 +465,7 @@
         if (tm ? !rT.test(r._n) : !casa(r._n)) continue;
         const nivel = nivelAc(r.s) || "acomp";
         add(`a|${r.id}`, { tipo: "acordao", nivel, d: r.dj, dNovo: r.dj, termo, obj: r });
-        if (++c >= 80) break;
+        if (++c >= 150) break;
       }
     }
     for (const proc of P.procs) {
@@ -300,6 +493,11 @@
     const m = /([A-Za-z]{2})\s*[-/ ]?\s*(\d{1,6})\s*([A-Za-z])?/.exec(String(s || ""));
     return m ? `${m[1].toUpperCase()}${m[2].padStart(6, "0")}${m[3] ? m[3].toUpperCase() : ""}` : "";
   }
+  async function atualizarContadorFeed() {
+    const n = await contarNaoLidos();
+    $$(".cont-feed").forEach((el) => { el.textContent = n > 99 ? "99+" : n; el.hidden = !n; });
+    return n;
+  }
   async function atualizarContadorRadar() {
     try {
       const l = await calcularRadar();
@@ -324,6 +522,15 @@
     return `(STJ, ${r.cl} n. ${fmtNumProc(r.n)}, Rel. ${relatorFmt(r.rel)}, ${D.orgaos[r.o]}, julgado em ${fmtDataCit(r.dd)}, ${veic} de ${fmtDataCit(r.dj)}.)`;
   }
   const REG_AC = new Map();
+  const mesDe = (r) => String(r.m || r.dj || r.dd || "").slice(0, 7);
+  function blocoTese(r, termos, compacto = false) {
+    const txt = r.tese || r.tj;
+    if (!txt) return "";
+    const rot = r.tese ? "Tese jurídica" : "Tese de julgamento";
+    const ps = String(txt).split(/\n+/).filter(Boolean);
+    const corpo = ps.map((p) => `<p>${destacar(esc(p), termos)}</p>`).join("");
+    return `<div class="tese${compacto ? " compacta" : ""}"><b>${rot}</b>${corpo}</div>`;
+  }
   function cardAcordao(r, opts = {}) {
     REG_AC.set(String(r.id), r);
     const termos = opts.termos || [];
@@ -336,21 +543,24 @@
     const temCorpo = corpo.length > 0;
     const dups = r._dup?.length ? `<p class="duplic">Mesma ementa em ${r._dup.length} outro(s) processo(s): ${r._dup.slice(0, 6).map((d) => `${esc(d.cl)} ${fmtNumProc(d.n)}`).join(", ")}${r._dup.length > 6 ? "…" : ""}</p>` : "";
     return `<li class="card item" data-id="${esc(r.id)}">
-      <div class="item-cab"><span class="item-tit">${esc(r.cl)} ${fmtNumProc(r.n)}</span>
+      <div class="item-cab"><button type="button" class="item-tit item-abrir" data-a="abrir" title="Abrir o julgado completo">${esc(r.cl)} ${fmtNumProc(r.n)}</button>
         <span class="meta"><span>${esc(D.orgaos[r.o] || "")}</span>${r.rel ? `<span>Rel. ${esc(relatorFmt(r.rel))}</span>` : ""}${r.dd ? `<span>Julg. ${fmtData(r.dd)}</span>` : ""}<span>Publ. ${fmtData(r.dj)}</span></span></div>
       ${niv || motivos || areas ? `<div class="item-sel">${seloNivel(niv)}${motivos}${areas}</div>` : ""}
+      ${blocoTese(r, termos, true)}
       <p class="verb">${destacar(esc(frase(cab)), termos)}</p>
-      ${r.tese ? `<div class="tese"><b>Tese jurídica</b>${destacar(esc(r.tese), termos)}</div>` : ""}
       ${temCorpo ? `<div class="expansivel"><div><div class="texto-serif">${corpo.map((p) => `<p>${destacar(esc(p), termos)}</p>`).join("")}</div></div></div>` : ""}
       ${dups}
       <div class="acoes">
-        ${temCorpo ? `<button type="button" class="link-acao" data-a="ementa">Ver ementa completa</button>` : ""}
-        <a class="link-acao" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor ${ico("externo")}</a>
+        ${temCorpo ? `<button type="button" class="link-acao" data-a="ementa">Ver ementa completa</button>` : `<button type="button" class="link-acao" data-a="abrir">Ver julgado completo</button>`}
+        <a class="link-acao" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>
         <span class="dir">
-          ${r.em ? `<button type="button" class="btn-ico" data-a="cit" title="Copiar citação" aria-label="Copiar citação">${ico("copiar")}</button>` : ""}
+          ${r.em ? `<button type="button" class="btn-ico" data-a="cit" title="Copiar ementa e citação" aria-label="Copiar ementa e citação">${ico("copiar")}</button>` : ""}
           <button type="button" class="btn-ico btn-salvar" data-a="salvar" aria-pressed="${salvo}" title="${salvo ? "Remover dos salvos" : "Salvar"}" aria-label="Salvar">${ico("salvar")}</button>
         </span>
       </div></li>`;
+  }
+  function minimoAcordao(r) {
+    return { k: "a", id: r.id, m: mesDe(r), cl: r.cl, n: r.n, o: r.o, rel: r.rel, dd: r.dd, dj: r.dj, reg: r.reg, h: (r.em || r.h || "").split("\n")[0], tese: r.tese, tj: r.tj, s: r.s, rz: r.rz, ar: r.ar };
   }
   function ligarCards(ul) {
     ul.addEventListener("click", (ev) => {
@@ -361,25 +571,45 @@
         const e = li.querySelector(".expansivel"); e.classList.toggle("aberto");
         b.textContent = e.classList.contains("aberto") ? "Recolher ementa" : "Ver ementa completa";
       }
+      if (a === "abrir") abrirAcordao(r);
       if (a === "cit") copiar(`${r.em}\n${citacao(r)}`, "Ementa e citação copiadas.");
-      if (a === "salvar") alternarSalvo(`a:${r.id}`, { k: "a", id: r.id, cl: r.cl, n: r.n, o: r.o, rel: r.rel, dd: r.dd, dj: r.dj, reg: r.reg, h: (r.em || r.h || "").split("\n")[0], tese: r.tese, s: r.s, rz: r.rz, ar: r.ar }, b);
+      if (a === "salvar") alternarSalvo(`a:${r.id}`, minimoAcordao(r), b);
     });
+  }
+  async function abrirAcordao(ref) {
+    let r = ref.em ? ref : null;
+    if (!r) {
+      try { const l = await shard(mesDe(ref), ref.o); r = l.find((x) => String(x.id) === String(ref.id)); } catch { /* fora do acervo */ }
+    }
+    if (!r) { abrirGaveta("Julgado", `${ref.cl} ${fmtNumProc(ref.n)}`, `<p class="texto-serif">${esc(frase(ref.h || ""))}</p><div class="acoes"><a class="btn btn-pri" href="${URLS.inteiroTeor(ref.reg, ref.dj)}" target="_blank" rel="noopener">Abrir inteiro teor no STJ ${ico("externo")}</a></div>`); return; }
+    REG_AC.set(String(r.id), r);
+    const [cab, ...corpo] = (r.em || "").split("\n");
+    const salvo = !!P.salvos[`a:${r.id}`];
+    const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).map((k) => `<span class="selo pri">${esc(MOTIVOS[k])}</span>`).join("");
+    const areas = (r.ar || []).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
+    const extra = [["Relator(a)", r.rel ? relatorFmt(r.rel) : ""], ["Julgamento", fmtData(r.dd)], ["Publicação", `${(r.djt || "").split(/\s/)[0] || "DJ"} ${fmtData(r.dj)}`], ["Tema", r.tema], ["Notas", r.notas], ["Informações complementares", r.info], ["Referências legislativas", (r.leg || []).join("\n")]]
+      .filter(([, v]) => v).map(([l, v]) => `<dt>${l}</dt><dd>${esc(v).replace(/\n/g, "<br>")}</dd>`).join("");
+    abrirGaveta(`${D.orgaos[r.o] || ""}${r.dd ? " · julgado em " + fmtData(r.dd) : ""}`, `${r.cl} ${fmtNumProc(r.n)}`, `
+      <div class="item-sel">${seloNivel(nivelAc(r.s ?? 0))}${motivos}${areas}</div>
+      <div class="acoes" style="margin:4px 0 14px">
+        <a class="btn btn-pri btn-peq" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>
+        <a class="btn btn-claro btn-peq" href="${URLS.processo(r.reg)}" target="_blank" rel="noopener">Consulta processual</a>
+        <button type="button" class="btn btn-claro btn-peq" id="ga-cit">${ico("copiar")} Copiar ementa e citação</button>
+        <button type="button" class="btn btn-claro btn-peq btn-salvar" id="ga-salvar" aria-pressed="${salvo}">${ico("salvar")} ${salvo ? "Salvo" : "Salvar"}</button>
+      </div>
+      ${blocoTese(r, [])}
+      <h3>Ementa</h3>
+      <p class="verb">${esc(frase(cab))}</p>
+      <div class="texto-serif" style="margin-top:10px">${corpo.map((p) => `<p>${esc(p)}</p>`).join("")}</div>
+      ${extra ? `<h3>Dados do julgado</h3><dl class="dl">${extra}</dl>` : ""}`);
+    $("#ga-cit").addEventListener("click", () => copiar(`${r.em}\n${citacao(r)}`, "Ementa e citação copiadas."));
+    $("#ga-salvar").addEventListener("click", (e) => { alternarSalvo(`a:${r.id}`, minimoAcordao(r), e.currentTarget); e.currentTarget.lastChild.textContent = P.salvos[`a:${r.id}`] ? " Salvo" : " Salvar"; });
   }
   function alternarSalvo(chave, obj, botao) {
     if (P.salvos[chave]) { delete P.salvos[chave]; toast("Removido dos salvos."); }
     else { P.salvos[chave] = { ...obj, salvoEm: hojeISO() }; toast("Salvo. Veja em Meu radar → Salvos."); }
     salvarP();
     if (botao) { botao.setAttribute("aria-pressed", String(!!P.salvos[chave])); }
-  }
-
-  function linhaTema(t, extra = "") {
-    return `<li class="card item" data-tema="${esc(t.tp)}|${t.n}">
-      <div class="item-cab"><span class="item-tit"><a href="#repetitivos?abrir=${encodeURIComponent(t.tp)}-${t.n}" data-abrir-tema>${esc(t.tp)} ${t.n}</a></span>${seloSit(t.sit)}${extra}
-        <span class="meta"><span>${esc(t.org || "—")}</span>${t._mov ? `<span>Últ. mov. ${fmtData(t._mov)}</span>` : ""}</span></div>
-      ${t.q ? `<p class="texto-serif">${esc(t.q)}</p>` : ""}
-      ${t.tese ? `<div class="tese"><b>Tese firmada</b>${esc(t.tese)}</div>` : ""}
-      <div class="acoes"><button type="button" class="link-acao" data-abrir-tema>Detalhes e linha do tempo ${ico("seta")}</button>
-        <a class="link-acao" href="${URLS.tema(t.tp, t.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a></div></li>`;
   }
 
   // =============================================================== gaveta
@@ -453,9 +683,223 @@
     const [tp, n] = li.dataset.tema.split("|"); abrirTema(tp, +n);
   });
 
+  function linhaTema(t, extra = "", termos = []) {
+    const areas = (t.ar || []).slice(0, 2).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
+    return `<li class="card item" data-tema="${esc(t.tp)}|${t.n}">
+      <div class="item-cab"><button type="button" class="item-tit item-abrir" data-abrir-tema>${esc(t.tp)} ${t.n}</button>${seloSit(t.sit)}${extra}
+        <span class="meta"><span>${esc(t.org || "—")}</span>${t._mov ? `<span>Últ. mov. ${fmtData(t._mov)}</span>` : ""}</span></div>
+      ${areas ? `<div class="item-sel">${areas}</div>` : ""}
+      ${t.tese ? `<div class="tese compacta"><b>Tese firmada</b><p>${destacar(esc(t.tese), termos)}</p></div>` : t._teseAguarda ? `<p class="nota">Julgado; tese aguardando a publicação do acórdão.</p>` : ""}
+      ${t.q ? `<p class="texto-serif${t.tese ? " questao" : ""}">${t.tese ? "<b>Questão:</b> " : ""}${destacar(esc(t.q), termos)}</p>` : ""}
+      <div class="acoes"><button type="button" class="link-acao" data-abrir-tema>Detalhes e linha do tempo ${ico("seta")}</button>
+        <a class="link-acao" href="${URLS.tema(t.tp, t.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a></div></li>`;
+  }
+
+  // ========================================================= ATUALIZE-SE
+  // Leitura em cartões: um julgado por tela, tese em destaque, progresso e
+  // controle do que já foi lido. A rolagem encaixa cartão a cartão (scroll-snap).
+  const FEED_TIPOS = {
+    tese: { rot: "Tese firmada em repetitivo", cls: "ok", peso: 100 },
+    afetacao: { rot: "Novo tema afetado", cls: "rel", peso: 75 },
+    pauta: { rot: "Vai a julgamento", cls: "alta", peso: 70 },
+    publicado: { rot: "Acórdão do repetitivo publicado", cls: "acomp", peso: 55 },
+    julgado: { rot: "Julgado relevante", cls: "pri", peso: 40 },
+  };
+  async function itensFeed() {
+    const [t, ds, pl] = await Promise.all([temas(), destaques(), pautas()]);
+    const hoje = hojeISO(), desde = somaDias(hoje, -45);
+    const itens = [];
+    const idade = (d) => Math.max(0, (new Date(hoje) - new Date(d)) / 864e5);
+    for (const x of t) {
+      if (x.julg >= desde && (x.tese || x._teseAguarda)) itens.push({ k: `tese:${x.tp}-${x.n}`, tipo: "tese", d: x.julg, t: x, ar: x.ar || [] });
+      else if (x.pub >= desde && x.tese) itens.push({ k: `pub:${x.tp}-${x.n}`, tipo: "publicado", d: x.pub, t: x, ar: x.ar || [] });
+      if (x.afet >= desde && x.q) itens.push({ k: `afet:${x.tp}-${x.n}`, tipo: "afetacao", d: x.afet, t: x, ar: x.ar || [] });
+    }
+    const lim = somaDias(hoje, 21);
+    const vistosP = new Set();
+    for (const p of pl) {
+      if (!p.temas?.length || p.d > lim) continue;
+      for (const [tp, n] of p.temas) {
+        const x = t.idx.get(`${tp}-${n}`); const k = `pauta:${tp}-${n}:${p.d}`;
+        if (x && !vistosP.has(k)) { vistosP.add(k); itens.push({ k, tipo: "pauta", d: p.d, t: x, p, ar: x.ar || [] }); }
+      }
+    }
+    const recentes = agrupar(ds.filter((r) => r.dj >= somaDias(hoje, -75))).filter((r) => r.s >= 8 || r.tese || r.tj);
+    for (const r of recentes) itens.push({ k: `ac:${r.id}`, tipo: "julgado", d: r.dj, r, ar: r.ar || [] });
+    for (const it of itens) it.p0 = FEED_TIPOS[it.tipo].peso + (it.r ? Math.min(it.r.s, 20) : 0) + (it.tipo === "pauta" ? 20 - idade(hoje) : -idade(it.d) * 0.9);
+    itens.sort((a, b) => b.p0 - a.p0);
+    // Intercala tipos para o ritmo da leitura não ficar monótono.
+    const filas = {}; itens.forEach((i) => (filas[i.tipo] = filas[i.tipo] || []).push(i));
+    const ordem = ["tese", "julgado", "afetacao", "julgado", "pauta", "julgado", "publicado", "julgado"];
+    const out = []; let vazias = 0, j = 0;
+    while (vazias < ordem.length) { const f = filas[ordem[j++ % ordem.length]]; if (f?.length) { out.push(f.shift()); vazias = 0; } else vazias++; }
+    return out;
+  }
+  function lidos() { return (P.lidos = P.lidos || {}); }
+  function marcarLido(k) { const l = lidos(); if (!l[k]) { l[k] = hojeISO(); const ks = Object.keys(l); if (ks.length > 3000) ks.slice(0, ks.length - 3000).forEach((x) => delete l[x]); salvarP(); } }
+  async function contarNaoLidos() {
+    try { const it = await itensFeed(); const a = P.feedAreas || []; return it.filter((x) => !lidos()[x.k] && (!a.length || x.ar.some((y) => a.includes(y)))).length; } catch { return 0; }
+  }
+  function cartaoFeed(it, i, total) {
+    const tp = FEED_TIPOS[it.tipo];
+    const areas = it.ar.slice(0, 2).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
+    let kicker = "", principal = "", apoio = "", meta = "", acoes = "", rotTexto = "";
+    if (it.t) {
+      const x = it.t;
+      kicker = `${x.tp} ${x.n} · ${esc(x.org || "")}`;
+      if (it.tipo === "tese" || it.tipo === "publicado") {
+        rotTexto = "Tese firmada";
+        principal = x.tese ? esc(x.tese) : `Julgado em ${fmtData(x.julg)}. A tese será divulgada com a publicação do acórdão.`;
+        apoio = x.q ? `<b>Questão:</b> ${esc(x.q)}` : "";
+        meta = it.tipo === "tese" ? `Julgado em ${fmtData(x.julg)}` : `Acórdão publicado em ${fmtData(x.pub)}`;
+      } else if (it.tipo === "afetacao") {
+        rotTexto = "Questão submetida";
+        principal = esc(x.q);
+        apoio = /suspens/i.test(x.info || "") ? `<b>Atenção:</b> há determinação de suspensão de processos sobre a matéria.` : "";
+        meta = `Afetado em ${fmtData(x.afet)}`;
+      } else {
+        rotTexto = "Questão em julgamento";
+        principal = esc(x.q || "");
+        apoio = `${esc(it.p.p)}${it.p.pet ? " (" + esc(it.p.pet) + ")" : ""} · ${esc(D.orgaos[it.p.o] || "")} · Rel. ${esc(it.p.rel || "")}`;
+        meta = `Sessão de ${fmtDiaL(it.p.d)}`;
+      }
+      acoes = `<button type="button" class="btn btn-claro btn-peq" data-f="tema">${ico("repetitivos")} Linha do tempo</button>
+        <a class="btn btn-claro btn-peq" href="${URLS.tema(x.tp, x.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>`;
+    } else {
+      const r = it.r;
+      REG_AC.set(String(r.id), r);
+      kicker = `${esc(r.cl)} ${fmtNumProc(r.n)} · ${esc(D.orgaos[r.o] || "")}`;
+      const tese = r.tese || r.tj;
+      rotTexto = tese ? (r.tese ? "Tese jurídica" : "Tese de julgamento") : "O que foi decidido";
+      principal = tese ? esc(tese).replace(/\n+/g, "<br>") : esc(frase(r.em.split("\n")[0]));
+      apoio = tese ? esc(frase(r.em.split("\n")[0])) : "";
+      const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 3).map((k) => MOTIVOS[k]).join(" · ");
+      meta = `Julgado em ${fmtData(r.dd)} · publicado em ${fmtData(r.dj)}${motivos ? ` · ${esc(motivos)}` : ""}`;
+      acoes = `<button type="button" class="btn btn-claro btn-peq" data-f="acordao">${ico("arquivo")} Ementa completa</button>
+        <a class="btn btn-claro btn-peq" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor ${ico("externo")}</a>`;
+    }
+    const salvoK = it.t ? `t:${it.t.tp}-${it.t.n}` : `a:${it.r.id}`;
+    const salvo = !!P.salvos[salvoK];
+    return `<article class="reel" data-k="${esc(it.k)}" data-i="${i}" aria-label="Item ${i + 1} de ${total}">
+      <div class="reel-in">
+        <header class="reel-cab"><span class="selo ${tp.cls}">${tp.rot}</span>${areas}${lidos()[it.k] ? '<span class="selo canc">Lido</span>' : ""}</header>
+        <p class="reel-kicker">${kicker}</p>
+        <p class="reel-rot">${rotTexto}</p>
+        <div class="reel-texto"><p>${principal}</p></div>
+        ${apoio ? `<p class="reel-apoio">${apoio}</p>` : ""}
+        <p class="reel-meta">${meta}</p>
+        <footer class="reel-acoes">
+          ${acoes}
+          <span class="dir">
+            <button type="button" class="btn-ico" data-f="copiar" title="Copiar" aria-label="Copiar">${ico("copiar")}</button>
+            <button type="button" class="btn-ico" data-f="compartilhar" title="Compartilhar" aria-label="Compartilhar">${ico("link")}</button>
+            <button type="button" class="btn-ico btn-salvar" data-f="salvar" aria-pressed="${salvo}" title="Salvar" aria-label="Salvar">${ico("salvar")}</button>
+          </span>
+        </footer>
+      </div>
+    </article>`;
+  }
+  async function vAtualize(main) {
+    document.body.classList.add("modo-feed");
+    const todos = await itensFeed();
+    P.feedAreas = P.feedAreas || [];
+    let soNovos = P.feedSoNovos !== false;
+    main.innerHTML = `
+      <div class="feed-barra">
+        <div class="chips rolagem" id="fd-areas"></div>
+        <div class="feed-ctrl">
+          <label class="alternar"><input type="checkbox" id="fd-novos"><span class="trilho"></span>Só não lidos</label>
+          <span class="feed-cont" id="fd-cont"></span>
+        </div>
+        <div class="feed-prog"><i id="fd-prog"></i></div>
+      </div>
+      <div class="feed" id="fd" tabindex="0" aria-label="Novidades da jurisprudência. Use as setas para navegar."></div>
+      <div class="feed-nav"><button type="button" class="btn-ico" id="fd-ant" aria-label="Anterior">${ico("seta")}</button><button type="button" class="btn-ico" id="fd-prox" aria-label="Próximo">${ico("seta")}</button></div>`;
+    $("#fd-novos").checked = soNovos;
+    const box = $("#fd");
+    let vis = [];
+    const desenharAreas = () => {
+      const cont = {}; todos.forEach((x) => x.ar.forEach((a) => (cont[a] = (cont[a] || 0) + 1)));
+      $("#fd-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!P.feedAreas.length}">Todas as matérias</button>` + Object.keys(AREAS).filter((a) => cont[a]).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${P.feedAreas.includes(a)}">${AREAS[a]}</button>`).join("");
+    };
+    const montar = () => {
+      const a = P.feedAreas;
+      vis = todos.filter((x) => (!a.length || x.ar.some((y) => a.includes(y))) && (!soNovos || !lidos()[x.k]));
+      box.innerHTML = vis.map((x, i) => cartaoFeed(x, i, vis.length)).join("") + `
+        <article class="reel reel-fim"><div class="reel-in">
+          <div class="vazio-ico" style="margin:0 0 14px">${ico("destaques")}</div>
+          <p class="reel-kicker">Fim da fila</p>
+          <div class="reel-texto"><p>Você está em dia com ${vis.length ? "estas novidades" : "as novidades das matérias escolhidas"}.</p></div>
+          <p class="reel-apoio">O STJ publica os acórdãos com ementa uma vez por mês e atualiza os repetitivos e as pautas todos os dias. Volte amanhã para ver o que entrou.</p>
+          <footer class="reel-acoes"><a class="btn btn-pri btn-peq" href="#destaques">Ver todos os destaques</a><a class="btn btn-claro btn-peq" href="#radar">Configurar meu radar</a>${soNovos ? `<button type="button" class="btn btn-fant btn-peq" id="fd-rever">Rever os já lidos</button>` : ""}</footer>
+        </div></article>`;
+      box.scrollTop = 0;
+      atual = 0; atualizarProg();
+      $("#fd-rever")?.addEventListener("click", () => { soNovos = false; $("#fd-novos").checked = false; P.feedSoNovos = false; salvarP(); montar(); });
+      observar();
+    };
+    let atual = 0, obs = null, timer = null;
+    const atualizarProg = () => {
+      const n = vis.length;
+      $("#fd-cont").textContent = n ? `${Math.min(atual + 1, n)} de ${n}` : "Nada novo";
+      $("#fd-prog").style.transform = `scaleX(${n ? Math.min(1, (atual + 1) / n) : 1})`;
+    };
+    function observar() {
+      obs?.disconnect();
+      obs = new IntersectionObserver((ents) => {
+        for (const e of ents) {
+          if (!e.isIntersecting || e.intersectionRatio < 0.6) continue;
+          const el = e.target; atual = +(el.dataset.i ?? vis.length);
+          atualizarProg();
+          clearTimeout(timer);
+          if (el.dataset.k) timer = setTimeout(() => { marcarLido(el.dataset.k); el.querySelector(".reel-cab")?.insertAdjacentHTML("beforeend", el.querySelector(".selo.canc") ? "" : '<span class="selo canc">Lido</span>'); }, 1500);
+        }
+      }, { root: box, threshold: [0.6] });
+      $$(".reel", box).forEach((el) => obs.observe(el));
+    }
+    const ir = (d) => { const alvo = $$(".reel", box)[Math.max(0, Math.min(vis.length, atual + d))]; alvo?.scrollIntoView({ block: "start" }); };
+    $("#fd-ant").addEventListener("click", () => ir(-1));
+    $("#fd-prox").addEventListener("click", () => ir(1));
+    const tecla = (e) => {
+      if (!document.body.classList.contains("modo-feed") || /input|textarea|select/i.test(document.activeElement.tagName) || !$("#gaveta").hidden) return;
+      if (["ArrowDown", "j", "PageDown", " "].includes(e.key)) { e.preventDefault(); ir(1); }
+      if (["ArrowUp", "k", "PageUp"].includes(e.key)) { e.preventDefault(); ir(-1); }
+    };
+    document.addEventListener("keydown", tecla);
+    D.saiFeed = () => { document.removeEventListener("keydown", tecla); obs?.disconnect(); clearTimeout(timer); document.body.classList.remove("modo-feed"); atualizarContadorFeed(); };
+    $("#fd-areas").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-ar]"); if (!b) return;
+      const a = b.dataset.ar;
+      P.feedAreas = !a ? [] : P.feedAreas.includes(a) ? P.feedAreas.filter((x) => x !== a) : [...P.feedAreas, a];
+      salvarP(); desenharAreas(); montar();
+    });
+    $("#fd-novos").addEventListener("change", (e) => { soNovos = e.target.checked; P.feedSoNovos = soNovos; salvarP(); montar(); });
+    box.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-f]"); if (!b) return;
+      const el = b.closest(".reel"); const it = vis[+el.dataset.i]; if (!it) return;
+      const f = b.dataset.f;
+      const textoIt = it.t ? `${it.t.tp} ${it.t.n}/STJ — ${it.t.tese ? "Tese: " + it.t.tese : it.t.q}` : `${it.r.tese || it.r.tj ? (it.r.tese ? "Tese jurídica: " : "Tese de julgamento: ") + (it.r.tese || it.r.tj) + "\n" : ""}${citacao(it.r)}`;
+      if (f === "tema") abrirTema(it.t.tp, it.t.n);
+      if (f === "acordao") abrirAcordao(it.r);
+      if (f === "copiar") copiar(textoIt, "Copiado.");
+      if (f === "compartilhar") {
+        const url = it.t ? URLS.tema(it.t.tp, it.t.n) : URLS.inteiroTeor(it.r.reg, it.r.dj);
+        if (navigator.share) { try { await navigator.share({ title: "Radar STJ", text: textoIt, url }); } catch { /* cancelado */ } }
+        else copiar(`${textoIt}\n${url}`, "Texto e link copiados para compartilhar.");
+      }
+      if (f === "salvar") {
+        if (it.t) alternarSalvo(`t:${it.t.tp}-${it.t.n}`, { k: "t", tp: it.t.tp, n: it.t.n }, b);
+        else alternarSalvo(`a:${it.r.id}`, minimoAcordao(it.r), b);
+      }
+    });
+    desenharAreas(); montar();
+    setTimeout(() => box.focus({ preventScroll: true }), 60);
+  }
+
   // ============================================================== roteador
   const VIEWS = [
     { id: "painel", tit: "Visão geral", sobre: "Painel diário", ico: "painel", fn: vPainel },
+    { id: "atualize", tit: "Atualize-se", sobre: "Leitura do dia", ico: "raio", fn: vAtualize, cont2: true },
     { id: "radar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true },
     { id: "destaques", tit: "Destaques", sobre: "Acórdãos relevantes", ico: "destaques", fn: vDestaques },
     { id: "pesquisa", tit: "Pesquisa de acórdãos", sobre: "Acervo de 12 meses", ico: "pesquisa", fn: vPesquisa },
@@ -465,12 +909,12 @@
     { id: "sobre", tit: "Sobre o Radar STJ", sobre: "Fontes e método", ico: "sobre", fn: vSobre },
   ];
   function montarNav() {
-    $("#menu").innerHTML = VIEWS.map((v, i) => `${i === 6 ? '<div class="sep"></div>' : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.tit === "Precedentes qualificados" ? "Repetitivos" : v.tit === "Pesquisa de acórdãos" ? "Pesquisa" : v.tit === "Pautas e publicações" ? "Pautas" : v.tit === "Visão geral" ? "Visão geral" : v.tit === "Sobre o Radar STJ" ? "Sobre" : v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}</a>`).join("");
-    const inf = [["painel", "Início"], ["radar", "Radar"], ["destaques", "Destaques"], ["pesquisa", "Pesquisa"]];
-    $("#barra-inf").innerHTML = inf.map(([id, l]) => `<a href="#${id}" data-v="${id}">${ico(VIEWS.find((v) => v.id === id).ico)}<span>${l}</span>${id === "radar" ? '<span class="cont cont-radar" hidden></span>' : ""}</a>`).join("")
+    $("#menu").innerHTML = VIEWS.map((v, i) => `${i === 7 ? '<div class="sep"></div>' : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.tit === "Precedentes qualificados" ? "Repetitivos" : v.tit === "Pesquisa de acórdãos" ? "Pesquisa" : v.tit === "Pautas e publicações" ? "Pautas" : v.tit === "Visão geral" ? "Visão geral" : v.tit === "Sobre o Radar STJ" ? "Sobre" : v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("");
+    const inf = [["painel", "Início"], ["atualize", "Atualize-se"], ["radar", "Radar"], ["pesquisa", "Pesquisa"]];
+    $("#barra-inf").innerHTML = inf.map(([id, l]) => `<a href="#${id}" data-v="${id}">${ico(VIEWS.find((v) => v.id === id).ico)}<span>${l}</span>${id === "radar" ? '<span class="cont cont-radar" hidden></span>' : ""}${id === "atualize" ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("")
       + `<button type="button" id="inf-mais" aria-haspopup="dialog">${ico("mais")}<span>Mais</span></button>`;
     $("#inf-mais").addEventListener("click", () => {
-      abrirGaveta("Navegação", "Mais seções", `<nav class="lista">${VIEWS.filter((v) => !["painel", "radar", "destaques", "pesquisa"].includes(v.id)).map((v) =>
+      abrirGaveta("Navegação", "Mais seções", `<nav class="lista">${VIEWS.filter((v) => !["painel", "atualize", "radar", "pesquisa"].includes(v.id)).map((v) =>
         `<a class="card item" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit" href="#${v.id}" data-fechar>${ico(v.ico)}<span><b>${v.tit}</b><br><span class="meta">${v.sobre}</span></span></a>`).join("")}</nav>`);
       $$("[data-fechar]", $("#gaveta-corpo")).forEach((a) => a.addEventListener("click", fecharGaveta));
     });
@@ -489,6 +933,7 @@
   let viewAtual = null;
   async function rotear() {
     fecharGaveta();
+    if (D.saiFeed) { D.saiFeed(); D.saiFeed = null; }
     const { v, p } = lerHash();
     const def = VIEWS.find((x) => x.id === v);
     $$("[data-v]").forEach((a) => a.classList.toggle("ativa", a.dataset.v === v));
@@ -524,6 +969,7 @@
     const plRel = pl.filter((p) => p.d <= lim14 && (p.temas?.length || /secao|especial/.test(p.o)));
     const plTema = pl.filter((p) => p.temas?.length);
     const radar = await calcularRadar();
+    const naoLidos = await contarNaoLidos();
     const novosRadar = radar.filter((x) => x.novo);
     const configurado = P.termos.length + P.procs.length + P.oabs.length > 0;
 
@@ -532,6 +978,7 @@
         <p class="sobretitulo">${fmtDiaL(hoje)}</p>
         <h2>O que mudou no STJ?</h2>
         <p>Movimentações em repetitivos, acórdãos que merecem leitura, o que vai a julgamento e o que aconteceu nos assuntos que você acompanha.</p>
+        <a class="btn-feed" href="#atualize">${ico("raio")}<span><b>${naoLidos ? `${fmtInt(naoLidos)} novidade${naoLidos > 1 ? "s" : ""} para ler` : "Você está em dia"}</b><small>${naoLidos ? "Leitura rápida, uma tese por vez" : "Rever as últimas teses e julgados"}</small></span>${ico("seta")}</a>
         <form class="hero-busca" id="hero-f" role="search">
           <input id="hero-q" type="search" placeholder="Assunto, “tema 1234” ou número do processo" aria-label="Pesquisar">
           <button class="btn btn-pri" type="submit" aria-label="Pesquisar">${ico("pesquisa")}<span class="so-largo">Pesquisar</span></button>
@@ -610,8 +1057,49 @@
   }
 
   // ============================================================ MEU RADAR
+  const TIPO_RADAR = { tema: "Repetitivo", acordao: "Acórdão", pauta: "Em pauta", djen: "Publicação no DJEN" };
+  function areasItem(it) { return it.obj?.ar || (it.tipo === "pauta" && it.temaObj?.ar) || []; }
+  function itemRadarLinha(it, termos) {
+    const o = it.obj;
+    const novo = it.novo ? '<span class="selo novo">Novo</span>' : "";
+    const nivel = `<span class="ponto ${it.nivel}" title="${NIVEL_TX[it.nivel] || ""}"></span>`;
+    const areas = areasItem(it).slice(0, 2).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
+    const por = `<span class="meta"><span>por “${esc(it.termo)}”</span></span>`;
+    if (it.tipo === "acordao") {
+      REG_AC.set(String(o.id), o);
+      const tese = o.tese || o.tj;
+      return `<li class="card item item-radar" data-id="${esc(o.id)}">
+        <div class="item-cab">${nivel}<button type="button" class="item-tit item-abrir" data-a="abrir">${esc(o.cl)} ${fmtNumProc(o.n)}</button>${novo}
+          <span class="meta"><span>${esc(D.orgaos[o.o] || "")}</span><span>Publ. ${fmtData(o.dj)}</span></span></div>
+        <div class="item-sel"><span class="selo pri">${TIPO_RADAR.acordao}</span>${areas}</div>
+        ${tese ? `<div class="tese compacta"><b>${o.tese ? "Tese jurídica" : "Tese de julgamento"}</b><p>${destacar(esc(tese), termos)}</p></div>` : ""}
+        <p class="verb verb-curta">${destacar(esc(frase(o.h || "")), termos)}</p>
+        <div class="acoes"><button type="button" class="link-acao" data-a="abrir">Ver julgado completo ${ico("seta")}</button>
+          <a class="link-acao" href="${URLS.inteiroTeor(o.reg, o.dj)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>${por}</div></li>`;
+    }
+    if (it.tipo === "tema") {
+      return `<li class="card item item-radar" data-tema="${esc(o.tp)}|${o.n}">
+        <div class="item-cab">${nivel}<button type="button" class="item-tit item-abrir" data-abrir-tema>${esc(o.tp)} ${o.n}</button>${seloSit(o.sit)}${it.pauta ? `<span class="selo alta">Em pauta ${fmtData(it.pauta.d)}</span>` : ""}${novo}
+          <span class="meta"><span>${esc(o.org || "")}</span>${o._mov ? `<span>Últ. mov. ${fmtData(o._mov)}</span>` : ""}</span></div>
+        ${areas ? `<div class="item-sel">${areas}</div>` : ""}
+        ${o.tese ? `<div class="tese compacta"><b>Tese firmada</b><p>${destacar(esc(o.tese), termos)}</p></div>` : `<p class="texto-serif">${destacar(esc(o.q || ""), termos)}</p>`}
+        <div class="acoes"><button type="button" class="link-acao" data-abrir-tema>Detalhes e linha do tempo ${ico("seta")}</button>
+          <a class="link-acao" href="${URLS.tema(o.tp, o.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>${por}</div></li>`;
+    }
+    if (it.tipo === "pauta") {
+      return `<li class="card item item-radar">
+        <div class="item-cab">${nivel}<span class="item-tit">${esc(o.p)}${o.pet ? ` (${esc(o.pet)})` : ""}</span><span class="selo alta">Em pauta</span>${novo}
+          <span class="meta"><span>${fmtDiaL(o.d)}</span><span>${esc(D.orgaos[o.o] || "")}</span><span>Rel. ${esc(o.rel || "")}</span></span></div>
+        ${o.temas?.length ? `<p class="texto-serif">Vinculado a ${o.temas.map(([tp, n]) => `${esc(tp)} ${n}`).join(", ")}.</p>` : ""}
+        <div class="acoes"><a class="link-acao" href="${URLS.processo(o.reg)}" target="_blank" rel="noopener">Consulta processual ${ico("externo")}</a>${por}</div></li>`;
+    }
+    return `<li class="card item item-radar">
+      <div class="item-cab">${nivel}<span class="item-tit">${esc(o.p)}</span><span class="selo acomp">Acórdão publicado</span>${novo}
+        <span class="meta"><span>DJEN ${fmtData(o.d)}</span><span>${esc(o.r || "")} ${esc(o.t || "")}</span><span>Rel. ${esc(titulo(o.rel))}</span></span></div>
+      <div class="acoes"><a class="link-acao" href="${URLS.inteiroTeor(o.reg, o.d)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>${por}</div></li>`;
+  }
+
   async function vRadar(main, p) {
-    // Importação por link (radar levado de outro dispositivo)
     if (p.get("importar")) {
       try {
         const o = JSON.parse(decodeURIComponent(escape(atob(p.get("importar")))));
@@ -621,13 +1109,15 @@
       gravarHash("radar", {});
     }
     const aba = p.get("aba") || "novidades";
+    const F = { nivel: "", tipo: "", area: "", termo: "" };
     main.innerHTML = `
       <div class="radar-grade">
         <aside class="radar-lado">
           <div class="card card-pad radar-bloco">
-            <h3>Assuntos</h3><p>Palavras ou expressões. Use aspas para expressão exata e “tema 1234” para um tema.</p>
-            <form class="adicionar" data-lista="termos"><input placeholder="Ex.: prescrição intercorrente" aria-label="Novo assunto"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
+            <h3>Assuntos</h3><p>Use os mesmos operadores da pesquisa: <code>"prova oral"</code>, <code>e</code>, <code>ou</code>, <code>não</code>, <code>prescri$</code>, <code>tema 1234</code>.</p>
+            <form class="adicionar" data-lista="termos"><input placeholder='Ex.: "prescrição intercorrente"' aria-label="Novo assunto"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
             <div class="tags" data-tags="termos"></div>
+            <div class="sugestoes" id="rd-sug"></div>
           </div>
           <div class="card card-pad radar-bloco">
             <h3>Processos</h3><p>Número do processo ou do registro. Avisa quando entrar em pauta ou tiver acórdão publicado.</p>
@@ -650,15 +1140,26 @@
               <button type="button" role="tab" data-aba="novidades" aria-selected="${aba === "novidades"}">Novidades</button>
               <button type="button" role="tab" data-aba="salvos" aria-selected="${aba === "salvos"}">Salvos (${Object.keys(P.salvos).length})</button>
             </div>
+            <button type="button" class="btn btn-claro btn-peq" id="rd-visto" hidden>Marcar tudo como visto</button>
+          </div>
+          <div class="card card-pad filtros-radar" id="rd-filtros" hidden>
             <div class="chips" id="rd-nivel"></div>
+            <div class="barra-filtros" style="margin-top:10px">
+              <select id="rd-tipo" class="sel-auto" aria-label="Tipo"><option value="">Tudo</option><option value="tema">Repetitivos</option><option value="acordao">Acórdãos</option><option value="pauta">Pautas</option><option value="djen">Publicações no DJEN</option></select>
+              <select id="rd-termo" class="sel-auto" aria-label="Assunto"><option value="">Todos os assuntos</option></select>
+            </div>
+            <div class="chips rolagem" id="rd-areas" style="margin-top:10px"></div>
           </div>
           <div id="rd-corpo" style="margin-top:14px"></div>
         </section>
       </div>`;
+    const SUGESTOES = ['"prescrição intercorrente"', '"plano de saúde"', '"dano moral" e "in re ipsa"', '"honorários advocatícios"', '"recuperação judicial"', '"alimentos"', '"bem de família"', '"execução fiscal"'];
     const redesenharTags = () => {
       for (const k of ["termos", "procs", "oabs"]) {
         $(`[data-tags="${k}"]`, main).innerHTML = P[k].map((v, i) => `<span class="tag">${esc(v)}<button type="button" data-rm="${k}|${i}" aria-label="Remover ${esc(v)}">${ico("x")}</button></span>`).join("") || `<span class="nota">Nenhum cadastrado.</span>`;
       }
+      const sug = SUGESTOES.filter((s) => !P.termos.includes(s)).slice(0, 5);
+      $("#rd-sug", main).innerHTML = sug.length ? `<p class="nota" style="margin-top:10px">Sugestões:</p><div class="chips" style="margin-top:6px">${sug.map((s) => `<button type="button" class="chip" aria-pressed="false" data-sug='${esc(s)}'>${ico("mais1")} ${esc(s.replace(/"/g, ""))}</button>`).join("")}</div>` : "";
     };
     redesenharTags();
     $$("form.adicionar", main).forEach((f) => f.addEventListener("submit", (e) => {
@@ -670,6 +1171,8 @@
       salvarP(); inp.value = ""; redesenharTags(); render(); atualizarContadorRadar();
     }));
     $(".radar-lado", main).addEventListener("click", (e) => {
+      const s = e.target.closest("[data-sug]");
+      if (s) { P.termos.push(s.dataset.sug); salvarP(); redesenharTags(); render(); atualizarContadorRadar(); return; }
       const b = e.target.closest("[data-rm]"); if (!b) return;
       const [k, i] = b.dataset.rm.split("|"); P[k].splice(+i, 1); salvarP(); redesenharTags(); render(); atualizarContadorRadar();
     });
@@ -678,30 +1181,49 @@
       copiar(`${location.origin}${location.pathname}#radar?importar=${encodeURIComponent(cod)}`, "Link do radar copiado.");
     });
     $$("[data-aba]", main).forEach((b) => b.addEventListener("click", () => { gravarHash("radar", { aba: b.dataset.aba === "salvos" ? "salvos" : "" }); vRadar(main, new URLSearchParams(b.dataset.aba === "salvos" ? "aba=salvos" : "")); }));
+    $("#rd-tipo", main).addEventListener("change", (e) => { F.tipo = e.target.value; desenhar(); });
+    $("#rd-termo", main).addEventListener("change", (e) => { F.termo = e.target.value; desenhar(); });
+    $("#rd-nivel", main).addEventListener("click", (e) => { const b = e.target.closest("[data-nv]"); if (!b) return; F.nivel = b.dataset.nv; desenhar(); });
+    $("#rd-areas", main).addEventListener("click", (e) => { const b = e.target.closest("[data-ar]"); if (!b) return; F.area = b.dataset.ar; desenhar(); });
+    $("#rd-visto", main).addEventListener("click", () => { P.vistoEm = hojeISO(); salvarP(); atualizarContadorRadar(); render(); toast("Tudo marcado como visto."); });
 
-    let filtroNivel = "";
+    let lista = [], lim = 40;
     async function render() {
       const corpo = $("#rd-corpo", main);
-      if (aba === "salvos") { $("#rd-nivel", main).innerHTML = ""; return renderSalvos(corpo); }
+      if (aba === "salvos") { $("#rd-filtros", main).hidden = true; $("#rd-visto", main).hidden = true; return renderSalvos(corpo); }
       if (!P.termos.length && !P.procs.length && !P.oabs.length) {
-        $("#rd-nivel", main).innerHTML = "";
-        corpo.innerHTML = vazio("radar", "Seu radar está vazio", "Cadastre à esquerda os assuntos que você acompanha, os números dos seus processos ou a sua OAB. O site mostra o que surgiu, por prioridade, e marca o que é novo desde a sua última visita.");
+        $("#rd-filtros", main).hidden = true; $("#rd-visto", main).hidden = true;
+        corpo.innerHTML = vazio("radar", "Seu radar está vazio", "Cadastre à esquerda os assuntos que você acompanha, ou toque em uma das sugestões. O site mostra o que surgiu, por prioridade, e marca o que é novo desde a sua última visita.");
         return;
       }
       corpo.innerHTML = esqueleto();
-      const l = await calcularRadar();
-      const cont = { alta: 0, rel: 0, acomp: 0 }; l.forEach((x) => cont[x.nivel]++);
-      const novos = l.filter((x) => x.novo).length;
-      $("#rd-nivel", main).innerHTML = [["", `Todos <span class="n">${l.length}</span>`], ["novo", `Novos <span class="n">${novos}</span>`], ["alta", `<span class="ponto alta"></span> Alta <span class="n">${cont.alta}</span>`], ["rel", `<span class="ponto rel"></span> Relevante <span class="n">${cont.rel}</span>`], ["acomp", `<span class="ponto acomp"></span> Acompanhar <span class="n">${cont.acomp}</span>`]]
-        .map(([k, l2]) => `<button type="button" class="chip" data-nv="${k}" aria-pressed="${filtroNivel === k}">${l2}</button>`).join("");
-      $$("[data-nv]", main).forEach((b) => b.addEventListener("click", () => { filtroNivel = b.dataset.nv; render(); }));
-      const vis = l.filter((x) => !filtroNivel || (filtroNivel === "novo" ? x.novo : x.nivel === filtroNivel));
+      const [t, pl] = await Promise.all([temas(), pautas()]);
+      lista = await calcularRadar();
+      for (const it of lista) if (it.tipo === "pauta" && it.obj.temas?.length) { const [tp, n] = it.obj.temas[0]; it.temaObj = t.idx.get(`${tp}-${n}`); }
+      void pl;
+      $("#rd-filtros", main).hidden = false; $("#rd-visto", main).hidden = false;
+      $("#rd-termo", main).innerHTML = `<option value="">Todos os assuntos</option>` + [...new Set(lista.map((x) => x.termo))].map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+      $("#rd-termo", main).value = F.termo;
+      lim = 40; desenhar();
+    }
+    function desenhar() {
+      const base = lista.filter((x) => (!F.tipo || x.tipo === F.tipo) && (!F.termo || x.termo === F.termo));
+      const cont = { alta: 0, rel: 0, acomp: 0 }; base.forEach((x) => cont[x.nivel]++);
+      const novos = base.filter((x) => x.novo).length;
+      $("#rd-nivel", main).innerHTML = [["", `Todos <span class="n">${base.length}</span>`], ["novo", `Novos <span class="n">${novos}</span>`], ["alta", `<span class="ponto alta"></span> Alta <span class="n">${cont.alta}</span>`], ["rel", `<span class="ponto rel"></span> Relevante <span class="n">${cont.rel}</span>`], ["acomp", `<span class="ponto acomp"></span> Acompanhar <span class="n">${cont.acomp}</span>`]]
+        .map(([k, l2]) => `<button type="button" class="chip" data-nv="${k}" aria-pressed="${F.nivel === k}">${l2}</button>`).join("");
+      const b2 = base.filter((x) => !F.nivel || (F.nivel === "novo" ? x.novo : x.nivel === F.nivel));
+      const ca = {}; b2.forEach((x) => areasItem(x).forEach((a) => (ca[a] = (ca[a] || 0) + 1)));
+      $("#rd-areas", main).innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!F.area}">Todas as matérias</button>` + Object.keys(AREAS).filter((a) => ca[a]).sort((a, b) => ca[b] - ca[a]).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${F.area === a}">${AREAS[a]} <span class="n">${ca[a]}</span></button>`).join("");
+      const vis = b2.filter((x) => !F.area || areasItem(x).includes(F.area));
+      const termos = [...new Set(vis.map((x) => x.termo))].flatMap((q) => Busca.compilar(q).termos);
+      const corpo = $("#rd-corpo", main);
       corpo.innerHTML = `
-        <div class="barra-res"><p><b>${fmtInt(vis.length)}</b> resultado(s) · novidades contadas desde ${fmtData(P.vistoEm)}</p>
-          <button type="button" class="btn btn-claro btn-peq" id="rd-visto">Marcar tudo como visto</button></div>
-        ${vis.length ? `<div class="card card-pad"><ol class="eventos">${vis.slice(0, 150).map(itemRadarCompacto).join("")}</ol></div>` : vazio("radar", "Nada neste filtro", "Troque o filtro acima para ver os demais resultados.")}
+        <div class="barra-res"><p><b>${fmtInt(vis.length)}</b> resultado(s) · novidades contadas desde ${fmtData(P.vistoEm)}</p></div>
+        ${vis.length ? `<ol class="lista" id="rd-lista">${vis.slice(0, lim).map((x) => itemRadarLinha(x, termos)).join("")}</ol>${vis.length > lim ? `<button class="btn btn-claro btn-mais" id="rd-mais">Mostrar mais (${fmtInt(vis.length - lim)})</button>` : ""}` : vazio("radar", "Nada neste filtro", "Troque os filtros acima para ver os demais resultados.")}
         <p class="legenda" style="margin-top:12px"><span><span class="ponto alta"></span> tema em pauta ou movimentado há menos de 30 dias; processo seu em pauta; acórdão de alta relevância</span><span><span class="ponto rel"></span> tema em andamento; acórdão relevante; acórdão publicado no seu processo</span><span><span class="ponto acomp"></span> demais resultados</span></p>`;
-      $("#rd-visto", main).addEventListener("click", () => { P.vistoEm = hojeISO(); salvarP(); atualizarContadorRadar(); render(); toast("Tudo marcado como visto."); });
+      const ul = $("#rd-lista", main); if (ul) ligarCards(ul);
+      $("#rd-mais", main)?.addEventListener("click", () => { lim += 40; desenhar(); });
     }
     function renderSalvos(corpo) {
       const s = Object.values(P.salvos).sort((a, b) => (b.salvoEm || "").localeCompare(a.salvoEm || ""));
@@ -709,7 +1231,7 @@
       corpo.innerHTML = `<ol class="lista" id="rd-salvos"></ol>`;
       const ul = $("#rd-salvos", main);
       temas().then((t) => {
-        ul.innerHTML = s.map((x) => x.k === "t" ? (t.idx.get(`${x.tp}-${x.n}`) ? linhaTema(t.idx.get(`${x.tp}-${x.n}`)) : "") : cardAcordao({ ...x, em: "" , h: x.h })).join("");
+        ul.innerHTML = s.map((x) => x.k === "t" ? (t.idx.get(`${x.tp}-${x.n}`) ? linhaTema(t.idx.get(`${x.tp}-${x.n}`)) : "") : cardAcordao({ ...x, em: "", h: x.h })).join("");
       });
       ligarCards(ul);
     }
@@ -717,52 +1239,60 @@
   }
 
   // ============================================================ DESTAQUES
+  function campoBusca(id, ph, valor = "") {
+    return `<div class="campo-busca">${ico("pesquisa")}<input id="${id}" type="search" placeholder='${esc(ph)}' value="${esc(valor)}" autocomplete="off" spellcheck="false">
+      <button type="button" class="btn-ajuda" data-ajuda aria-expanded="false" title="Como pesquisar">?</button></div>`;
+  }
   async function vDestaques(main, p) {
     const ds = await destaques();
     const meses = [...new Set(ds.map((r) => r.dj.slice(0, 7)))].sort().reverse();
-    const f = { a: p.get("a") || "", m: p.get("m") || (meses[0] || ""), o: p.get("o") || "", n: p.get("n") || "", q: p.get("q") || "" };
+    const f = { a: p.get("a") || "", m: p.get("m") || (meses[0] || ""), o: p.get("o") || "", n: p.get("n") || "", q: p.get("q") || "", t: p.get("t") === "1" };
+    const porMes = D.man.meses[0] ? Object.values(D.man.meses[0].orgaos).reduce((s, x) => s + x.n, 0) : 0;
     main.innerHTML = `
-      <p class="aviso info">${ico("sobre")}<span>Entre os cerca de ${fmtInt(Math.round((D.man.meses[0] ? Object.values(D.man.meses[0].orgaos).reduce((s, x) => s + x.n, 0) : 0) / 100) * 100)} acórdãos publicados por mês, estes são os que reúnem sinais de relevância: julgamento pela Corte Especial ou por Seção, tese firmada, rito repetitivo, embargos de divergência, afetação e menções a superação de entendimento ou questão nova. Decisões de rotina (Súmula 7, embargos rejeitados) ficam de fora. <a href="#sobre">Como funciona</a></span></p>
-      <div class="card card-pad" style="margin-top:14px">
+      <p class="aviso info">${ico("sobre")}<span>Dos cerca de ${fmtInt(Math.round(porMes / 100) * 100)} acórdãos publicados por mês, aqui ficam os que reúnem sinais de relevância: Corte Especial ou Seção, tese, rito repetitivo, embargos de divergência, afetação, superação de entendimento. A rotina (Súmula 7, embargos rejeitados) fica de fora. <a href="#sobre">Como funciona</a></span></p>
+      <div class="card card-pad" style="margin-top:14px" id="ds-f">
         <div class="barra-filtros">
-          <div class="campo-busca">${ico("pesquisa")}<input id="ds-q" type="search" placeholder="Filtrar destaques por palavra" value="${esc(f.q)}"></div>
+          ${campoBusca("ds-q", 'Filtrar por termos. Ex.: "bem de família" ou impenhorab$', f.q)}
           <select id="ds-m" class="sel-auto" aria-label="Mês">${meses.map((m) => `<option value="${m}">${fmtMesL(m)}</option>`).join("")}<option value="todos">Últimos 3 meses</option></select>
           <select id="ds-o" class="sel-auto" aria-label="Órgão"><option value="">Todos os órgãos</option><option value="sup">Corte Especial e Seções</option><option value="turmas">Turmas</option></select>
           <select id="ds-n" class="sel-auto" aria-label="Nível"><option value="">Relevantes e alta</option><option value="alta">Só alta relevância</option></select>
         </div>
+        ${AJUDA_BUSCA}
+        <div class="barra-filtros" style="margin-top:12px"><label class="alternar"><input type="checkbox" id="ds-t"><span class="trilho"></span>Só com tese</label></div>
         <div class="chips rolagem" id="ds-areas" style="margin-top:12px"></div>
       </div>
       <div class="barra-res"><p id="ds-info"></p></div>
       <ol class="lista" id="ds-lista"></ol>
       <button class="btn btn-claro btn-mais" id="ds-mais" hidden>Mostrar mais</button>`;
-    $("#ds-m").value = f.m; $("#ds-o").value = f.o; $("#ds-n").value = f.n;
+    $("#ds-m").value = f.m; $("#ds-o").value = f.o; $("#ds-n").value = f.n; $("#ds-t").checked = f.t;
     const ul = $("#ds-lista"); ligarCards(ul);
-    let lista = [], mostrados = 0;
+    let lista = [], mostrados = 0, termos = [];
     const render = (reset) => {
       if (reset) { ul.innerHTML = ""; mostrados = 0; }
       const lote = lista.slice(mostrados, mostrados + 20);
-      ul.insertAdjacentHTML("beforeend", lote.map((r) => cardAcordao(r, { termos: parseConsulta(f.q).inc })).join(""));
+      ul.insertAdjacentHTML("beforeend", lote.map((r) => cardAcordao(r, { termos })).join(""));
       mostrados += lote.length;
-      if (!lista.length) ul.innerHTML = vazio("destaques", "Nenhum destaque com esses filtros", "Tente outra área ou amplie o período.");
-      $("#ds-mais").hidden = mostrados >= lista.length;
+      if (!lista.length) ul.innerHTML = vazio("destaques", "Nenhum destaque com esses filtros", "Tente outra matéria, amplie o período ou revise os termos.");
+      const b = $("#ds-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
     };
     const aplicar = () => {
-      f.q = $("#ds-q").value; f.m = $("#ds-m").value; f.o = $("#ds-o").value; f.n = $("#ds-n").value;
+      f.q = $("#ds-q").value; f.m = $("#ds-m").value; f.o = $("#ds-o").value; f.n = $("#ds-n").value; f.t = $("#ds-t").checked;
       gravarHash("destaques", { ...f, m: f.m === meses[0] ? "" : f.m });
-      const cons = parseConsulta(f.q);
+      const c = Busca.compilar(f.q); termos = c.termos;
       const base = ds.filter((r) => (f.m === "todos" || r.dj.startsWith(f.m)) && (!f.o || (f.o === "sup" ? !r.o.endsWith("turma") : r.o.endsWith("turma"))) && (!f.n || r.s >= 10)
-        && (!cons.inc.length || cons.inc.every((w) => norm(r.em + " " + (r.tese || "")).includes(w))));
+        && (!f.t || r.tese || r.tj) && (c.vazio || c.testa(r._n || (r._n = norm([r.em, r.tese, r.tj, r.tema, r.notas].join("\n"))))));
       const cont = {}; base.forEach((r) => (r.ar || []).forEach((a) => (cont[a] = (cont[a] || 0) + 1)));
-      $("#ds-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!f.a}">Todas as áreas</button>` +
-        Object.keys(AREAS).filter((a) => cont[a]).sort((a, b) => cont[b] - cont[a]).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${f.a === a}">${AREAS[a]} <span class="n">${cont[a]}</span></button>`).join("");
+      $("#ds-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!f.a}">Todas as matérias</button>` +
+        Object.keys(AREAS).filter((a) => cont[a] || f.a === a).sort((a, b) => (cont[b] || 0) - (cont[a] || 0)).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${f.a === a}">${AREAS[a]} <span class="n">${cont[a] || 0}</span></button>`).join("");
       lista = agrupar(base.filter((r) => !f.a || (r.ar || []).includes(f.a))).sort((a, b) => (b.s - a.s) || b.dj.localeCompare(a.dj));
-      $("#ds-info").innerHTML = `<b>${fmtInt(lista.length)}</b> destaque(s)${f.m && f.m !== "todos" ? ` em ${fmtMesL(f.m)}` : " nos últimos 3 meses"} · ordenados por relevância`;
+      $("#ds-info").innerHTML = `<b>${fmtInt(lista.length)}</b> destaque(s)${f.m && f.m !== "todos" ? ` em ${fmtMesL(f.m)}` : " nos últimos 3 meses"} · por relevância ${explicacaoHTML(c)}`;
       render(true);
     };
     $("#ds-areas").addEventListener("click", (e) => { const b = e.target.closest("[data-ar]"); if (!b) return; f.a = b.dataset.ar; aplicar(); });
     $("#ds-q").addEventListener("input", debounce(aplicar, 250));
-    ["#ds-m", "#ds-o", "#ds-n"].forEach((s) => $(s).addEventListener("change", aplicar));
+    ["#ds-m", "#ds-o", "#ds-n", "#ds-t"].forEach((s) => $(s).addEventListener("change", aplicar));
     $("#ds-mais").addEventListener("click", () => render(false));
+    ligarAjuda($("#ds-f"), $("#ds-q"), aplicar);
     aplicar();
   }
 
@@ -771,16 +1301,17 @@
     if (!mesma || !$("#ac-q")) {
       const meses = D.man.meses;
       main.innerHTML = `
-        <div class="card card-pad">
+        <div class="card card-pad" id="ac-f">
           <div class="barra-filtros">
-            <div class="campo-busca">${ico("pesquisa")}<input id="ac-q" type="search" placeholder='Ementa, tese ou referência. Ex.: "plano de saúde" rol -odontológico' aria-label="Pesquisar"></div>
+            ${campoBusca("ac-q", 'Termos da ementa ou da tese. Ex.: "prova oral" e nulidade')}
             <select id="ac-periodo" class="sel-auto" aria-label="Período">${[["u1", `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`], ["u3", "Últimos 3 meses"], ["u6", "Últimos 6 meses"], ["u12", "Últimos 12 meses"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}<optgroup label="Mês">${meses.map((m) => `<option value="${m.m}">${fmtMesL(m.m)}</option>`).join("")}</optgroup></select>
             <button type="button" class="btn btn-claro" id="ac-mais-f" aria-expanded="false">${ico("filtro")} Filtros <span id="ac-nf"></span></button>
           </div>
+          ${AJUDA_BUSCA}
           <div class="painel-filtros fechado" id="ac-pf"><div>
-            <div class="grade-filtros" style="padding-top:4px">
+            <div class="grade-filtros" style="padding-top:12px">
               <div class="campo"><label for="ac-orgao">Órgão julgador</label><select id="ac-orgao"><option value="">Todos</option>${Object.entries(D.orgaos).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
-              <div class="campo"><label for="ac-area">Área do direito</label><select id="ac-area"><option value="">Todas</option>${Object.entries(AREAS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
+              <div class="campo"><label for="ac-area">Matéria</label><select id="ac-area"><option value="">Todas</option>${Object.entries(AREAS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
               <div class="campo"><label for="ac-classe">Classe</label><input id="ac-classe" list="ac-classes" placeholder="REsp, AgInt, EREsp"><datalist id="ac-classes"></datalist></div>
               <div class="campo"><label for="ac-rel">Relator(a)</label><input id="ac-rel" list="ac-rels" placeholder="Nome"><datalist id="ac-rels"></datalist></div>
               <div class="campo"><label for="ac-proc">Número do processo</label><input id="ac-proc" inputmode="numeric" placeholder="Ex.: 2222623"></div>
@@ -789,6 +1320,7 @@
           </div></div>
           <div class="barra-filtros" style="margin-top:12px;gap:18px">
             <label class="alternar"><input type="checkbox" id="ac-rotina" checked><span class="trilho"></span>Ocultar decisões de rotina</label>
+            <label class="alternar"><input type="checkbox" id="ac-tese"><span class="trilho"></span>Só com tese</label>
             <label class="alternar"><input type="checkbox" id="ac-dest"><span class="trilho"></span>Só destaques</label>
           </div>
         </div>
@@ -796,13 +1328,14 @@
           <button type="button" class="btn btn-fant btn-peq" id="ac-link">${ico("link")} Copiar link da pesquisa</button></div>
         <ol class="lista" id="ac-lista"></ol>
         <button class="btn btn-claro btn-mais" id="ac-mais" hidden>Mostrar mais</button>`;
-      const rodar = debounce(() => buscar(), 280);
+      const rodar = debounce(() => buscar(), 300);
       ["#ac-q", "#ac-classe", "#ac-rel", "#ac-proc"].forEach((s) => $(s).addEventListener("input", rodar));
-      ["#ac-periodo", "#ac-orgao", "#ac-area", "#ac-ordem", "#ac-rotina", "#ac-dest"].forEach((s) => $(s).addEventListener("change", () => buscar()));
+      ["#ac-periodo", "#ac-orgao", "#ac-area", "#ac-ordem", "#ac-rotina", "#ac-dest", "#ac-tese"].forEach((s) => $(s).addEventListener("change", () => buscar()));
       $("#ac-mais-f").addEventListener("click", (e) => { const pf = $("#ac-pf"); pf.classList.toggle("fechado"); e.currentTarget.setAttribute("aria-expanded", String(!pf.classList.contains("fechado"))); });
       $("#ac-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
       $("#ac-mais").addEventListener("click", () => renderLista(false));
       ligarCards($("#ac-lista"));
+      ligarAjuda($("#ac-f"), $("#ac-q"), () => buscar());
     }
     $("#ac-q").value = p.get("q") || "";
     $("#ac-periodo").value = p.get("p") || "u1"; if (!$("#ac-periodo").value) $("#ac-periodo").value = "u1";
@@ -814,16 +1347,17 @@
     $("#ac-ordem").value = p.get("s") || "auto";
     $("#ac-rotina").checked = p.get("r") !== "0";
     $("#ac-dest").checked = p.get("x") === "1";
+    $("#ac-tese").checked = p.get("t") === "1";
     const nf = ["#ac-orgao", "#ac-area", "#ac-classe", "#ac-rel", "#ac-proc"].filter((s) => $(s).value).length;
-    if (nf) { $("#ac-pf").classList.remove("fechado"); }
+    if (nf) $("#ac-pf").classList.remove("fechado");
     if (p.get("foco")) setTimeout(() => $("#ac-q").focus(), 50);
     await buscar();
   }
   const AC = { lista: [], mostrados: 0, termos: [], token: 0, dl: false };
   async function buscar() {
     const tk = ++AC.token;
-    const f = { q: $("#ac-q").value, p: $("#ac-periodo").value, o: $("#ac-orgao").value, a: $("#ac-area").value, c: $("#ac-classe").value.trim(), rl: $("#ac-rel").value.trim(), n: digitos($("#ac-proc").value), s: $("#ac-ordem").value, r: $("#ac-rotina").checked, x: $("#ac-dest").checked };
-    gravarHash("pesquisa", { ...f, p: f.p === "u1" ? "" : f.p, s: f.s === "auto" ? "" : f.s, r: f.r ? "" : "0", x: f.x });
+    const f = { q: $("#ac-q").value, p: $("#ac-periodo").value, o: $("#ac-orgao").value, a: $("#ac-area").value, c: $("#ac-classe").value.trim(), rl: $("#ac-rel").value.trim(), n: digitos($("#ac-proc").value), s: $("#ac-ordem").value, r: $("#ac-rotina").checked, x: $("#ac-dest").checked, t: $("#ac-tese").checked };
+    gravarHash("pesquisa", { ...f, p: f.p === "u1" ? "" : f.p, s: f.s === "auto" ? "" : f.s, r: f.r ? "" : "0", x: f.x, t: f.t });
     const nf = [f.o, f.a, f.c, f.rl, f.n].filter(Boolean).length;
     $("#ac-nf").textContent = nf ? `(${nf})` : "";
     const todos = D.man.meses.map((m) => m.m);
@@ -837,40 +1371,38 @@
     const dados = await carregarShards(pares, (a, b) => { if (tk === AC.token) prog.firstElementChild.style.width = `${(a / b) * 100}%`; });
     if (tk !== AC.token) return;
     prog.hidden = true;
-    const cons = parseConsulta(f.q);
+    const cons = Busca.compilar(f.q);
     const cN = norm(f.c), rN = norm(f.rl);
-    const rT = cons.tema ? reTema(cons.tema) : null;
     const reCl = cN ? new RegExp(`(^|\\s)${reEsc(cN)}(\\s|$)`) : null;
-    const temTexto = cons.inc.length || cons.exc.length;
+    const temTexto = !cons.vazio;
     const res = [];
     for (const r of dados) {
+      const sc0 = r.s ?? 0;
       if (f.n && !(String(r.n).includes(f.n) || String(r.reg).includes(f.n))) continue;
-      if (f.r && !f.n && (r.s ?? 0) <= -2 && !temTexto && !rT) continue;
-      if (f.r && !f.n && (r.s ?? 0) <= -3) continue;
-      if (f.x && (r.s ?? 0) < 6) continue;
+      if (f.r && !f.n && sc0 <= (temTexto ? -3 : -2)) continue;
+      if (f.x && sc0 < 6) continue;
+      if (f.t && !r.tese && !r.tj) continue;
       if (f.a && !(r.ar || []).includes(f.a)) continue;
       if (reCl && !reCl.test(norm(r.cl))) continue;
       if (rN && !norm(r.rel).includes(rN)) continue;
-      if (rT && !rT.test(`${r.tema || ""} ${r.notas || ""} ${norm(r.em)}`)) continue;
       if (temTexto) {
-        if (r._n === undefined) r._n = norm([r.em, r.tese, r.tema, r.notas, r.info, (r.leg || []).join(" ")].join("\n"));
-        const t = r._n;
-        if (!cons.inc.every((w) => t.includes(w)) || cons.exc.some((w) => t.includes(w))) continue;
-        const i = t.indexOf("\n"); const cab = t.slice(0, i > 0 ? i : 400);
-        r._sc = cons.inc.reduce((s, w) => s + Math.min(t.split(w).length - 1, 6) + (cab.includes(w) ? 4 : 0), 0) + Math.max(0, r.s ?? 0) * 0.6;
-      } else r._sc = r.s ?? 0;
+        if (r._n === undefined) r._n = norm([r.em, r.tese, r.tj, r.tema, r.notas, r.info, (r.leg || []).join(" ")].join("\n"));
+        if (!cons.testa(r._n)) continue;
+        const i = r._n.indexOf("\n");
+        r._sc = cons.pontua(r._n, r._n.slice(0, i > 0 ? i : 400)) + Math.max(0, sc0) * 0.6 + (r.tese || r.tj ? 1 : 0);
+      } else r._sc = sc0;
       res.push(r);
     }
-    const ordem = f.s === "auto" ? (temTexto || rT ? "rel" : "data") : f.s;
+    const ordem = f.s === "auto" ? (temTexto ? "rel" : "data") : f.s;
     const ord = {
       data: (a, b) => (b.dj || "").localeCompare(a.dj || "") || (b.s ?? 0) - (a.s ?? 0),
       julg: (a, b) => (b.dd || "").localeCompare(a.dd || ""),
       rel: (a, b) => (b._sc || 0) - (a._sc || 0) || (b.dj || "").localeCompare(a.dj || ""),
     }[ordem];
     res.sort(ord);
-    AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.inc;
+    AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos;
     const rot = meses.length === 1 ? fmtMesL(meses[0]) : `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}`;
-    $("#ac-info").innerHTML = `<b>${fmtInt(AC.lista.length)}</b> resultado(s) · ${rot}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"}`;
+    $("#ac-info").innerHTML = `<b>${fmtInt(AC.lista.length)}</b> resultado(s) · ${rot}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     renderLista(true);
     if (!AC.dl) {
       AC.dl = true;
@@ -886,7 +1418,7 @@
     const lote = AC.lista.slice(AC.mostrados, AC.mostrados + 20);
     ul.insertAdjacentHTML("beforeend", lote.map((r) => cardAcordao(r, { termos: AC.termos })).join(""));
     AC.mostrados += lote.length;
-    if (!AC.lista.length) ul.innerHTML = vazio("pesquisa", "Nenhum acórdão encontrado", "Amplie o período, desligue “Ocultar decisões de rotina” ou remova algum filtro.");
+    if (!AC.lista.length) ul.innerHTML = vazio("pesquisa", "Nenhum acórdão encontrado", "Amplie o período, desligue “Ocultar decisões de rotina” ou revise os termos. Toque em “?” para ver como combinar palavras.");
     const b = $("#ac-mais"); b.hidden = AC.mostrados >= AC.lista.length; b.textContent = `Mostrar mais (${fmtInt(AC.lista.length - AC.mostrados)})`;
   }
 
@@ -897,16 +1429,18 @@
     const ufs = new Map();
     for (const x of pt.lista) if (x.uf) { const k = `${x.tp}-${x.n}`; if (!ufs.has(k)) ufs.set(k, new Set()); ufs.get(k).add(x.uf); }
     const todasUF = [...new Set(pt.lista.map((x) => x.uf).filter(Boolean))].sort();
-    const f = { q: p.get("q") || "", tipo: p.has("tipo") ? (p.get("tipo") === "todos" ? "" : p.get("tipo")) : "Tema", sit: p.get("sit") || "", org: p.get("org") || "", uf: p.get("uf") || "", susp: p.get("susp") === "1", pauta: p.get("pauta") === "1", s: p.get("s") || "mov" };
+    const f = { q: p.get("q") || "", tipo: p.has("tipo") ? (p.get("tipo") === "todos" ? "" : p.get("tipo")) : "Tema", sit: p.get("sit") || "", org: p.get("org") || "", uf: p.get("uf") || "", a: p.get("a") || "", susp: p.get("susp") === "1", pauta: p.get("pauta") === "1", s: p.get("s") || "mov" };
     main.innerHTML = `
-      <div class="card card-pad">
+      <div class="card card-pad" id="rp-f">
         <div class="barra-filtros">
-          <div class="campo-busca">${ico("pesquisa")}<input id="rp-q" type="search" placeholder="Questão, tese, assunto ou número do tema" value="${esc(f.q)}"></div>
+          ${campoBusca("rp-q", 'Questão, tese ou assunto. Ex.: "prescrição intercorrente" ou o número do tema', f.q)}
           <select id="rp-tipo" class="sel-auto" aria-label="Tipo"><option value="Tema">Temas repetitivos</option><option value="Controvérsia">Controvérsias</option><option value="IAC">IAC</option><option value="SIRDR">SIRDR</option><option value="PUIL">PUIL</option><option value="">Todos os tipos</option></select>
           <select id="rp-org" class="sel-auto" aria-label="Órgão"><option value="">Todos os órgãos</option><option>Corte Especial</option><option>Primeira Seção</option><option>Segunda Seção</option><option>Terceira Seção</option></select>
           <select id="rp-uf" class="sel-auto" aria-label="UF de origem"><option value="">Qualquer origem</option>${todasUF.map((u) => `<option>${u}</option>`).join("")}</select>
           <select id="rp-s" class="sel-auto" aria-label="Ordenar"><option value="mov">Última movimentação</option><option value="num">Número</option></select>
         </div>
+        ${AJUDA_BUSCA}
+        <div class="chips rolagem" id="rp-areas" style="margin-top:12px"></div>
         <div class="barra-filtros" style="margin-top:12px;justify-content:space-between">
           <div class="chips" id="rp-sit"></div>
           <div class="barra-filtros" style="gap:18px">
@@ -927,33 +1461,38 @@
       ul.insertAdjacentHTML("beforeend", lote.map((x) => {
         const pts = emPauta.get(`${x.tp}-${x.n}`);
         const ex = `${pts ? `<span class="selo alta">Em pauta ${fmtData(pts[0].d)}</span>` : ""}${/suspens/i.test(x.info || "") && x._g === "andamento" ? `<span class="selo rel">Suspensão</span>` : ""}`;
-        return linhaTema(x, ex).replace(`<p class="texto-serif">${esc(x.q)}</p>`, `<p class="texto-serif">${destacar(esc(x.q), termos)}</p>`);
+        return linhaTema(x, ex, termos);
       }).join(""));
       mostrados += lote.length;
-      if (!lista.length) ul.innerHTML = vazio("repetitivos", "Nenhum registro encontrado", "Revise os filtros ou pesquise por outro termo.");
-      $("#rp-mais").hidden = mostrados >= lista.length;
+      if (!lista.length) ul.innerHTML = vazio("repetitivos", "Nenhum registro encontrado", "Revise os filtros ou os termos da pesquisa.");
+      const b = $("#rp-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
     };
     const aplicar = () => {
       f.q = $("#rp-q").value; f.tipo = $("#rp-tipo").value; f.org = $("#rp-org").value; f.uf = $("#rp-uf").value; f.s = $("#rp-s").value; f.susp = $("#rp-susp").checked; f.pauta = $("#rp-pauta").checked;
       gravarHash("repetitivos", { ...f, tipo: f.tipo === "Tema" ? "" : f.tipo || "todos", s: f.s === "mov" ? "" : f.s });
       const qT = f.q.trim(); const numero = /^\d+$/.test(qT) ? +qT : null;
-      const cons = numero ? { inc: [], exc: [] } : parseConsulta(f.q); termos = cons.inc;
+      const c = numero != null ? Busca.compilar("") : Busca.compilar(f.q); termos = c.termos;
       const base = t.filter((x) => (!f.tipo || x.tp === f.tipo) && (!f.org || x.org === f.org) && (!f.uf || ufs.get(`${x.tp}-${x.n}`)?.has(f.uf))
         && (!f.susp || /suspens/i.test(x.info || "")) && (!f.pauta || emPauta.has(`${x.tp}-${x.n}`))
-        && (numero != null ? x.n === numero : cons.inc.every((w) => x._n.includes(w)) && !cons.exc.some((w) => x._n.includes(w))));
-      const cont = { andamento: 0, julgado: 0, cancelado: 0 }; base.forEach((x) => cont[x._g] !== undefined && cont[x._g]++);
-      $("#rp-sit").innerHTML = [["", "Todas", base.length], ["andamento", "Em andamento", cont.andamento], ["julgado", "Julgados", cont.julgado], ["cancelado", "Cancelados/revisados", cont.cancelado]]
+        && (numero != null ? x.n === numero : c.testa(x._n)));
+      const ca = {}; base.forEach((x) => (x.ar || []).forEach((a) => (ca[a] = (ca[a] || 0) + 1)));
+      $("#rp-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!f.a}">Todas as matérias</button>` + Object.keys(AREAS).filter((a) => ca[a] || f.a === a).sort((a, b) => (ca[b] || 0) - (ca[a] || 0)).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${f.a === a}">${AREAS[a]} <span class="n">${fmtInt(ca[a] || 0)}</span></button>`).join("");
+      const b2 = base.filter((x) => !f.a || (x.ar || []).includes(f.a));
+      const cont = { andamento: 0, julgado: 0, cancelado: 0 }; b2.forEach((x) => cont[x._g] !== undefined && cont[x._g]++);
+      $("#rp-sit").innerHTML = [["", "Todas", b2.length], ["andamento", "Em andamento", cont.andamento], ["julgado", "Julgados", cont.julgado], ["cancelado", "Cancelados/revisados", cont.cancelado]]
         .map(([k, l, n]) => `<button type="button" class="chip" data-sit="${k}" aria-pressed="${f.sit === k}">${l} <span class="n">${fmtInt(n)}</span></button>`).join("");
-      lista = base.filter((x) => !f.sit || x._g === f.sit);
+      lista = b2.filter((x) => !f.sit || x._g === f.sit);
       lista.sort(f.s === "num" ? (a, b) => b.n - a.n : (a, b) => (b._mov || "").localeCompare(a._mov || "") || b.n - a.n);
-      $("#rp-info").innerHTML = `<b>${fmtInt(lista.length)}</b> registro(s)`;
+      $("#rp-info").innerHTML = `<b>${fmtInt(lista.length)}</b> registro(s) ${explicacaoHTML(c)}`;
       render(true);
     };
     $("#rp-sit").addEventListener("click", (e) => { const b = e.target.closest("[data-sit]"); if (!b) return; f.sit = b.dataset.sit; aplicar(); });
+    $("#rp-areas").addEventListener("click", (e) => { const b = e.target.closest("[data-ar]"); if (!b) return; f.a = b.dataset.ar; aplicar(); });
     $("#rp-q").addEventListener("input", debounce(aplicar, 200));
     ["#rp-tipo", "#rp-org", "#rp-uf", "#rp-s", "#rp-susp", "#rp-pauta"].forEach((s) => $(s).addEventListener("change", aplicar));
     $("#rp-mais").addEventListener("click", () => render(false));
     $("#rp-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
+    ligarAjuda($("#rp-f"), $("#rp-q"), aplicar);
     aplicar();
     const ab = p.get("abrir"); if (ab) { const i = ab.lastIndexOf("-"); abrirTema(ab.slice(0, i), +ab.slice(i + 1)); }
   }
@@ -1236,6 +1775,7 @@
     window.addEventListener("hashchange", rotear);
     await rotear();
     atualizarContadorRadar();
+    atualizarContadorFeed();
   }
   function irParaBusca() {
     const campo = $("#view input[type=search]");
