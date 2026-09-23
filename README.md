@@ -4,12 +4,13 @@ Site público e gratuito que reúne a jurisprudência do Superior Tribunal de Ju
 
 **O que o site oferece**
 
-- **Acórdãos.** Os espelhos de acórdãos da Corte Especial, das três Seções e das seis Turmas, com os últimos 12 meses sempre disponíveis. A pesquisa cobre a ementa, a tese e as referências legislativas, com filtros por órgão, período, classe, relator e número do processo, e cada resultado traz link para o inteiro teor oficial e botão para copiar a citação.
-- **Repetitivos.** Os temas repetitivos, as controvérsias, os IAC, os SIRDR e os PUIL, com a situação atual, a questão submetida, a tese firmada e a indicação de suspensão.
-- **Início.** As movimentações recentes dos precedentes qualificados (afetações, julgamentos, acórdãos publicados e mudanças de situação).
-- **Radar DJEN.** Os acórdãos publicados nos últimos 15 dias disponíveis na base diária.
-
-Os filtros de cada pesquisa ficam no endereço da página, de modo que basta copiar o link para compartilhar uma pesquisa pronta.
+- **Visão geral:** o que mudou no STJ, com as movimentações dos repetitivos, os destaques do mês, as próximas sessões relevantes e as novidades do seu radar.
+- **Meu radar:** você cadastra assuntos, números de processo e a sua OAB. O site mostra, por prioridade, o que surgiu em repetitivos, acórdãos, pautas e publicações, e marca o que é novo desde a última visita. Fica salvo no navegador, e pode ser levado a outro aparelho por link.
+- **Destaques:** os acórdãos com sinais de relevância (Corte Especial, Seções, tese, rito repetitivo, embargos de divergência, superação de entendimento), com filtro por área do direito. A rotina fica de fora.
+- **Pesquisa:** os acórdãos dos últimos 12 meses, com filtros por órgão, área, classe, relator e número, e a opção de ocultar decisões de rotina.
+- **Repetitivos:** temas, controvérsias, IAC, SIRDR e PUIL, com linha do tempo, processos vinculados, UF de origem e a indicação de quais estão em pauta.
+- **Pautas:** o que vai a julgamento nos próximos dias, com busca por processo, OAB ou advogado (sem os nomes das partes), e os acórdãos publicados no DJEN.
+- **Verificar petição:** confere os temas, os precedentes e as súmulas citados em um texto ou arquivo (PDF, DOCX, TXT) e sugere precedentes qualificados com assunto parecido. Tudo roda no navegador.
 
 ---
 
@@ -61,7 +62,8 @@ Em **Settings → Pages → Custom domain**, informe um endereço como `jurispru
 |---|---|---|
 | Espelhos de acórdãos | mensal, por órgão julgador | alguns dias a algumas semanas após o fim do mês |
 | Precedentes qualificados | diária | 1 dia |
-| Metadados das íntegras (Radar) | diária | cerca de 2 semanas |
+| Metadados das íntegras (DJEN) | diária | cerca de 2 semanas |
+| Pautas futuras | diária | 1 dia |
 
 O site nunca estará mais atualizado do que a própria base aberta do STJ. Para acompanhar julgados do mesmo dia, continue usando o Informativo de Jurisprudência e o acompanhamento processual.
 
