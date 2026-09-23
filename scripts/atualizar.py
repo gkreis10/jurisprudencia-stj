@@ -191,7 +191,7 @@ def mes_menos(ano_mes: str, n: int) -> str:
 # --------------------------------------------------------------------------
 # Enriquecimento: área do direito e relevância
 # --------------------------------------------------------------------------
-ESQUEMA = 5  # aumente quando mudar o enriquecimento; os arquivos são refeitos sem novo download
+ESQUEMA = 6  # aumente quando mudar o enriquecimento; os arquivos são refeitos sem novo download
 
 
 def sem_acento(s: str) -> str:
@@ -207,7 +207,8 @@ PENAIS = {"terceira-secao", "quinta-turma", "sexta-turma"}
 TODOS = PRIVADO | PUBLICO | PENAIS | {"corte-especial"}
 
 ROTULOS = [
-    ("penal", r"processual penal|processo penal|execucao penal|\bpenal\b"),
+    ("proc-penal", r"processual penal|processo penal"),
+    ("penal", r"(?<!processual )(?<!processo )\bpenal\b|execucao penal"),
     ("proc-civil", r"processual civil|processo civil|direito processual\b(?! penal)"),
     ("civil", r"(?<!processual )(?<!processo )\bcivil\b|direito privado"),
     ("familia", r"(?<!bem de )\bfamilia\b|sucessoes|sucessorio"),
@@ -237,7 +238,8 @@ TEMAS_CHAVE = [
     ("administrativo", PUBLICO, r"servidor publico|servidores publicos|improbidade|licitacao|concurso publico|desapropriacao|responsabilidade civil do estado|ato administrativo|agencia reguladora|processo administrativo disciplinar"),
     ("previdenciario", PUBLICO, r"aposentadoria|beneficio previdenciario|\binss\b|auxilio-doenca|pensao por morte|\brgps\b"),
     ("ambiental", TODOS, r"meio ambiente|dano ambiental|ambiental"),
-    ("penal", PENAIS, r"habeas corpus|trafico de drogas|dosimetria|prisao preventiva|\bjuri\b|execucao penal|\bcrimes?\b|\bpena\b"),
+    ("penal", PENAIS, r"trafico de drogas|dosimetria|execucao penal|\bcrimes?\b|\bpena\b|furto|roubo|estelionato|homicidio|estupro"),
+    ("proc-penal", PENAIS, r"habeas corpus|prisao preventiva|prisao em flagrante|\bjuri\b|nulidade|busca (pessoal|domiciliar)|denuncia|acao penal|revisao criminal|competencia"),
     ("proc-civil", PRIVADO | PUBLICO, r"cumprimento de sentenca|honorarios advocaticios|acao rescisoria|tutela provisoria|agravo de instrumento|embargos a execucao|embargos de terceiro"),
 ]
 TEMAS_CHAVE_RE = [(k, orgs, re.compile(v)) for k, orgs, v in TEMAS_CHAVE]
@@ -268,11 +270,11 @@ def areas_do_direito(em: str, orgao: str) -> list[str]:
         res.append("penal")
     # Uma matéria só entra se o órgão julga aquele ramo (evita "família" na 1ª Seção).
     if orgao in PUBLICO:
-        res = [a for a in res if a not in {"familia", "consumidor", "bancario", "empresarial", "penal"} or a in _rotulos_explicitos(cab)]
+        res = [a for a in res if a not in {"familia", "consumidor", "bancario", "empresarial", "penal", "proc-penal"} or a in _rotulos_explicitos(cab)]
     elif orgao in PRIVADO:
-        res = [a for a in res if a not in {"tributario", "previdenciario", "penal"} or a in _rotulos_explicitos(cab)]
+        res = [a for a in res if a not in {"tributario", "previdenciario", "penal", "proc-penal"} or a in _rotulos_explicitos(cab)]
     elif orgao in PENAIS:
-        res = [a for a in res if a in {"penal", "ambiental"} or a in _rotulos_explicitos(cab)]
+        res = [a for a in res if a in {"penal", "proc-penal", "ambiental"} or a in _rotulos_explicitos(cab)]
     return res[:4]
 
 
@@ -288,7 +290,7 @@ ORG_TEMA_GRUPO = {"Primeira Seção": PUBLICO, "Segunda Seção": PRIVADO, "Terc
 RAMOS_TEMA = [
     ("proc-civil", r"processual civil"), ("administrativo", r"administrativo"),
     ("tributario", r"tributario|^pis$|pasep|^simples$|^sesc$|^senac$"), ("civil", r"direito civil"),
-    ("previdenciario", r"previdenci"), ("penal", r"penal"), ("consumidor", r"consumidor"), ("ambiental", r"ambiental"),
+    ("previdenciario", r"previdenci"), ("proc-penal", r"processual penal"), ("penal", r"(?<!processual )\bpenal"), ("consumidor", r"consumidor"), ("ambiental", r"ambiental"),
 ]
 
 
@@ -308,6 +310,134 @@ def areas_do_tema(t: dict) -> list[str]:
         if k not in res and (grupo is TODOS or grupo & orgs) and rx.search(texto):
             res.append(k)
     return res[:4]
+
+
+# Submatérias: cada matéria geral tem subtemas. Só entram quando a matéria-mãe
+# foi identificada. A classificação usa a verbetação (sem o nome da classe
+# processual) ou, nos temas, os assuntos e a questão submetida.
+SUBAREAS = {
+    "civil": [
+        ("resp-civil", "Responsabilidade civil", r"responsabilidade civil|dano moral|danos morais|danos? materia|indenizacao por danos?|dever de indenizar|ato ilicito|lucros cessantes|dano estetico|perda de uma chance"),
+        ("contratos", "Contratos", r"\bcontrat|compra e venda|locacao|fianca|comodato|prestacao de servicos?|empreitada|doacao|distrato"),
+        ("seguros", "Seguros", r"\bseguros?\b|securitari|dpvat|seguradora"),
+        ("posse-prop", "Posse, propriedade e condomínio", r"usucapiao|\bposse\b|possessori|reivindicat|propriedade|condominio|registro de imoveis|incorporacao imobiliaria|direito real|servidao|hipoteca|multipropriedade"),
+        ("obrigacoes", "Obrigações e prescrição", r"prescricao|decadencia|obrigac|juros de mora|correcao monetaria|pagamento indevido|enriquecimento sem causa"),
+        ("personalidade", "Direitos da personalidade e autorais", r"direitos? autora|\becad\b|direito de imagem|direitos da personalidade|nome civil|honra|liberdade de imprensa|esquecimento"),
+    ],
+    "familia": [
+        ("alimentos", "Alimentos", r"alimentos|alimentar|pensao alimenticia|prisao civil"),
+        ("uniao-divorcio", "Casamento, união estável e divórcio", r"divorcio|uniao estavel|casamento|regime de bens|partilha de bens|separacao"),
+        ("sucessoes", "Sucessões", r"sucess|heranca|herdeir|inventario|testament|arrolamento|legitima"),
+        ("filiacao", "Filiação, guarda e adoção", r"paternidade|maternidade|filiacao|\bguarda\b|adocao|alienacao parental|poder familiar|convivencia|visitas|socioafetiv"),
+        ("infancia", "Criança e adolescente", r"crianca e do adolescente|\beca\b|medida socioeducativa|ato infracional|menor de idade"),
+        ("curatela", "Curatela e interdição", r"curatela|interdicao|tomada de decisao apoiada"),
+    ],
+    "consumidor": [
+        ("planos-saude", "Planos de saúde", r"planos? de saude|operadora|\bans\b|rol de procedimentos|cobertura"),
+        ("cadastros", "Cadastros e negativação", r"cadastro|inadimplentes|negativac|inscricao indevida|\bspc\b|serasa|protesto|credit scoring"),
+        ("fornecedor", "Responsabilidade do fornecedor", r"fato do produto|vicio do produto|fato do servico|vicio do servico|responsabilidade (civil )?(objetiva|do fornecedor)|defeito|recall"),
+        ("servicos", "Serviços e transporte", r"energia eletrica|telefonia|agua e esgoto|servicos? essencia|transporte aereo|companhia aerea|\bvoo\b|bagagem|internet"),
+        ("imoveis-cons", "Imóveis e consórcios", r"compra e venda de imovel|incorporadora|construtora|atraso na entrega|consorcio|cooperativa habitacional"),
+        ("praticas", "Práticas e cláusulas abusivas", r"abusiv|publicidade|venda casada|oferta|arrependimento|superendividamento"),
+    ],
+    "bancario": [
+        ("contratos-banc", "Contratos e juros bancários", r"contratos? bancari|juros|capitalizacao|tarifa|cedula de credito|mutuo|emprestimo|consignado|prestacao de contas"),
+        ("fiduciaria", "Alienação fiduciária", r"alienacao fiduciaria|busca e apreensao|garantia fiduciaria"),
+        ("cartao", "Cartão de crédito", r"cartao de credito|rotativo"),
+        ("sfh", "Sistema Financeiro da Habitação", r"sistema financeiro da habitacao|\bsfh\b|\bfcvs\b"),
+        ("fraudes", "Fraudes e segurança bancária", r"fraude|golpe|\bpix\b|seguranca bancaria|fortuito interno|saque indevido"),
+    ],
+    "empresarial": [
+        ("recuperacao", "Recuperação judicial e falência", r"recuperacao (judicial|extrajudicial)|falenc|concordata|administrador judicial|plano de recuperacao"),
+        ("societario", "Direito societário", r"societari|sociedade|socios?\b|dissolucao|desconsideracao da personalidade|quotas|acionista|apuracao de haveres"),
+        ("titulos", "Títulos de crédito", r"titulos? de credito|duplicata|nota promissoria|cheque|letra de cambio|endosso|\baval\b"),
+        ("propriedade-ind", "Propriedade industrial", r"\bmarcas?\b|patente|propriedade industrial|\binpi\b|concorrencia desleal|trade dress|nome empresarial"),
+        ("contratos-emp", "Contratos empresariais", r"arrendamento mercantil|leasing|franquia|representacao comercial|distribuicao|factoring"),
+    ],
+    "proc-civil": [
+        ("recursos", "Recursos", r"embargos de divergencia|embargos de declaracao|agravo de instrumento|apelacao|recurso especial repetitivo|admissibilidade|preparo|tempestividade|sustentacao oral"),
+        ("execucao", "Execução e cumprimento de sentença", r"execucao|cumprimento de sentenca|penhora|impenhorab|bem de familia|fraude (a|contra) execucao|astreintes|prescricao intercorrente|expropria|liquidacao"),
+        ("competencia", "Competência", r"competencia|conflito de competencia|\bforo\b|conexao|prevencao"),
+        ("honorarios", "Honorários, custas e gratuidade", r"honorarios|sucumbencia|custas|gratuidade|justica gratuita|assistencia judiciaria"),
+        ("tutela", "Tutelas provisórias", r"tutela (provisoria|de urgencia|antecipada|cautelar|de evidencia)|liminar|medida cautelar"),
+        ("coletivo", "Processo coletivo", r"acao civil publica|acao coletiva|direitos (difusos|coletivos|individuais homogeneos)|ministerio publico"),
+        ("coisa-julgada", "Ação rescisória e coisa julgada", r"acao rescisoria|coisa julgada|querela nullitatis|preclusao"),
+        ("provas-pc", "Provas, citação e nulidades", r"\bprovas?\b|pericia|cerceamento de defesa|nulidade|citacao|intimacao"),
+        ("ms", "Mandado de segurança e ações especiais", r"mandado de seguranca|habeas data|acao monitoria|embargos de terceiro|possessoria|arbitragem"),
+    ],
+    "tributario": [
+        ("icms", "ICMS", r"\bicms\b|difal"),
+        ("ir", "Imposto de renda", r"imposto (sobre a )?renda|\birpf\b|\birpj\b|\bcsll\b"),
+        ("pis-cofins", "PIS e Cofins", r"\bpis\b|cofins|pasep"),
+        ("contrib-prev", "Contribuições previdenciárias", r"contribuic\w* previdenciari|cota patronal|\brat\b|\bsat\b|terceiros|salario-educacao|\bincra\b|\bsesc\b|\bsenai\b|seguridade social"),
+        ("municipais", "ISS, IPTU e ITBI", r"\biss\b|issqn|\biptu\b|\bitbi\b"),
+        ("ipi-aduana", "IPI e comércio exterior", r"\bipi\b|importacao|exportacao|drawback|aduaneir|reintegra"),
+        ("exec-fiscal", "Execução fiscal", r"execucao fiscal|redirecionamento|dissolucao irregular|certidao de divida ativa|\bcda\b|embargos a execucao fiscal"),
+        ("credito-trib", "Crédito, prescrição e compensação", r"credito tributario|prescricao|decadencia|compensacao|repeticao de indebito|restituicao|denuncia espontanea|parcelamento|refis|lancamento|responsabilidade tributaria"),
+        ("outros-trib", "IPVA, ITCMD, IOF e taxas", r"\bipva\b|\bitcmd\b|\biof\b|\btaxas?\b|imunidade|isencao"),
+    ],
+    "administrativo": [
+        ("servidores", "Servidores públicos", r"servidor|servidores|concurso publico|cargo publico|militar|remuneracao|vencimentos|processo administrativo disciplinar|\bpad\b"),
+        ("improbidade", "Improbidade administrativa", r"improbidade"),
+        ("licitacoes", "Licitações e contratos", r"licitac|contratos? administrativ|concessao|permissao de servico|parceria publico"),
+        ("desapropriacao", "Desapropriação e bens públicos", r"desapropria|bens? publico|terreno de marinha|faixa de dominio|servidao administrativa|tombamento"),
+        ("resp-estado", "Responsabilidade do Estado", r"responsabilidade (civil|objetiva) do estado|responsabilidade civil do ente|ente publico"),
+        ("regulacao", "Regulação, trânsito e conselhos", r"agencia reguladora|anatel|aneel|anvisa|telefonia|energia|saneamento|agua e esgoto|transito|conselhos? (profissiona|de fiscalizacao)|farmac|\bfgts\b"),
+        ("saude-pub", "Saúde pública e medicamentos", r"medicamento|\bsus\b|tratamento medico|internacao"),
+    ],
+    "previdenciario": [
+        ("beneficios", "Aposentadorias e benefícios", r"aposentadoria|auxilio|beneficio|pensao por morte|salario-maternidade|\bbpc\b|\bloas\b|amparo assistencial"),
+        ("rural", "Trabalhador rural", r"rural|segurado especial|boia-fria"),
+        ("privada", "Previdência privada", r"previdencia (privada|complementar)|entidade (fechada|aberta)"),
+        ("acidentaria", "Acidente de trabalho", r"acidente (do|de) trabalho|acidentari|auxilio-acidente"),
+        ("custeio", "Custeio e revisão", r"salario de contribuicao|salario de beneficio|debito previdenciario|revisao|decadencia"),
+    ],
+    "ambiental": [
+        ("dano-amb", "Dano ambiental", r"dano ambiental|reparacao|recuperacao ambiental|poluicao"),
+        ("areas-prot", "Áreas protegidas", r"preservacao permanente|\bapp\b|reserva legal|codigo florestal|unidade de conservacao"),
+        ("sancoes-amb", "Infrações e licenciamento", r"multa|infracao|auto de infracao|licenciamento"),
+    ],
+    "penal": [
+        ("dosimetria", "Dosimetria e regime", r"dosimetria|pena-base|aplicacao da pena|agravante|atenuante|reincidencia|maus antecedentes|regime (inicial|prisional|semiaberto|fechado)|substituicao da pena|minorante|majorante|continuidade delitiva"),
+        ("drogas", "Drogas", r"trafico|drogas|entorpecente|11\.343"),
+        ("patrimonio", "Crimes patrimoniais", r"furto|roubo|estelionato|receptacao|extorsao|latrocinio|apropriacao indebita|dano qualificado"),
+        ("pessoa", "Crimes contra a pessoa", r"homicidio|lesao corporal|feminicidio|violencia domestica|maria da penha|ameaca|injuria|calunia|difamacao"),
+        ("sexuais", "Crimes sexuais", r"estupro|dignidade sexual|vulneravel|pornografia|importunacao"),
+        ("exec-penal", "Execução penal", r"execucao penal|progressao|livramento condicional|remicao|falta grave|indulto|comutacao|detracao|saida temporaria"),
+        ("armas-transito", "Armas e trânsito", r"arma de fogo|municao|10\.826|desarmamento|crimes? de transito|embriaguez ao volante"),
+        ("economicos", "Crimes econômicos e contra a administração", r"lavagem|sonegacao|crimes? (tributari|contra a ordem tributaria)|peculato|corrupcao|concussao|licitac|organizacao criminosa|8\.137|apropriacao indebita tributaria|descaminho|contrabando"),
+        ("punibilidade", "Prescrição, insignificância e punibilidade", r"prescricao|extincao da punibilidade|insignificancia|bagatela|crime impossivel"),
+    ],
+    "proc-penal": [
+        ("prisoes", "Prisões e cautelares", r"prisao preventiva|prisao em flagrante|prisao domiciliar|medidas? cautelar|custodia cautelar|excesso de prazo|audiencia de custodia|liberdade provisoria|\bfianca\b|monitoramento eletronico"),
+        ("provas-pp", "Provas e nulidades", r"\bprovas?\b|nulidade|busca (pessoal|domiciliar|veicular)|ingresso (em|no) domicilio|fundada suspeita|interceptacao|reconhecimento (pessoal|fotografico|de pessoas)|cadeia de custodia|confissao|ilicit"),
+        ("competencia-pp", "Competência", r"competencia|conflito de competencia|justica (federal|estadual|militar|eleitoral)"),
+        ("juri", "Tribunal do Júri", r"\bjuri\b|pronuncia|quesit|conselho de sentenca"),
+        ("recursos-pp", "Recursos, revisão e habeas corpus", r"revisao criminal|recurso em sentido estrito|apelacao criminal|embargos infringentes|habeas corpus (coletivo|preventivo)"),
+        ("acao-penal", "Ação penal e acordos", r"denuncia|queixa|acao penal|\banpp\b|acordo de nao persecucao|transacao penal|suspensao condicional do processo|colaboracao premiada|delacao|representacao"),
+    ],
+    "trabalho": [],
+}
+SUBAREAS_RE = {a: [(k, re.compile(rx)) for k, _, rx in lst] for a, lst in SUBAREAS.items()}
+RE_CLASSE_SEG = re.compile(r"^(agravo|agravos|recurso|recursos|embargos|habeas corpus|mandado de seguranca|conflito|peticao|reclamacao|acao rescisoria|proposta de afetacao|questao de ordem|pedido|incidente|tutela provisoria|medida cautelar)\b[^.]{0,110}$")
+
+
+def _texto_sub(em: str) -> str:
+    cab = sem_acento((em or "").split("\n", 1)[0][:900])
+    segs = re.split(r"[.;]\s+", cab)
+    fora = [s for i, s in enumerate(segs) if not (_segmento_rotulo(s) or (i < 4 and RE_CLASSE_SEG.match(s.strip())))]
+    return ". ".join(fora)[:700]
+
+
+def subareas(texto_norm: str, areas: list[str], limite: int = 3) -> list[str]:
+    out: list[str] = []
+    for a in areas or []:
+        for k, rx in SUBAREAS_RE.get(a, []):
+            if rx.search(texto_norm):
+                out.append(f"{a}/{k}")
+                if len([x for x in out if x.startswith(a + "/")]) >= 2:
+                    break
+    return out[:limite]
 
 
 RE_TESE = re.compile(r"teses? de julgamento\s*:?\s*", re.I)
@@ -390,6 +520,9 @@ def pontuar(r: dict) -> tuple[int, list[str]]:
 
 def enriquecer(r: dict) -> dict:
     r["ar"] = areas_do_direito(r.get("em", ""), r.get("o", ""))
+    r["sa"] = subareas(_texto_sub(r.get("em", "")), r["ar"])
+    if not r["sa"]:
+        r.pop("sa")
     r["tj"] = extrair_tese(r.get("em", ""))
     if not r["tj"]:
         r.pop("tj")
@@ -555,6 +688,9 @@ def atualizar_temas() -> dict:
         a = areas_do_tema(t)
         if a:
             t["ar"] = a
+            sa = subareas(sem_acento(f"{t.get('ass', '')} {t.get('q', '')} {t.get('tese', '')}"), a)
+            if sa:
+                t["sa"] = sa
     # A base oficial traz algumas linhas repetidas: mantém uma por registro.
     unicos = {}
     for t in temas:
@@ -862,7 +998,7 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
                     cab = (r.get("em") or "").split("\n", 1)[0][:320]
                     indice.append(limpar_vazios({
                         "id": r.get("id"), "m": mes, "o": r.get("o"), "cl": r.get("cl"), "n": r.get("n"),
-                        "reg": r.get("reg"), "dj": r.get("dj"), "s": sc, "ar": r.get("ar"), "h": cab,
+                        "reg": r.get("reg"), "dj": r.get("dj"), "s": sc, "ar": r.get("ar"), "sa": r.get("sa"), "h": cab,
                         "tese": (r.get("tese") or "")[:600],
                         "tj": (r.get("tj") or "")[:900],
                     }))
@@ -884,7 +1020,7 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
         feed.append(limpar_vazios({
             "id": r.get("id"), "m": r["m"], "o": r.get("o"), "cl": r.get("cl"), "n": r.get("n"),
             "reg": r.get("reg"), "dj": r.get("dj"), "dd": r.get("dd"), "rel": r.get("rel"),
-            "s": r.get("s", 0), "fs": round(r.get("_fs", 0), 1), "ar": r.get("ar"), "rz": r.get("rz"),
+            "s": r.get("s", 0), "fs": round(r.get("_fs", 0), 1), "ar": r.get("ar"), "sa": r.get("sa"), "rz": r.get("rz"),
             "h": (r.get("em") or "").split("\n", 1)[0][:320],
             "tese": (r.get("tese") or "")[:600], "tj": tj[:900],
             "tjp": 1 if tj != (r.get("tj") or "") else 0,
@@ -897,6 +1033,95 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
     gravar_json(SITE_DATA / "indice.json", indice)
     log(f"Destaques: {len(dest)}; índice do radar: {len(indice)}; fila do Atualize-se: {len(feed)} ({', '.join(recentes)}).")
     return {"n": len(dest), "indice": len(indice), "feed": len(feed), "meses": recentes, "limiar": LIMIAR_DESTAQUE}
+
+# --------------------------------------------------------------------------
+# 7. Súmulas do STJ (página oficial SCON). O site oficial costuma recusar
+#    acessos automatizados; nesse caso vale a última extração guardada no
+#    repositório (site/sumulas-fonte.json).
+# --------------------------------------------------------------------------
+SUMULAS_FONTE = RAIZ / "site" / "sumulas-fonte.json"
+RAMO_AREA = [
+    ("proc-penal", r"processual penal"), ("proc-civil", r"processual civil"), ("penal", r"penal"),
+    ("tributario", r"tributario"), ("administrativo", r"administrativo"), ("bancario", r"bancario"),
+    ("previdenciario", r"previdenciario"), ("consumidor", r"consumidor"), ("empresarial", r"empresarial"),
+    ("familia", r"crianca e do adolescente"), ("ambiental", r"ambiental"), ("civil", r"direito civil"),
+]
+ASSUNTO_FAMILIA = re.compile(r"alimentos|paternidade|divorcio|regime de bens|uniao estavel|guarda|sucess|prisao civil")
+RE_CIT_SUM = re.compile(r"\((?:S[ÚU]MULA \d+, )?(CORTE ESPECIAL|PRIMEIRA SE[ÇC][ÃA]O|SEGUNDA SE[ÇC][ÃA]O|TERCEIRA SE[ÇC][ÃA]O)[^()]*\)")
+ORG_SUM = {"CORTE ESPECIAL": "Corte Especial", "PRIMEIRA SECAO": "Primeira Seção", "SEGUNDA SECAO": "Segunda Seção", "TERCEIRA SECAO": "Terceira Seção"}
+
+
+def _coletar_sumulas_online() -> list[dict]:
+    out = []
+    for i in range(1, 1001, 100):
+        url = f"https://scon.stj.jus.br/SCON/sumstj/toc.jsp?b=SUMU&numDocsPagina=100&l=100&i={i}&ordenacao=%40NUM&p=false&h=true&tipo_visualizacao="
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            html = r.read().decode(r.headers.get_content_charset() or "latin-1", "replace")
+        blocos = re.findall(r'class="numeroSumula">\s*(\d+)\s*<.*?class="ramoSumula">(.*?)</span>(.*?)</a>', html, re.S)
+        for n, ramo, txt in blocos:
+            limpo = lambda x: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", x)).strip()
+            out.append({"n": int(n), "ramo": limpo(ramo), "txt": limpo(txt)})
+        if len(blocos) < 100:
+            break
+    return out
+
+
+def atualizar_sumulas() -> dict:
+    fonte = ler_json(SUMULAS_FONTE, {})
+    brutas = fonte.get("sumulas", [])
+    coletado = fonte.get("coletadoEm", "")
+    try:
+        novas = _coletar_sumulas_online()
+        confiaveis = sum(1 for x in novas if "julgad" in (x.get("txt") or "") or "DJ" in (x.get("txt") or ""))
+        if novas and len(novas) >= len(brutas) and confiaveis >= 0.9 * len(novas):
+            brutas, coletado = novas, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+            log(f"Súmulas: {len(novas)} lidas da página oficial.")
+    except Exception as e:  # noqa: BLE001
+        log(f"Súmulas: página oficial indisponível ({e}); usando a extração de {coletado[:10] or 'arquivo local'}.")
+    lista = []
+    for x in brutas:
+        ramo, _, assunto = (x.get("ramo") or "").partition(" - ")
+        txt = x.get("txt") or ""
+        enunciado, nota, org, julg, pub = txt, "", "", "", ""
+        m = None
+        for m in RE_CIT_SUM.finditer(txt):
+            break
+        if m:
+            enunciado = txt[:m.start()].strip()
+            nota = txt[m.end():].strip()
+            cit = m.group(0)
+            org = ORG_SUM.get(sem_acento(m.group(1)).upper().strip(), m.group(1).title())
+            j = re.search(r"julgad[oa] em (\d{1,2})/(\d{1,2})/(\d{4})", cit)
+            if j:
+                julg = f"{j.group(3)}-{int(j.group(2)):02d}-{int(j.group(1)):02d}"
+            d = re.search(r"(?<!REP)DJe?\s*(?:de\s*)?(\d{1,2})/(\d{1,2})/(\d{4})", cit)
+            if d:
+                pub = f"{d.group(3)}-{int(d.group(2)):02d}-{int(d.group(1)):02d}"
+        nn = sem_acento(nota)
+        sit = "cancelada" if "determinou o cancelamento" in nn or "foi cancelada" in nn else ("alterada" if re.search(r"alteracao|nova redacao|redacao anterior", nn) else "vigente")
+        rn, an = sem_acento(ramo), sem_acento(assunto)
+        ar = []
+        for k, rx in RAMO_AREA:
+            if re.search(rx, rn) and k not in ar:
+                ar.append(k)
+                break
+        if "civil" in ar and ASSUNTO_FAMILIA.search(an):
+            ar.append("familia")
+        sa = subareas(f"{an} {sem_acento(enunciado)}", ar)
+        lista.append(limpar_vazios({"n": x.get("n"), "ramo": ramo.title().replace(" Do ", " do ").replace(" Da ", " da ").replace(" E ", " e "),
+            "ass": assunto.capitalize(), "t": enunciado, "nota": nota, "org": org, "julg": julg, "pub": pub, "sit": sit, "ar": ar, "sa": sa}))
+    lista.sort(key=lambda s: -(s.get("n") or 0))
+    gravar_json(SITE_DATA / "sumulas.json", lista)
+    vig = sum(1 for s in lista if s.get("sit") != "cancelada")
+    log(f"Súmulas: {len(lista)} ({vig} vigentes).")
+    return {"n": len(lista), "vigentes": vig, "coletadoEm": coletado}
+
+
+# Rótulos das submatérias, lidos pelo site.
+def gravar_taxonomia() -> None:
+    gravar_json(SITE_DATA / "submaterias.json", {a: [[k, rot] for k, rot, _ in lst] for a, lst in SUBAREAS.items() if lst})
+
 
 # --------------------------------------------------------------------------
 def main():
@@ -938,6 +1163,14 @@ def main():
         erros.append(f"temas: {e}")
         log("ERRO temas:", e)
 
+    sumulas = {}
+    try:
+        sumulas = atualizar_sumulas()
+        gravar_taxonomia()
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"súmulas: {e}")
+        log("ERRO súmulas:", e)
+
     radar = {}
     try:
         radar = atualizar_radar(args.dias_radar, meses_disp)
@@ -971,6 +1204,7 @@ def main():
         "radar": radar or manifesto_ant.get("radar", {}),
         "destaques": destaques or manifesto_ant.get("destaques", {}),
         "pautas": pautas or manifesto_ant.get("pautas", {}),
+        "sumulas": sumulas or manifesto_ant.get("sumulas", {}),
         "esquema": ESQUEMA,
         "erros": erros,
     }
