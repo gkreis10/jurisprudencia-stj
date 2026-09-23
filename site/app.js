@@ -48,7 +48,7 @@
       }).join("");
       return t.replace(/^(["“(]?)([a-zà-ü])/, (m, a, b) => a + b.toUpperCase());
     }).join(" ");
-    return out;
+    return out.replace(/\bin re ipsa\b/gi, "in re ipsa");
   }
 
   // ================================================================ ícones
@@ -198,6 +198,97 @@
   //   palavras inteiras (prova ≠ corporal), "expressão exata", E, OU, NÃO (ou -termo),
   //   parênteses, truncamento com $ (process$), ADJn (na ordem, até n palavras)
   //   e PROXn (em qualquer ordem, até n palavras), além de tema:1234.
+  // Sinônimos jurídicos usados na busca (sem acento, minúsculas). Cada grupo
+  // reúne expressões equivalentes; buscar uma encontra as demais.
+  const SINONIMOS = [
+    "dano moral|dano extrapatrimonial|abalo moral|danos morais|danos extrapatrimoniais",
+    "dano material|dano patrimonial|danos materiais|danos patrimoniais",
+    "dano estetico|danos esteticos", "lucros cessantes|lucro cessante",
+    "plano de saude|operadora de plano de saude|operadora de saude|saude suplementar|seguro saude",
+    "honorarios advocaticios|honorarios sucumbenciais|honorarios de sucumbencia|verba honoraria",
+    "justica gratuita|gratuidade de justica|gratuidade da justica|assistencia judiciaria gratuita|beneficio da gratuidade",
+    "cumprimento de sentenca|execucao de titulo judicial", "execucao fiscal|executivo fiscal",
+    "desconsideracao da personalidade juridica|desconsideracao da personalidade|idpj",
+    "alimentos|pensao alimenticia|obrigacao alimentar|prestacao alimenticia",
+    "uniao estavel|convivencia more uxorio", "usucapiao|prescricao aquisitiva",
+    "cdc|codigo de defesa do consumidor", "cpc|codigo de processo civil", "cpp|codigo de processo penal",
+    "ctn|codigo tributario nacional", "eca|estatuto da crianca e do adolescente", "lep|lei de execucao penal",
+    "relacao de consumo|relacao consumerista",
+    "inscricao indevida|negativacao indevida|cadastro de inadimplentes|cadastros de protecao ao credito|orgaos de protecao ao credito",
+    "alienacao fiduciaria|propriedade fiduciaria|garantia fiduciaria",
+    "tutela de urgencia|tutela antecipada|tutela provisoria|antecipacao de tutela|liminar",
+    "agravo interno|agint", "agravo regimental|agrg", "embargos de declaracao|edcl|embargos declaratorios|aclaratorios",
+    "recurso especial|resp|apelo nobre", "embargos de divergencia|eresp|earesp", "habeas corpus|hc|writ",
+    "mandado de seguranca|mandamus", "acao rescisoria|rescisoria", "coisa julgada|res judicata",
+    "prescricao|prazo prescricional", "decadencia|prazo decadencial",
+    "juros de mora|juros moratorios", "correcao monetaria|atualizacao monetaria",
+    "astreintes|multa cominatoria|multa diaria", "penhora online|penhora on line|sisbajud|bacenjud|bloqueio de ativos financeiros",
+    "capitalizacao de juros|anatocismo|juros capitalizados", "cda|certidao de divida ativa",
+    "repeticao de indebito|restituicao do indebito|restituicao de indebito", "itcmd|itcd",
+    "improbidade administrativa|ato de improbidade|lia", "servidor publico|servidores publicos|funcionario publico",
+    "responsabilidade civil do estado|responsabilidade objetiva do estado|responsabilidade civil do ente publico",
+    "trafico de drogas|trafico de entorpecentes|trafico ilicito de entorpecentes",
+    "trafico privilegiado|minorante do trafico|causa de diminuicao do art 33",
+    "prisao preventiva|custodia cautelar|segregacao cautelar|prisao cautelar",
+    "busca domiciliar|ingresso em domicilio|ingresso domiciliar|violacao de domicilio|invasao de domicilio",
+    "busca pessoal|revista pessoal|abordagem policial", "anpp|acordo de nao persecucao penal",
+    "dosimetria|dosimetria da pena|individualizacao da pena", "pena base|pena-base",
+    "violencia domestica|maria da penha|lei maria da penha", "insignificancia|principio da insignificancia|bagatela",
+    "juri|tribunal do juri", "reexame de provas|revolvimento fatico probatorio|reexame fatico probatorio|sumula 7",
+    "dissidio jurisprudencial|divergencia jurisprudencial", "recurso repetitivo|recursos repetitivos|tema repetitivo|rito dos repetitivos",
+    "irdr|incidente de resolucao de demandas repetitivas", "iac|incidente de assuncao de competencia",
+    "previdencia privada|previdencia complementar|entidade fechada de previdencia",
+    "fgts|fundo de garantia do tempo de servico", "inss|instituto nacional do seguro social|autarquia previdenciaria",
+    "bpc|loas|beneficio de prestacao continuada|amparo assistencial",
+    "auxilio doenca|beneficio por incapacidade temporaria", "aposentadoria por invalidez|aposentadoria por incapacidade permanente",
+    "desapropriacao|expropriacao", "licitacao|procedimento licitatorio|certame licitatorio",
+    "dano ambiental|degradacao ambiental", "app|area de preservacao permanente",
+    "instituicao financeira|instituicoes financeiras|banco", "acao civil publica|acp",
+    "ministerio publico|parquet|orgao ministerial", "cotas condominiais|taxas condominiais|despesas condominiais",
+    "clausula penal|multa contratual", "litigancia de ma fe|ma fe processual",
+    "paternidade socioafetiva|filiacao socioafetiva|socioafetividade", "estupro de vulneravel|estupro de vulneraveis",
+    "seguro obrigatorio|dpvat", "locacao|contrato de locacao|inquilinato",
+  ];
+  // Singular aproximado, para comparar "danos morais" com "dano moral".
+  function singular(w) {
+    if (w.length < 4 || /\d/.test(w)) return w;
+    if (/(oes|aes|aos)$/.test(w)) return w.slice(0, -3) + "ao";
+    if (/ais$/.test(w)) return w.slice(0, -3) + "al";
+    if (/eis$/.test(w)) return w.slice(0, -3) + "el";
+    if (/ois$/.test(w)) return w.slice(0, -3) + "ol";
+    if (/ns$/.test(w)) return w.slice(0, -2) + "m";
+    if (/(r|z|s)es$/.test(w)) return w.slice(0, -2);
+    if (/[^s]s$/.test(w)) return w.slice(0, -1);
+    return w;
+  }
+  // Padrão que aceita singular e plural da palavra.
+  function flexW(w) {
+    if (w.length < 3 || /\d/.test(w)) return w;
+    const b = singular(w);
+    if (/ao$/.test(b)) return b.slice(0, -2) + "(?:ao|oes|aes|aos)";
+    if (/al$/.test(b)) return b.slice(0, -2) + "(?:al|ais)";
+    if (/el$/.test(b)) return b.slice(0, -2) + "(?:el|eis)";
+    if (/ol$/.test(b)) return b.slice(0, -2) + "(?:ol|ois)";
+    if (/m$/.test(b)) return b.slice(0, -1) + "(?:m|ns)";
+    if (/[rzs]$/.test(b)) return b + "(?:es)?";
+    return b + "s?";
+  }
+  const MAPA_SIN = (() => {
+    const m = new Map();
+    for (const g of SINONIMOS) {
+      const itens = g.split("|").map((x) => x.split(/[^a-z0-9]+/).filter(Boolean));
+      for (const it of itens) {
+        const k = it.map(singular).join(" ");
+        const vistos = new Set([k, ...(m.get(k) || []).map((y) => y.map(singular).join(" "))]);
+        const outros = itens.filter((y) => { const ky = y.map(singular).join(" "); if (vistos.has(ky)) return false; vistos.add(ky); return true; });
+        m.set(k, [...(m.get(k) || []), ...outros]);
+      }
+    }
+    return m;
+  })();
+  // Número de processo ou de precedente: 2.219.808 = 2219808.
+  const reNumero = (d) => d.length < 4 ? d : d.replace(/\B(?=(\d{3})+(?!\d))/g, "\\.?");
+
   const Busca = (() => {
     const cache = new Map();
     const LIM = "[a-z0-9]";
@@ -205,16 +296,19 @@
 
     function lex(q) {
       const out = [];
-      const re = /\s*(\(|\)|"[^"]*"?|-(?=[^\s-])|[^\s()"]+)/g; let m;
+      const re = /\s*(\(|\)|=?"[^"]*"?|-(?=[^\s-])|[^\s()"]+)/g; let m;
       while ((m = re.exec(q))) {
-        const s = m[1];
+        let s = m[1], ex = false;
         if (s === "(" || s === ")") { out.push({ t: s }); continue; }
         if (s === "-") { out.push({ t: "op", v: "NAO" }); continue; }
+        if (s.startsWith("=") && s.length > 1) { ex = true; s = s.slice(1); }
         if (s.startsWith('"')) {
           const palavras = norm(s.replace(/"/g, "")).split(/[^a-z0-9$]+/).filter(Boolean);
-          if (palavras.length) out.push({ t: "frase", v: palavras });
+          if (palavras.length) out.push(ex ? { t: "frase", v: palavras, ex } : { t: "frase", v: palavras });
           continue;
         }
+        const nm = /^(\d{1,3}(?:\.\d{3})+|\d{4,})(?:[-/][a-z]{2})?$/i.exec(s);
+        if (nm) { out.push({ t: "termo", v: nm[1].replace(/\D/g, ""), num: true }); continue; }
         const n = norm(s);
         if (n === "e" || n === "and" || n === "&") { out.push({ t: "op", v: "E" }); continue; }
         if (n === "ou" || n === "or" || n === "|") { out.push({ t: "op", v: "OU" }); continue; }
@@ -224,8 +318,9 @@
         mm = /^tema:(\d+)$/.exec(n); if (mm) { out.push({ t: "tema", v: +mm[1] }); continue; }
         const partes = n.split(/[^a-z0-9$*]+/).filter(Boolean).map((p) => p.replace(/\*/g, "$"));
         if (!partes.length) continue;
-        if (partes.length === 1) out.push({ t: "termo", v: partes[0] });
-        else out.push({ t: "frase", v: partes });
+        const x = partes.length === 1 ? { t: "termo", v: partes[0] } : { t: "frase", v: partes };
+        if (ex) x.ex = true;
+        out.push(x);
       }
       return out;
     }
@@ -265,18 +360,50 @@
         if (x.t === ")") { i++; return null; }
         if (x.t === "op") { i++; return null; }
         i++;
-        return x.t === "termo" ? { t: "termo", v: x.v } : x.t === "frase" ? { t: "frase", v: x.v } : { t: "tema", v: x.v };
+        return x.t === "tema" ? { t: "tema", v: x.v } : { ...x };
       }
       const ast = pOu();
       while (i < tk.length) { const extra = pOu(); if (!extra) { i++; continue; } }
       return ast;
     }
+    // Acrescenta os sinônimos: "dano moral" vira ("dano moral" ou "dano extrapatrimonial" ou …).
+    const alvo = (no) => no && (no.t === "termo" || no.t === "frase") && !no.ex && !no.num && !(no.t === "termo" ? [no.v] : no.v).some((w) => w.endsWith("$"));
+    const palavras = (no) => (no.t === "termo" ? [no.v] : no.v);
+    const alternativas = (ws, orig) => {
+      const alts = MAPA_SIN.get(ws.map(singular).join(" "));
+      if (!alts?.length) return null;
+      return { t: "ou", sin: true, orig, a: [orig, ...alts.map((w) => (w.length === 1 ? { t: "termo", v: w[0] } : { t: "frase", v: w }))] };
+    };
+    function expandir(no) {
+      if (!no) return no;
+      if (alvo(no)) return alternativas(palavras(no), no) || no;
+      if (no.t === "e") {
+        const lista = [];
+        const achatar = (x) => (x.t === "e" ? x.a.forEach(achatar) : lista.push(x));
+        achatar(no);
+        const res = [];
+        for (let i = 0; i < lista.length;) {
+          let feito = false;
+          for (let k = Math.min(5, lista.length - i); k >= 2; k--) {
+            const jan = lista.slice(i, i + k);
+            if (!jan.every((x) => alvo(x) && x.t === "termo")) continue;
+            const alt = alternativas(jan.map((x) => x.v), { t: "e", a: jan });
+            if (alt) { res.push(alt); i += k; feito = true; break; }
+          }
+          if (!feito) { res.push(expandir(lista[i])); i++; }
+        }
+        return res.length === 1 ? res[0] : { t: "e", a: res };
+      }
+      if (no.a) return { ...no, a: no.a.map(expandir) };
+      return no;
+    }
     function reDe(no) {
       const k = JSON.stringify(no);
       if (cache.has(k)) return cache.get(k);
-      const pal = (w) => (w.endsWith("$") ? `${esc(w.slice(0, -1))}${LIM}*` : esc(w));
+      const pal = (w) => (w.endsWith("$") ? `${esc(w.slice(0, -1))}${LIM}*` : no.ex ? esc(w) : flexW(w));
       let src;
-      if (no.t === "termo") src = `(?<!${LIM})${pal(no.v)}(?!${LIM})`;
+      if (no.num) src = `(?<![0-9])${reNumero(no.v)}(?![0-9])`;
+      else if (no.t === "termo") src = `(?<!${LIM})${pal(no.v)}(?!${LIM})`;
       else src = `(?<!${LIM})${no.v.map(pal).join(`[^a-z0-9]+`)}(?!${LIM})`;
       const re = new RegExp(src);
       cache.set(k, re);
@@ -284,7 +411,7 @@
     }
     function posicoes(no, tokens) {
       const ws = no.t === "termo" ? [no.v] : no.v;
-      const ok = (tok, w) => (w.endsWith("$") ? tok.startsWith(w.slice(0, -1)) : tok === w);
+      const ok = (tok, w) => (w.endsWith("$") ? tok.startsWith(w.slice(0, -1)) : no.ex ? tok === w : new RegExp(`^${flexW(w)}$`).test(tok));
       const res = [];
       for (let i = 0; i + ws.length <= tokens.length; i++) {
         let bate = true;
@@ -327,11 +454,14 @@
       if (!no) return "";
       const f = (x, topo) => {
         switch (x.t) {
-          case "termo": return x.v.endsWith("$") ? `palavras começadas por “${x.v.slice(0, -1)}”` : `“${x.v}”`;
+          case "termo": if (x.num) return `o número ${fmtNumProc(x.v)}`; return x.v.endsWith("$") ? `palavras começadas por “${x.v.slice(0, -1)}”` : `“${x.v}”`;
           case "frase": return `a expressão exata “${x.v.join(" ")}”`;
           case "tema": return `menção ao tema ${x.v}`;
           case "e": { const s = x.a.map((y) => f(y)).join(" e "); return topo ? s : `(${s})`; }
-          case "ou": { const s = x.a.map((y) => f(y)).join(" ou "); return topo ? s : `(${s})`; }
+          case "ou": {
+            if (x.sin) { const alts = x.a.slice(1, 4).map((y) => palavras(y).join(" ")); return `${x.orig.t === "e" ? `“${x.orig.a.map((y) => y.v).join(" ")}”` : f(x.orig, true)} ou sinônimos (${alts.join(", ")}${x.a.length > 4 ? "…" : ""})`; }
+            const s = x.a.map((y) => f(y)).join(" ou "); return topo ? s : `(${s})`;
+          }
           case "nao": return `sem ${f(x.a[0])}`;
           case "adj": return `${f(x.a[0])} seguido de ${f(x.a[1])} (até ${x.n} palavra${x.n > 1 ? "s" : ""})`;
           case "prox": return `${f(x.a[0])} perto de ${f(x.a[1])} (até ${x.n} palavras)`;
@@ -345,6 +475,7 @@
       if (!q) return { vazio: true, termos: [], testa: () => true, pontua: () => 0, explicacao: "" };
       let ast = null, erro = "";
       try { ast = parse(q); } catch (e) { erro = e.message; ast = parse(q.replace(/[()]/g, " ")); }
+      ast = expandir(ast);
       const termos = positivos(ast);
       const temTexto = !!ast;
       return {
@@ -373,17 +504,18 @@
     const t = (termos || []).filter((x) => (x.t === "termo" ? x.v.replace("$", "").length >= 2 : true));
     if (!t.length) return htmlEsc;
     const mapa = { a: "[aáàâãä]", e: "[eéèêë]", i: "[iíìîï]", o: "[oóòôõö]", u: "[uúùûü]", c: "[cç]", n: "[nñ]" };
-    const pal = (w) => {
+    const pal = (w, ex) => {
       const pref = w.endsWith("$"); const base = pref ? w.slice(0, -1) : w;
-      return base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/[aeioucn]/g, (c) => mapa[c]) + (pref ? "[\\p{L}\\p{N}]*" : "");
+      const src = pref || ex ? base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : flexW(base);
+      return src.replace(/[aeioucn]/g, (c) => mapa[c]) + (pref ? "[\\p{L}\\p{N}]*" : "");
     };
-    const partes = t.map((x) => (x.t === "termo" ? pal(x.v) : x.v.map(pal).join("[^\\p{L}\\p{N}<>]+")));
+    const partes = t.map((x) => (x.num ? reNumero(x.v) : x.t === "termo" ? pal(x.v, x.ex) : x.v.map((w) => pal(w, x.ex)).join("[^\\p{L}\\p{N}<>]+")));
     const re = new RegExp(`(?<![\\p{L}\\p{N}])(${partes.join("|")})(?![\\p{L}\\p{N}])`, "giu");
     return htmlEsc.split(/(<[^>]+>)/).map((seg) => (seg.startsWith("<") ? seg : seg.replace(re, "<mark>$1</mark>"))).join("");
   }
   const AJUDA_BUSCA = `
     <div class="ajuda-busca" hidden>
-      <p><b>Como pesquisar.</b> As palavras são buscadas inteiras: <code>oral</code> não encontra “corporal”.</p>
+      <p><b>Como pesquisar.</b> As palavras são buscadas inteiras (<code>oral</code> não encontra “corporal”), no singular e no plural, e com os sinônimos jurídicos mais comuns: <code>dano moral</code> também encontra “dano extrapatrimonial”.</p>
       <table>
         <tr><td><code>prova oral</code></td><td>as duas palavras, em qualquer lugar (E implícito)</td></tr>
         <tr><td><code>"prova oral"</code></td><td>expressão exata</td></tr>
@@ -395,6 +527,8 @@
         <tr><td><code>dano adj moral</code> · <code>adj2</code></td><td>na ordem, até 1 (ou 2) palavras de distância</td></tr>
         <tr><td><code>juros prox5 mora</code></td><td>perto, em qualquer ordem, até 5 palavras</td></tr>
         <tr><td><code>tema:1365</code></td><td>acórdãos que mencionam o tema</td></tr>
+        <tr><td><code>2.219.808</code> · <code>2219808</code></td><td>número de processo, com ou sem pontos</td></tr>
+        <tr><td><code>=dano</code> · <code>="plano de saúde"</code></td><td>só o termo exato, sem plural nem sinônimos</td></tr>
       </table>
       <div class="chips" style="margin-top:8px">
         <button type="button" class="chip" aria-pressed="false" data-ex='"prova oral"'>"prova oral"</button>
@@ -793,11 +927,18 @@
       }
     }
     const vistosA = new Set();
+    // Julgado de repetitivo cuja tese já está na fila como "tese firmada" não se repete.
+    const temasFila = new Set(itens.filter((i) => i.t && i.tipo !== "afetacao").map((i) => i.t.n));
     for (const r of ds) {
       if (r.dj < somaDias(hoje, -80)) continue;
       const chave = `${r.o}|${r.dd || ""}|${(r.em || r.h || "").split("\n")[0].slice(0, 300)}|${String(r.tese || r.tj || "").slice(0, 160)}`;
       if (vistosA.has(chave)) continue; vistosA.add(chave);
-      if (!(r.s >= 6 || r.tese || r.tj)) continue;
+      // Só entram julgados com tese legível; os demais continuam nos Destaques.
+      if (!(r.tese || r.tj)) continue;
+      const toks = String(r.cl || "").split(" ");
+      if (!r.tese && (toks[0] === "EDcl" || toks[0] === "ProAfR" || toks.includes("RE"))) continue;
+      const mt = /tema\s*(?:repetitivo\s*)?(?:n[.ºo°]*\s*)?(\d[\d.]*)/i.exec(r.h || (r.em || "").split("\n")[0]);
+      if (mt && temasFila.has(+mt[1].replace(/\./g, ""))) continue;
       itens.push({ k: `ac:${r.id}`, tipo: "julgado", d: r.dj, r, ar: r.ar || [], sa: r.sa || [], org: D.orgaos[r.o] || "", rel: r.rel || "", tese: !!(r.tese || r.tj), _n: norm(`${r.h || (r.em || "").split("\n")[0]} ${r.tese || ""} ${r.tj || ""}`) });
     }
     // Termos do "Meu radar" viram prioridade na fila.
@@ -846,6 +987,11 @@
   const tempoLeitura = (txt) => { const w = String(txt || "").split(/\s+/).length; const s = Math.max(10, Math.round((w / 210) * 60 / 5) * 5); return s < 60 ? `${s} s` : `${Math.round(s / 60)} min`; };
   const saudacao = () => { const h = new Date().getHours(); return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite"; };
 
+  // Tese pronta para leitura: sem aspas, sem "Tese:" e sem numeração quando há um item só.
+  function limparTese(t) {
+    const itens = String(t).trim().replace(/^["“']+|["”']+$/g, "").replace(/^\s*tese(?:\s*\d+)?\s*[:.-]\s*/i, "").split(/\n+|\s(?=\d{1,2}\.\s*\p{Lu})/u).map((x) => x.trim().replace(/^["“']+|["”']+$/g, "").replace(/^\s*tese(?:\s*\d+)?\s*[:.-]\s*/i, "")).filter(Boolean);
+    return itens.map((x) => esc(x.replace(/^\d{1,2}\.\s*/, ""))).join("<br>");
+  }
   function cartaoFeed(it, i, total) {
     const tp = FEED_TIPOS[it.tipo];
     const areas = it.ar.slice(0, 2).map((k, i) => { const sub = i === 0 ? (it.sa || []).find((x) => x.startsWith(k + "/")) : ""; const v = sub || k;
@@ -876,15 +1022,16 @@
     } else {
       const r = it.r;
       REG_AC.set(String(r.id), r);
-      kicker = `${esc(r.cl)} ${fmtNumProc(r.n)} · ${esc(it.org)}`;
-      const tese = r.tese || r.tj;
       const cab = frase((r.em || r.h || "").split("\n")[0]);
-      rotTexto = tese ? (r.tese ? "Tese jurídica" : "Tese de julgamento") : "O que foi decidido";
-      principal = tese ? esc(String(tese).trim().replace(/^["“']+/, "").replace(/["”']+(?=\.?$)/, "")).replace(/\n+/g, "<br>") : esc(cab);
+      // Assunto em uma linha, no lugar do número do processo.
+      const assunto = r.as ? frase(r.as).replace(/\.\s+(?=\p{Lu})/gu, " · ") : "";
+      kicker = assunto ? `<span class="reel-assunto">${esc(assunto)}</span>` : `${esc(r.cl)} ${fmtNumProc(r.n)} · ${esc(it.org)}`;
+      const tese = r.tese || r.tj;
+      rotTexto = tese ? (r.tese ? "Tese jurídica" : "O STJ decidiu") : "O que foi decidido";
+      principal = tese ? limparTese(tese) : esc(cab);
       marcar = !!tese;
-      apoio = tese ? esc(cab) : "";
-      const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 2).map((k) => MOTIVOS[k]).join(" · ");
-      meta = `${r.tjp ? "Só os itens com conteúdo próprio; a tese completa está na ementa. " : ""}${r.rel ? esc(relatorFmt(r.rel)) + " · " : ""}${r.dd ? `julgado em ${fmtData(r.dd)} · ` : ""}publicado em ${fmtData(r.dj)}${motivos ? ` · ${esc(motivos)}` : ""}`;
+      apoio = tese && !assunto ? esc(cab) : "";
+      meta = `${assunto ? `${esc(r.cl)} ${fmtNumProc(r.n)} · ${esc(it.org)} · ` : ""}${r.rel ? esc(relatorFmt(r.rel)) + " · " : ""}${r.dd ? `julgado em ${fmtData(r.dd)}` : `publicado em ${fmtData(r.dj)}`}`;
       acoes = `<button type="button" class="btn btn-claro btn-peq" data-f="acordao">${ico("arquivo")} Ler a ementa</button>
         <a class="btn btn-claro btn-peq so-largo" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor ${ico("externo")}</a>`;
     }
@@ -1654,8 +1801,9 @@
     const aplicar = () => {
       f.q = $("#ds-q").value;
       gravarHash("destaques", { ...f, m: f.m === meses[0] ? "" : f.m, s: f.s === "rel" ? "" : f.s });
-      const c = Busca.compilar(f.q); termos = c.termos;
-      const base = ds.filter((r) => (f.m === "todos" || r.dj.startsWith(f.m)) && (!f.o || (f.o === "sup" ? !r.o.endsWith("turma") : r.o.endsWith("turma"))) && (!f.n || r.s >= 10)
+      const nq = /^[\d.\-\/\s]+$/.test(f.q.trim()) && digitos(f.q).length >= 5 ? digitos(f.q) : "";
+      const c = Busca.compilar(nq ? "" : f.q); termos = c.termos;
+      const base = ds.filter((r) => (nq ? (digitos(r.n) === nq || r.reg === nq) : true) && (nq || f.m === "todos" || r.dj.startsWith(f.m)) && (!f.o || (f.o === "sup" ? !r.o.endsWith("turma") : r.o.endsWith("turma"))) && (!f.n || r.s >= 10)
         && (!f.t || r.tese || r.tj) && (c.vazio || c.testa(r._n || (r._n = norm([r.em, r.tese, r.tj, r.tema, r.notas].join("\n"))))));
       contA = contarMat(base, (r) => r.ar, (r) => r.sa);
       const ord = { rel: (a, b) => (b.s - a.s) || b.dj.localeCompare(a.dj), data: (a, b) => b.dj.localeCompare(a.dj) || (b.s - a.s), julg: (a, b) => (b.dd || "").localeCompare(a.dd || "") || (b.s - a.s) }[f.s] || ((a, b) => b.s - a.s);
@@ -1733,10 +1881,23 @@
     const f = { ...AC.f, q: $("#ac-q").value, c: (AC.f.c || "").trim(), rl: (AC.f.rl || "").trim(), n: digitos(AC.f.n) };
     gravarHash("pesquisa", { ...f, p: f.p === "u1" ? "" : f.p, s: f.s === "auto" ? "" : f.s, r: f.r ? "" : "0", x: f.x, t: f.t });
     const todos = D.man.meses.map((m) => m.m);
-    const meses = /^\d{4}-\d{2}$/.test(f.p) ? [f.p] : todos.slice(0, +(/^u(\d+)$/.exec(f.p)?.[1] || 1));
+    // Número de processo digitado na busca (com ou sem pontos): procura em todo o acervo.
+    const soNum = /^[\d.\-\/\s]+$/.test(f.q.trim()) && digitos(f.q).length >= 5 ? digitos(f.q) : "";
+    if (soNum) { f.n = soNum; f.q = ""; }
+    let meses = /^\d{4}-\d{2}$/.test(f.p) ? [f.p] : todos.slice(0, +(/^u(\d+)$/.exec(f.p)?.[1] || 1));
     const orgs = f.o ? [f.o] : Object.keys(D.orgaos);
-    const pares = [];
-    for (const m of meses) { const info = D.man.meses.find((x) => x.m === m); for (const o of orgs) if (info?.orgaos[o]) pares.push([m, o]); }
+    let pares = [], ids = null;
+    if (f.n) {
+      const ix = await carregar("numeros").catch(() => null);
+      if (ix) {
+        const hit = ix.l.filter((x) => x[0] === f.n || x[1] === f.n || (f.n.length >= 6 && x[0].includes(f.n)));
+        ids = new Set(hit.map((x) => String(x[4])));
+        const vistos = new Set();
+        for (const x of hit) { const k = `${ix.m[x[2]]}|${ix.o[x[3]]}`; if (!vistos.has(k) && (!f.o || ix.o[x[3]] === f.o)) { vistos.add(k); pares.push([ix.m[x[2]], ix.o[x[3]]]); } }
+        meses = [...new Set(pares.map((x) => x[0]))].sort().reverse();
+      } else meses = todos;
+    }
+    if (!ids) for (const m of meses) { const info = D.man.meses.find((x) => x.m === m); for (const o of orgs) if (info?.orgaos[o]) pares.push([m, o]); }
     const pend = pares.filter(([m, o]) => !D.shards.has(`${m}/${o}`)).length;
     const prog = $("#ac-prog");
     if (pend) { prog.hidden = false; prog.firstElementChild.style.width = "0"; $("#ac-info").textContent = `Carregando ${pares.length} arquivo(s)…`; }
@@ -1750,7 +1911,7 @@
     const res = [];
     for (const r of dados) {
       const sc0 = r.s ?? 0;
-      if (f.n && !(String(r.n).includes(f.n) || String(r.reg).includes(f.n))) continue;
+      if (ids ? !ids.has(String(r.id)) : f.n && !(String(r.n).includes(f.n) || String(r.reg).includes(f.n))) continue;
       if (f.r && !f.n && sc0 <= (temTexto ? -3 : -2)) continue;
       if (f.x && sc0 < 6) continue;
       if (f.t && !r.tese && !r.tj) continue;
@@ -1773,7 +1934,7 @@
     }[ordem];
     res.sort(ord);
     AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos;
-    const rot = meses.length === 1 ? fmtMesL(meses[0]) : `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}`;
+    const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo de 12 meses` : meses.length === 1 ? fmtMesL(meses[0]) : `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}`;
     $("#ac-info").innerHTML = `<b>${fmtInt(AC.lista.length)}</b> resultado(s) · ${rot}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     renderLista(true);
     if (!AC.dl) {
@@ -1910,7 +2071,7 @@
     const aplicar = () => {
       f.q = $("#rp-q").value;
       gravarHash("repetitivos", { ...f, tipo: f.tipo === "Tema" ? "" : f.tipo || "todos", s: f.s === "mov" ? "" : f.s });
-      const qT = f.q.trim(); const numero = /^\d+$/.test(qT) ? +qT : null;
+      const qT = f.q.trim().replace(/^(tema|controv[eé]rsia|iac)\s*/i, "").replace(/\./g, ""); const numero = /^\d+$/.test(qT) ? +qT : null;
       const c = numero != null ? Busca.compilar("") : Busca.compilar(f.q); termos = c.termos;
       const base = t.filter((x) => (!f.tipo || x.tp === f.tipo) && (!f.org || x.org === f.org) && (!f.uf || ufs.get(`${x.tp}-${x.n}`)?.has(f.uf))
         && (!f.susp || /suspens/i.test(x.info || "")) && (!f.pauta || emPauta.has(`${x.tp}-${x.n}`))
@@ -2195,7 +2356,7 @@
       </ul>
       <h3 style="font-family:var(--ui)">Como a relevância é calculada</h3>
       <p>Cada acórdão recebe uma pontuação automática. Somam pontos o julgamento pela Corte Especial (+5) ou por Seção (+4), a tese jurídica registrada (+6), a afetação ao rito repetitivo (+6), os embargos de divergência (+4), o tema repetitivo (+3) e as menções a superação ou mudança de entendimento e a questão nova (+4), a modulação e a distinção (+3) e a divergência (+2). Perdem pontos os agravos internos e os embargos de declaração (−1) e os fundamentos de rotina, como Súmula 7, Súmulas 283/284 do STF, embargos rejeitados e reexame de provas (até −4).</p>
-      <p>No Atualize-se, a tese de julgamento de cada acórdão é lida item por item. Saem da fila os julgados em que todos os itens apenas aplicam óbices ou entendimentos consolidados (Súmulas 5, 7, 83, 182, 211, 282 e 284, prequestionamento, embargos de declaração, prisão preventiva por fundamentação usual, dosimetria), e perdem posição os que repetem em série a mesma tese. Quando só parte dos itens tem conteúdo próprio, o cartão mostra apenas esses itens; a tese completa continua na ementa.</p>
+      <p>No Atualize-se entram apenas julgados com uma tese legível: a tese jurídica ou os itens da tese de julgamento com conteúdo próprio. Ficam de fora os embargos de declaração, os agravos em recurso extraordinário, os recursos não conhecidos ou desprovidos sem tese e os julgados de repetitivo cuja tese já aparece como “tese firmada”. Esses acórdãos continuam nos Destaques e na Pesquisa. A tese de julgamento de cada acórdão é lida item por item. Saem da fila os julgados em que todos os itens apenas aplicam óbices ou entendimentos consolidados (Súmulas 5, 7, 83, 182, 211, 282 e 284, prequestionamento, embargos de declaração, prisão preventiva por fundamentação usual, dosimetria), e perdem posição os que repetem em série a mesma tese. Quando só parte dos itens tem conteúdo próprio, o cartão mostra apenas esses itens; a tese completa continua na ementa.</p>
       <p>Com 10 pontos ou mais, o acórdão é de <b>alta relevância</b>; de 6 a 9, <b>relevante</b>; de 2 a 5, marcado para <b>acompanhar</b>. A área do direito é identificada pelas palavras da verbetação. É uma triagem para orientar a leitura, e não uma avaliação jurídica.</p>
       <h3 style="font-family:var(--ui)">Como ler as cores</h3>
       <p>As cores têm sempre o mesmo significado em todas as telas.</p>

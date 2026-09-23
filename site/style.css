@@ -730,3 +730,6 @@ button.stat { font: inherit; color: inherit; width: 100%; }
   .sumula .enunciado { font-size: 15.5px; }
 }
 .mt-subs .chip { text-align: left; }
+/* v8: assunto do julgado no Atualize-se */
+.reel-kicker .reel-assunto { display: block; font: 700 15px/1.35 var(--ui); letter-spacing: -.005em; color: hsl(var(--h) 60% 36%); text-wrap: balance; }
+@media (prefers-color-scheme: dark) { .reel-kicker .reel-assunto { color: hsl(var(--h) 80% 74%); } }
