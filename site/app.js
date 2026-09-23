@@ -72,6 +72,8 @@
     raio: '<path d="M13 3 5 13h6l-1 8 8-10h-6z"/>',
     filtro: '<path d="M4 5h16l-6 8v5l-4 2v-7z"/>',
     arquivo: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    sumulas: '<path d="M5 4h11l3 3v13H5z"/><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4.5"/>',
+    ordem: '<path d="M7 4v16M4 17l3 3 3-3M14 6h7M14 12h5M14 18h3"/>',
     link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   };
   const ico = (k, cls = "") => `<svg viewBox="0 0 24 24" aria-hidden="true" class="${cls}">${I[k] || ""}</svg>`;
@@ -120,11 +122,56 @@
   const AREAS = {
     "proc-civil": "Processo Civil", civil: "Civil", consumidor: "Consumidor", familia: "Família e Sucessões",
     empresarial: "Empresarial", bancario: "Bancário", tributario: "Tributário", administrativo: "Administrativo",
-    previdenciario: "Previdenciário", ambiental: "Ambiental", penal: "Penal e Processo Penal", trabalho: "Trabalho",
+    previdenciario: "Previdenciário", ambiental: "Ambiental", penal: "Penal", "proc-penal": "Processo Penal", trabalho: "Trabalho",
   };
   // Cada matéria tem um matiz fixo, usado em todo o site (selos, filtros, cartões).
-  const AREA_COR = { "proc-civil": 226, civil: 208, consumidor: 24, familia: 330, empresarial: 262, bancario: 190, tributario: 150, administrativo: 42, previdenciario: 172, ambiental: 105, penal: 356, trabalho: 290 };
+  const AREA_COR = { "proc-civil": 226, civil: 208, consumidor: 24, familia: 315, empresarial: 262, bancario: 190, tributario: 150, administrativo: 42, previdenciario: 172, ambiental: 105, penal: 0, "proc-penal": 340, trabalho: 290 };
+  // Submatérias: só aparecem depois de escolher a matéria geral.
+  const SUBAREAS = {
+    "civil": { "resp-civil": "Responsabilidade civil", "contratos": "Contratos", "seguros": "Seguros", "posse-prop": "Posse, propriedade e condomínio", "obrigacoes": "Obrigações e prescrição", "personalidade": "Direitos da personalidade e autorais" },
+    "familia": { "alimentos": "Alimentos", "uniao-divorcio": "Casamento, união estável e divórcio", "sucessoes": "Sucessões", "filiacao": "Filiação, guarda e adoção", "infancia": "Criança e adolescente", "curatela": "Curatela e interdição" },
+    "consumidor": { "planos-saude": "Planos de saúde", "cadastros": "Cadastros e negativação", "fornecedor": "Responsabilidade do fornecedor", "servicos": "Serviços e transporte", "imoveis-cons": "Imóveis e consórcios", "praticas": "Práticas e cláusulas abusivas" },
+    "bancario": { "contratos-banc": "Contratos e juros bancários", "fiduciaria": "Alienação fiduciária", "cartao": "Cartão de crédito", "sfh": "Sistema Financeiro da Habitação", "fraudes": "Fraudes e segurança bancária" },
+    "empresarial": { "recuperacao": "Recuperação judicial e falência", "societario": "Direito societário", "titulos": "Títulos de crédito", "propriedade-ind": "Propriedade industrial", "contratos-emp": "Contratos empresariais" },
+    "proc-civil": { "recursos": "Recursos", "execucao": "Execução e cumprimento de sentença", "competencia": "Competência", "honorarios": "Honorários, custas e gratuidade", "tutela": "Tutelas provisórias", "coletivo": "Processo coletivo", "coisa-julgada": "Ação rescisória e coisa julgada", "provas-pc": "Provas, citação e nulidades", "ms": "Mandado de segurança e ações especiais" },
+    "tributario": { "icms": "ICMS", "ir": "Imposto de renda", "pis-cofins": "PIS e Cofins", "contrib-prev": "Contribuições previdenciárias", "municipais": "ISS, IPTU e ITBI", "ipi-aduana": "IPI e comércio exterior", "exec-fiscal": "Execução fiscal", "credito-trib": "Crédito, prescrição e compensação", "outros-trib": "IPVA, ITCMD, IOF e taxas" },
+    "administrativo": { "servidores": "Servidores públicos", "improbidade": "Improbidade administrativa", "licitacoes": "Licitações e contratos", "desapropriacao": "Desapropriação e bens públicos", "resp-estado": "Responsabilidade do Estado", "regulacao": "Regulação, trânsito e conselhos", "saude-pub": "Saúde pública e medicamentos" },
+    "previdenciario": { "beneficios": "Aposentadorias e benefícios", "rural": "Trabalhador rural", "privada": "Previdência privada", "acidentaria": "Acidente de trabalho", "custeio": "Custeio e revisão" },
+    "ambiental": { "dano-amb": "Dano ambiental", "areas-prot": "Áreas protegidas", "sancoes-amb": "Infrações e licenciamento" },
+    "penal": { "dosimetria": "Dosimetria e regime", "drogas": "Drogas", "patrimonio": "Crimes patrimoniais", "pessoa": "Crimes contra a pessoa", "sexuais": "Crimes sexuais", "exec-penal": "Execução penal", "armas-transito": "Armas e trânsito", "economicos": "Crimes econômicos e contra a administração", "punibilidade": "Prescrição, insignificância e punibilidade" },
+    "proc-penal": { "prisoes": "Prisões e cautelares", "provas-pp": "Provas e nulidades", "competencia-pp": "Competência", "juri": "Tribunal do Júri", "recursos-pp": "Recursos, revisão e habeas corpus", "acao-penal": "Ação penal e acordos" },
+  };
+
+  // Valor de filtro de matéria: "civil" (geral) ou "civil/contratos" (específica).
+  const casaMat = (v, ar = [], sa = []) => !v || (v.includes("/") ? (sa || []).includes(v) : (ar || []).includes(v));
+  const rotMat = (v, curto = false) => { if (!v) return ""; const [a, s] = v.split("/"); return s ? (curto ? SUBAREAS[a]?.[s] || s : `${AREAS[a] || a} · ${SUBAREAS[a]?.[s] || s}`) : AREAS[a] || a; };
+  function contarMat(itens, arDe, saDe) {
+    const c = {};
+    for (const x of itens) { for (const a of arDe(x) || []) c[a] = (c[a] || 0) + 1; for (const s of saDe(x) || []) c[s] = (c[s] || 0) + 1; }
+    return c;
+  }
   const seloArea = (k, attrs = "") => `<span class="selo area" style="--h:${AREA_COR[k] ?? 222}"${attrs}>${esc(AREAS[k] || k)}</span>`;
+  // Selo da matéria com a submatéria, quando houver ("Civil · Contratos").
+  const seloMat = (ar = [], sa = [], max = 1) => (ar || []).slice(0, max).map((a) => { const s = (sa || []).find((x) => x.startsWith(a + "/")); return `<span class="selo area" style="--h:${AREA_COR[a] ?? 222}">${esc(AREAS[a] || a)}${s ? `<span class="sub"> · ${esc(rotMat(s, true))}</span>` : ""}</span>`; }).join("");
+  // Lista de matérias em acordeão: um toque na matéria abre as submatérias;
+  // a primeira opção de cada uma ("Todo o …") filtra a matéria geral.
+  function htmlMaterias({ cont, sel, aberta, todas = "Todas as matérias", op = (v) => `data-op="${esc(v)}"` }) {
+    const areas = Object.keys(AREAS).filter((a) => !cont || cont[a] || sel(a) || Object.keys(SUBAREAS[a] || {}).some((s) => sel(`${a}/${s}`)));
+    if (cont) areas.sort((a, b) => (cont[b] || 0) - (cont[a] || 0));
+    const n = (v) => (cont ? ` <span class="n">${fmtInt(cont[v] || 0)}</span>` : "");
+    const algum = areas.some((a) => sel(a) || Object.keys(SUBAREAS[a] || {}).some((s) => sel(`${a}/${s}`)));
+    return `<div class="mt-lista"><button type="button" class="mt-todas" ${op("")} aria-pressed="${!algum}">${esc(todas)}</button>${areas.map((a) => {
+      const subs = Object.entries(SUBAREAS[a] || {}).filter(([k]) => !cont || cont[`${a}/${k}`] || sel(`${a}/${k}`));
+      const marcada = sel(a) || subs.some(([k]) => sel(`${a}/${k}`));
+      const aberto = aberta === a;
+      const cab = subs.length
+        ? `<button type="button" class="mt-area" data-mt-abrir="${a}" aria-expanded="${aberto}"><i></i><span>${esc(AREAS[a])}</span>${n(a)}${ico("seta")}</button>`
+        : `<button type="button" class="mt-area folha" ${op(a)} aria-pressed="${sel(a)}"><i></i><span>${esc(AREAS[a])}</span>${n(a)}</button>`;
+      return `<div class="mt-item${marcada ? " marcada" : ""}${aberto ? " aberto" : ""}" style="--h:${AREA_COR[a] ?? 222}">${cab}${aberto ? `<div class="chips mt-subs">
+        <button type="button" class="chip mt-geral" ${op(a)} aria-pressed="${sel(a)}">Todos os assuntos${n(a)}</button>
+        ${subs.map(([k, t]) => `<button type="button" class="chip" ${op(`${a}/${k}`)} aria-pressed="${sel(`${a}/${k}`)}">${esc(t)}${n(`${a}/${k}`)}</button>`).join("")}</div>` : ""}</div>`;
+    }).join("")}</div>`;
+  }
   const MOTIVOS = {
     ce: "Corte Especial", secao: "Seção", afetacao: "Afetação ao rito repetitivo", eresp: "Embargos de divergência",
     iac: "IAC / PUIL", tese: "Tese firmada", repetitivo: "Recurso repetitivo", mudanca: "Sinal de mudança de entendimento",
@@ -403,6 +450,7 @@
     return l;
   });
   const destaques = () => carregar("destaques");
+  const sumulas = () => carregar("sumulas", (l) => { for (const x of l) { x._n = norm(`${x.t} ${x.ass || ""} ${x.ramo || ""} ${x.nota || ""}`); x._d = x.julg || x.pub || ""; } return l; });
   const indice = () => carregar("indice", (l) => { for (const x of l) x._n = norm(`${x.h} ${x.tese || ""} ${x.tj || ""}`); return l; });
   const djen = () => carregar("radar", (l) => { for (const x of l) x._p = norm(`${x.p} ${x.r || ""}`); return l; });
 
@@ -542,7 +590,7 @@
     const niv = nivelAc(r.s ?? 0);
     const salvo = !!P.salvos[`a:${r.id}`];
     const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 2).map((k) => `<span class="selo pri">${esc(MOTIVOS[k])}</span>`).join("");
-    const areas = (r.ar || []).slice(0, 1).map((k) => seloArea(k)).join("");
+    const areas = seloMat(r.ar, r.sa);
     const temCorpo = corpo.length > 0;
     const dups = r._dup?.length ? `<p class="duplic" title="${esc(r._dup.map((d) => `${d.cl} ${fmtNumProc(d.n)}`).join(", "))}">+ ${r._dup.length} processo(s) com a mesma ementa</p>` : "";
     return `<li class="card item" data-id="${esc(r.id)}">
@@ -563,7 +611,7 @@
       </div></li>`;
   }
   function minimoAcordao(r) {
-    return { k: "a", id: r.id, m: mesDe(r), cl: r.cl, n: r.n, o: r.o, rel: r.rel, dd: r.dd, dj: r.dj, reg: r.reg, h: (r.em || r.h || "").split("\n")[0], tese: r.tese, tj: r.tj, s: r.s, rz: r.rz, ar: r.ar };
+    return { k: "a", id: r.id, m: mesDe(r), cl: r.cl, n: r.n, o: r.o, rel: r.rel, dd: r.dd, dj: r.dj, reg: r.reg, h: (r.em || r.h || "").split("\n")[0], tese: r.tese, tj: r.tj, s: r.s, rz: r.rz, ar: r.ar, sa: r.sa };
   }
   function ligarCards(ul) {
     ul.addEventListener("click", (ev) => {
@@ -589,7 +637,7 @@
     const [cab, ...corpo] = (r.em || "").split("\n");
     const salvo = !!P.salvos[`a:${r.id}`];
     const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).map((k) => `<span class="selo pri">${esc(MOTIVOS[k])}</span>`).join("");
-    const areas = (r.ar || []).map((k) => seloArea(k)).join("");
+    const areas = seloMat(r.ar, r.sa, 3);
     const extra = [["Relator(a)", r.rel ? relatorFmt(r.rel) : ""], ["Julgamento", fmtData(r.dd)], ["Publicação", `${(r.djt || "").split(/\s/)[0] || "DJ"} ${fmtData(r.dj)}`], ["Tema", r.tema], ["Notas", r.notas], ["Informações complementares", r.info], ["Referências legislativas", (r.leg || []).join("\n")]]
       .filter(([, v]) => v).map(([l, v]) => `<dt>${l}</dt><dd>${esc(v).replace(/\n/g, "<br>")}</dd>`).join("");
     abrirGaveta(`${D.orgaos[r.o] || ""}${r.dd ? " · julgado em " + fmtData(r.dd) : ""}`, `${r.cl} ${fmtNumProc(r.n)}`, `
@@ -687,7 +735,7 @@
   });
 
   function linhaTema(t, extra = "", termos = []) {
-    const areas = (t.ar || []).slice(0, 2).map((k) => seloArea(k)).join("");
+    const areas = seloMat(t.ar, t.sa, 2);
     return `<li class="card item" data-tema="${esc(t.tp)}|${t.n}">
       <div class="item-cab"><button type="button" class="item-tit item-abrir" data-abrir-tema>${esc(t.tp)} ${t.n}</button>${seloSit(t.sit)}${extra}
         <span class="meta"><span>${esc(t.org || "—")}</span>${t._mov ? `<span>Últ. mov. ${fmtData(t._mov)}</span>` : ""}</span></div>
@@ -709,11 +757,12 @@
     julgado: { rot: "Julgados", selo: "Julgado", longo: "Julgados das Turmas e Seções", cls: "pri", peso: 40 },
   };
     const PERIODOS = [[0, "Qualquer data"], [3, "Últimos 3 dias"], [7, "Últimos 7 dias"], [15, "Últimos 15 dias"], [30, "Últimos 30 dias"]];
-  const FILTRO_VAZIO = () => ({ ar: [], tp: [], per: 0, tese: "", org: [], rel: "" });
+  const FILTRO_VAZIO = () => ({ ar: [], tp: [], per: 0, tese: "", org: [], rel: "", ord: "" });
   const feedJulgados = () => carregar("atualize").catch(() => destaques());
 
   function feedF() {
     if (!P.feedF) { P.feedF = FILTRO_VAZIO(); if (P.feedAreas?.length) P.feedF.ar = [...P.feedAreas]; }
+    if (P.feedF.ord == null) P.feedF.ord = "";
     return P.feedF;
   }
   const pesos = () => (P.feedPeso = P.feedPeso || {});
@@ -728,7 +777,7 @@
     const hoje = hojeISO(), desde = somaDias(hoje, -45);
     const itens = [];
     const idade = (d) => Math.abs((new Date(hoje) - new Date(d)) / 864e5);
-    const deTema = (x, extra) => ({ t: x, ar: x.ar || [], org: x.org || "", tese: !!x.tese, _n: norm(`${x.q || ""} ${x.tese || ""} ${x.ass || ""}`), ...extra });
+    const deTema = (x, extra) => ({ t: x, ar: x.ar || [], sa: x.sa || [], org: x.org || "", tese: !!x.tese, _n: norm(`${x.q || ""} ${x.tese || ""} ${x.ass || ""}`), ...extra });
     for (const x of t) {
       if (x.julg >= desde && (x.tese || x._teseAguarda)) itens.push(deTema(x, { k: `tese:${x.tp}-${x.n}`, tipo: "tese", d: x.julg }));
       else if (x.pub >= desde && x.tese) itens.push(deTema(x, { k: `pub:${x.tp}-${x.n}`, tipo: "publicado", d: x.pub }));
@@ -749,7 +798,7 @@
       const chave = `${r.o}|${r.dd || ""}|${(r.em || r.h || "").split("\n")[0].slice(0, 300)}|${String(r.tese || r.tj || "").slice(0, 160)}`;
       if (vistosA.has(chave)) continue; vistosA.add(chave);
       if (!(r.s >= 6 || r.tese || r.tj)) continue;
-      itens.push({ k: `ac:${r.id}`, tipo: "julgado", d: r.dj, r, ar: r.ar || [], org: D.orgaos[r.o] || "", rel: r.rel || "", tese: !!(r.tese || r.tj), _n: norm(`${r.h || (r.em || "").split("\n")[0]} ${r.tese || ""} ${r.tj || ""}`) });
+      itens.push({ k: `ac:${r.id}`, tipo: "julgado", d: r.dj, r, ar: r.ar || [], sa: r.sa || [], org: D.orgaos[r.o] || "", rel: r.rel || "", tese: !!(r.tese || r.tj), _n: norm(`${r.h || (r.em || "").split("\n")[0]} ${r.tese || ""} ${r.tj || ""}`) });
     }
     // Termos do "Meu radar" viram prioridade na fila.
     const radar = (P.termos || []).map((termo) => ({ termo, tm: /^tema\s*:?\s*(\d+)$/i.exec(termo.trim()), c: /^tema\s*:?\s*\d+$/i.test(termo.trim()) ? null : Busca.compilar(termo) })).filter((x) => x.tm || (x.c && !x.c.vazio && !x.c.erro));
@@ -778,7 +827,7 @@
   }
   // Um item passa pelos filtros? `sem` ignora uma dimensão (contagem facetada).
   function passaFeed(it, f, sem = "") {
-    if (sem !== "ar" && f.ar.length && !it.ar.some((a) => f.ar.includes(a))) return false;
+    if (sem !== "ar" && f.ar.length && !f.ar.some((v) => casaMat(v, it.ar, it.sa))) return false;
     if (sem !== "tp" && f.tp.length && !f.tp.includes(it.tipo)) return false;
     if (sem !== "per" && f.per && Math.abs((new Date(hojeISO()) - new Date(it.d)) / 864e5) > f.per) return false;
     if (sem !== "tese" && f.tese && (f.tese === "com") !== it.tese) return false;
@@ -799,7 +848,8 @@
 
   function cartaoFeed(it, i, total) {
     const tp = FEED_TIPOS[it.tipo];
-    const areas = it.ar.slice(0, 2).map((k) => `<button type="button" class="selo area" data-f="area" data-ar="${k}" style="--h:${AREA_COR[k] ?? 222}" title="Ler só ${esc(AREAS[k] || k)}">${esc(AREAS[k] || k)}</button>`).join("");
+    const areas = it.ar.slice(0, 2).map((k, i) => { const sub = i === 0 ? (it.sa || []).find((x) => x.startsWith(k + "/")) : ""; const v = sub || k;
+      return `<button type="button" class="selo area" data-f="area" data-ar="${v}" style="--h:${AREA_COR[k] ?? 222}" title="Ler só ${esc(rotMat(v))}">${esc(AREAS[k] || k)}${sub ? `<span class="sub"> · ${esc(rotMat(sub, true))}</span>` : ""}</button>`; }).join("");
     let kicker = "", principal = "", apoio = "", meta = "", acoes = "", rotTexto = "", marcar = false;
     if (it.t) {
       const x = it.t;
@@ -912,25 +962,26 @@
     // ------------------------------------------------------------ filtros
     const conta = (dim, pred) => todos.filter((x) => passaFeed(x, f, dim) && (!soNovos || !lidos()[x.k]) && pred(x)).length;
     const rotulo = {
-      ar: () => (f.ar.length === 1 ? AREAS[f.ar[0]] || "Matéria" : f.ar.length ? `Matéria · ${f.ar.length}` : "Matéria"),
+      ar: () => (f.ar.length === 1 ? rotMat(f.ar[0]) || "Matéria" : f.ar.length ? `Matéria · ${f.ar.length}` : "Matéria"),
       tp: () => (f.tp.length === 1 ? FEED_TIPOS[f.tp[0]].rot : f.tp.length ? `Tipo · ${f.tp.length}` : "Tipo"),
       per: () => (f.per ? PERIODOS.find((p) => p[0] === f.per)[1] : "Período"),
       tese: () => (f.tese === "com" ? "Com tese" : f.tese === "sem" ? "Sem tese" : "Tese"),
       org: () => (f.org.length === 1 ? f.org[0] : f.org.length ? `Órgão · ${f.org.length}` : "Órgão"),
       rel: () => (f.rel ? relatorFmt(f.rel) : "Relator"),
+      ord: () => (f.ord === "rec" ? "Ordenar: mais recentes" : "Ordenar: sugerida"),
     };
-    const ativo = { ar: () => f.ar.length, tp: () => f.tp.length, per: () => f.per, tese: () => f.tese, org: () => f.org.length, rel: () => f.rel };
+    const ativo = { ar: () => f.ar.length, tp: () => f.tp.length, per: () => f.per, tese: () => f.tese, org: () => f.org.length, rel: () => f.rel, ord: () => false };
     const desenharFiltros = () => {
-      $("#fd-filtros").innerHTML = `<button type="button" class="fpill novos" id="fd-novos" aria-pressed="${soNovos}">${ico("raio")} Só não lidos</button>` + Object.keys(rotulo).map((k) => `<button type="button" class="fpill" data-fp="${k}" aria-pressed="${!!ativo[k]()}" aria-haspopup="dialog">${esc(rotulo[k]())}${ico("seta")}</button>`).join("")
+      $("#fd-filtros").innerHTML = `<button type="button" class="fpill novos" id="fd-novos" aria-pressed="${soNovos}">${ico("raio")} Só não lidos</button>` + Object.keys(rotulo).map((k) => `<button type="button" class="fpill${k === "ord" ? " ordem" : ""}" data-fp="${k}" aria-pressed="${!!ativo[k]()}" aria-haspopup="dialog">${k === "ord" ? ico("ordem") : ""}${esc(rotulo[k]())}${ico("seta")}</button>`).join("")
         + (nFiltros(f) ? `<button type="button" class="fpill limpar" id="fd-limpar">${ico("x")} Limpar</button>` : "");
     };
     const opcao = (dim, val, txt, n, marcado) => { const h = dim === "ar" && val ? AREA_COR[val] : null; return `<button type="button" class="chip${h != null ? " area" : ""}" data-op="${dim}" data-val="${esc(val)}" aria-pressed="${marcado}"${h != null ? ` style="--h:${h}"` : ""}>${h != null ? "<i></i>" : ""}${esc(txt)} <span class="n">${n === "" ? "" : fmtInt(n)}</span></button>`; };
     function conteudoPop(dim) {
       if (dim === "ar") {
-        const c = {}; todos.filter((x) => passaFeed(x, f, "ar") && (!soNovos || !lidos()[x.k])).forEach((x) => x.ar.forEach((a) => (c[a] = (c[a] || 0) + 1)));
-        const lista = Object.keys(AREAS).filter((a) => c[a] || f.ar.includes(a)).sort((a, b) => (c[b] || 0) - (c[a] || 0));
-        return `<h3>Matéria</h3><div class="chips">${f.ar.length ? opcao("ar", "", "Todas", "", false) : ""}${lista.map((a) => opcao("ar", a, AREAS[a], c[a] || 0, f.ar.includes(a))).join("")}</div>`;
+        const c = contarMat(todos.filter((x) => passaFeed(x, f, "ar") && (!soNovos || !lidos()[x.k])), (x) => x.ar, (x) => x.sa);
+        return `<h3>Matéria</h3>${htmlMaterias({ cont: c, sel: (v) => f.ar.includes(v), aberta: popAberta, todas: "Todas as matérias", op: (v) => `data-op="ar" data-val="${esc(v)}"` })}<p class="nota">Toque na matéria para ver os assuntos específicos. Dá para marcar mais de uma.</p>`;
       }
+      if (dim === "ord") return `<h3>Ordenar por</h3><div class="chips">${[["", "Sugerida para você"], ["rec", "Mais recentes"]].map(([v, txt]) => `<button type="button" class="chip" data-op="ord" data-val="${v}" aria-pressed="${f.ord === v}">${txt}</button>`).join("")}</div><p class="nota">Sugerida: combina relevância, novidade, o seu radar e as matérias que você mais lê, alternando os tipos de novidade.</p>`;
       if (dim === "tp") return `<h3>Tipo de novidade</h3><div class="chips">${Object.entries(FEED_TIPOS).map(([k, v]) => opcao("tp", k, v.longo, conta("tp", (x) => x.tipo === k), f.tp.includes(k))).join("")}</div>`;
       if (dim === "per") return `<h3>Período</h3><div class="chips">${PERIODOS.map(([d, txt]) => opcao("per", d, txt, conta("per", (x) => !d || Math.abs((new Date(hojeISO()) - new Date(x.d)) / 864e5) <= d), f.per === d)).join("")}</div><p class="nota">Pautas contam pela proximidade da sessão.</p>`;
       if (dim === "tese") return `<h3>Tese</h3><div class="chips">${[["", "Todas"], ["com", "Com tese firmada ou de julgamento"], ["sem", "Sem tese"]].map(([v, txt]) => opcao("tese", v, txt, conta("tese", (x) => !v || (v === "com") === x.tese), f.tese === v)).join("")}</div>`;
@@ -945,8 +996,9 @@
         <div class="chips" id="fd-rel-l" style="margin-top:10px">${f.rel ? opcao("rel", "", "Todos", "", false) : ""}${lista.map(([nome, n]) => opcao("rel", nome, nome, n, norm(nome) === norm(f.rel))).join("")}</div>`;
     }
     const pop = $("#fd-pop"), veu = $("#fd-veu");
-    let popDim = "";
+    let popDim = "", popAberta = "";
     function abrirPop(dim, botao) {
+      if (popDim !== dim) popAberta = dim === "ar" ? (f.ar[0] || "").split("/")[0] : "";
       popDim = dim;
       pop.innerHTML = `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div>${conteudoPop(dim)}`;
       const folha = matchMedia("(max-width: 860px)").matches;
@@ -971,21 +1023,29 @@
     const aplicar = () => { salvarP(); desenharFiltros(); montar(); };
     pop.addEventListener("click", (e) => {
       if (e.target.closest("[data-fechar-pop]")) return fecharPop();
+      const ab = e.target.closest("[data-mt-abrir]");
+      if (ab) { popAberta = popAberta === ab.dataset.mtAbrir ? "" : ab.dataset.mtAbrir; return abrirPop("ar", $('[data-fp="ar"]')); }
       const b = e.target.closest("[data-op]"); if (!b) return;
       const { op, val } = b.dataset;
       if (op === "ar" && !val) f.ar = [];
-      else if (op === "tp" || op === "org" || op === "ar") { f[op] = f[op].includes(val) ? f[op].filter((x) => x !== val) : [...f[op], val]; }
+      else if (op === "ar") {
+        // Geral e específica não se acumulam: marcar uma desmarca a outra.
+        const mae = val.split("/")[0];
+        f.ar = f.ar.includes(val) ? f.ar.filter((x) => x !== val) : [...f.ar.filter((x) => (val.includes("/") ? x !== mae : !x.startsWith(val + "/"))), val];
+      }
+      else if (op === "tp" || op === "org") { f[op] = f[op].includes(val) ? f[op].filter((x) => x !== val) : [...f[op], val]; }
+      if (op === "ord") f.ord = val;
       if (op === "per") f.per = +val;
       if (op === "tese") f.tese = val;
       if (op === "rel") f.rel = norm(val) === norm(f.rel) ? "" : val;
       aplicar();
-      if (op === "per" || op === "tese" || op === "rel" || (op === "ar" && !val)) fecharPop(); else abrirPop(op, $(`[data-fp="${op}"]`));
+      if (op === "per" || op === "tese" || op === "rel" || op === "ord" || (op === "ar" && !val)) fecharPop(); else abrirPop(op, $(`[data-fp="${op}"]`));
     });
     veu.addEventListener("click", fecharPop);
     const foraPop = (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("[data-fp]")) fecharPop(); };
     document.addEventListener("pointerdown", foraPop);
     $("#fd-filtros").addEventListener("click", (e) => {
-      if (e.target.closest("#fd-limpar")) { Object.assign(f, FILTRO_VAZIO()); fecharPop(); return aplicar(); }
+      if (e.target.closest("#fd-limpar")) { Object.assign(f, FILTRO_VAZIO(), { ord: f.ord }); fecharPop(); return aplicar(); }
       if (e.target.closest("#fd-novos")) { soNovos = !soNovos; P.feedSoNovos = soNovos; fecharPop(); return aplicar(); }
       const b = e.target.closest("[data-fp]"); if (!b) return;
       if (popDim === b.dataset.fp) return fecharPop();
@@ -1012,11 +1072,12 @@
       box.insertAdjacentHTML("beforeend", html);
       $$(".reel:not([data-obs])", box).forEach((el) => { el.dataset.obs = "1"; obs.observe(el); });
       $("#fd-rever")?.addEventListener("click", () => { soNovos = false; P.feedSoNovos = false; aplicar(); });
-      $("#fd-sem-filtro")?.addEventListener("click", () => { Object.assign(f, FILTRO_VAZIO()); aplicar(); });
+      $("#fd-sem-filtro")?.addEventListener("click", () => { Object.assign(f, FILTRO_VAZIO(), { ord: f.ord }); aplicar(); });
     }
     function montar() {
       sairCartao();
       vis = todos.filter((x) => passaFeed(x, f) && (!soNovos || !lidos()[x.k]));
+      if (f.ord === "rec") { const hj = hojeISO(); vis.sort((a, b) => (b.tipo === "pauta" ? hj : b.d).localeCompare(a.tipo === "pauta" ? hj : a.d)); }
       feitos = 0; atual = -1;
       obs?.disconnect(); criarObs();
       box.innerHTML = capaFeed(vis, f);
@@ -1102,7 +1163,7 @@
       const fn = b.dataset.f;
       const textoIt = it.t ? `${it.t.tp} ${it.t.n}/STJ — ${it.t.tese ? "Tese: " + it.t.tese : it.t.q}` : `${it.r.tese || it.r.tj ? (it.r.tese ? "Tese jurídica: " : "Tese de julgamento: ") + (it.r.tese || it.r.tj) + "\n" : ""}${citacao(it.r)}`;
       if (fn === "mais") { $(".reel-texto", el).classList.add("aberto"); b.hidden = true; }
-      if (fn === "area") { f.ar = [b.dataset.ar]; aplicar(); toast(`Lendo só ${AREAS[b.dataset.ar] || ""}.`); }
+      if (fn === "area") { f.ar = [b.dataset.ar]; aplicar(); toast(`Lendo só ${rotMat(b.dataset.ar)}.`); }
       if (fn === "tema") abrirTema(it.t.tp, it.t.n);
       if (fn === "acordao") abrirAcordao(it.r);
       if (fn === "copiar") copiar(textoIt, "Copiado.");
@@ -1145,12 +1206,13 @@
     { id: "destaques", tit: "Destaques", sobre: "Acórdãos relevantes", ico: "destaques", fn: vDestaques },
     { id: "pesquisa", tit: "Pesquisa de acórdãos", sobre: "Acervo de 12 meses", ico: "pesquisa", fn: vPesquisa },
     { id: "repetitivos", tit: "Precedentes qualificados", sobre: "Repetitivos, IAC e controvérsias", ico: "repetitivos", fn: vRepetitivos },
+    { id: "sumulas", tit: "Súmulas", sobre: "Enunciados do STJ", ico: "sumulas", fn: vSumulas },
     { id: "pautas", tit: "Pautas e publicações", sobre: "O que vai ser julgado", ico: "pautas", fn: vPautas },
     { id: "verificar", tit: "Verificar petição", sobre: "Conferência de citações", ico: "verificar", fn: vVerificar },
     { id: "sobre", tit: "Sobre o Radar STJ", sobre: "Fontes e método", ico: "sobre", fn: vSobre },
   ];
   function montarNav() {
-    $("#menu").innerHTML = VIEWS.map((v, i) => `${i === 7 ? '<div class="sep"></div>' : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.tit === "Precedentes qualificados" ? "Repetitivos" : v.tit === "Pesquisa de acórdãos" ? "Pesquisa" : v.tit === "Pautas e publicações" ? "Pautas" : v.tit === "Visão geral" ? "Visão geral" : v.tit === "Sobre o Radar STJ" ? "Sobre" : v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("");
+    $("#menu").innerHTML = VIEWS.map((v, i) => `${i === 8 ? '<div class="sep"></div>' : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.tit === "Precedentes qualificados" ? "Repetitivos" : v.tit === "Pesquisa de acórdãos" ? "Pesquisa" : v.tit === "Pautas e publicações" ? "Pautas" : v.tit === "Visão geral" ? "Visão geral" : v.tit === "Sobre o Radar STJ" ? "Sobre" : v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("");
     const inf = [["painel", "Início"], ["atualize", "Atualize-se"], ["radar", "Radar"], ["pesquisa", "Pesquisa"]];
     $("#barra-inf").innerHTML = inf.map(([id, l]) => `<a href="#${id}" data-v="${id}">${ico(VIEWS.find((v) => v.id === id).ico)}<span>${l}</span>${id === "radar" ? '<span class="cont cont-radar" hidden></span>' : ""}${id === "atualize" ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("")
       + `<button type="button" id="inf-mais" aria-haspopup="dialog">${ico("mais")}<span>Mais</span></button>`;
@@ -1294,11 +1356,12 @@
   // ============================================================ MEU RADAR
   const TIPO_RADAR = { tema: "Repetitivo", acordao: "Acórdão", pauta: "Em pauta", djen: "Publicação no DJEN" };
   function areasItem(it) { return it.obj?.ar || (it.tipo === "pauta" && it.temaObj?.ar) || []; }
+  function subsItem(it) { return it.obj?.sa || (it.tipo === "pauta" && it.temaObj?.sa) || []; }
   function itemRadarLinha(it, termos) {
     const o = it.obj;
     const novo = it.novo ? '<span class="selo novo">Novo</span>' : "";
     const nivel = `<span class="ponto ${it.nivel}" title="${NIVEL_TX[it.nivel] || ""}"></span>`;
-    const areas = areasItem(it).slice(0, 1).map((k) => seloArea(k)).join("");
+    const areas = seloMat(areasItem(it), subsItem(it));
     const por = `<span class="meta"><span>por “${esc(it.termo.replace(/"/g, ""))}”</span></span>`;
     if (it.tipo === "acordao") {
       REG_AC.set(String(o.id), o);
@@ -1344,7 +1407,7 @@
       gravarHash("radar", {});
     }
     const aba = p.get("aba") || "novidades";
-    const F = { nivel: "", tipo: "", area: "", termo: "" };
+    const F = { nivel: "", tipo: "", area: "", termo: "", s: "pri" };
     const vazioRadar = !P.termos.length && !P.procs.length && !P.oabs.length;
     main.innerHTML = `
       <div class="card card-pad radar-topo">
@@ -1413,7 +1476,9 @@
         nota: "Alta: tema em pauta ou movimentado há menos de 30 dias, processo seu em pauta ou acórdão de alta relevância. Relevante: tema em andamento, acórdão relevante ou publicado no seu processo." },
       { rot: "Tipo", tipo: "um", get: () => F.tipo, set: (v) => (F.tipo = v), opcoes: () => [{ v: "", t: "Tudo" }, ...[["tema", "Repetitivos"], ["acordao", "Acórdãos"], ["pauta", "Pautas"], ["djen", "Publicações no DJEN"]].filter(([k]) => contTp[k]).map(([k, t]) => ({ v: k, t, n: contTp[k] }))] },
       { rot: "Assunto", tipo: "um", get: () => F.termo, set: (v) => (F.termo = v), opcoes: () => [{ v: "", t: "Todos" }, ...[...new Set(lista.map((x) => x.termo))].map((x) => ({ v: x, t: x }))] },
-      { rot: "Matéria", tipo: "um", get: () => F.area, set: (v) => (F.area = v), opcoes: () => opcoesAreas(contAr) },
+      { rot: "Matéria", tipo: "materia", get: () => F.area, set: (v) => (F.area = v), cont: () => contAr },
+      defOrdem(() => F.s, (v) => (F.s = v), [{ v: "pri", t: "Prioridade" }, { v: "rec", t: "Mais recentes" }, { v: "termo", t: "Assunto acompanhado" }],
+        "Prioridade: primeiro o que é novo desde a sua última visita, depois por nível (alta, relevante, acompanhar) e data."),
     ], () => desenhar());
     $("#rd-visto", main).addEventListener("click", () => { P.vistoEm = hojeISO(); salvarP(); atualizarContadorRadar(); render(); toast("Tudo marcado como visto."); });
 
@@ -1439,9 +1504,11 @@
       const base = lista.filter((x) => (!F.tipo || x.tipo === F.tipo) && (!F.termo || x.termo === F.termo));
       contNv = { "": base.length, novo: 0, alta: 0, rel: 0, acomp: 0 }; base.forEach((x) => { contNv[x.nivel]++; if (x.novo) contNv.novo++; });
       const b2 = base.filter((x) => !F.nivel || (F.nivel === "novo" ? x.novo : x.nivel === F.nivel));
-      contAr = {}; b2.forEach((x) => areasItem(x).forEach((a) => (contAr[a] = (contAr[a] || 0) + 1)));
+      contAr = contarMat(b2, areasItem, subsItem);
       pil.desenhar();
-      const vis = b2.filter((x) => !F.area || areasItem(x).includes(F.area));
+      const vis = b2.filter((x) => casaMat(F.area, areasItem(x), subsItem(x)));
+      if (F.s === "rec") vis.sort((a, b) => String(b.dNovo || b.d).localeCompare(String(a.dNovo || a.d)));
+      if (F.s === "termo") vis.sort((a, b) => a.termo.localeCompare(b.termo, "pt-BR") || (ordNivel(a.nivel) - ordNivel(b.nivel)));
       const termos = [...new Set(vis.map((x) => x.termo))].flatMap((q) => (/^tema\s*:?\s*\d+$/i.test(q.trim()) ? [] : Busca.compilar(q).termos));
       const corpo = $("#rd-corpo", main);
       corpo.innerHTML = `
@@ -1478,7 +1545,7 @@
   }
   function fecharPopF() {
     if (!POPF.el || POPF.el.hidden) return;
-    POPF.el.classList.remove("vis"); POPF.veu.classList.remove("vis"); POPF.raiz = null; POPF.i = -1;
+    POPF.el.classList.remove("vis"); POPF.veu.classList.remove("vis"); POPF.raiz = null; POPF.i = -1; POPF.aberta = "";
     setTimeout(() => { if (!POPF.el.classList.contains("vis")) { POPF.el.hidden = true; POPF.veu.hidden = true; } }, 200);
   }
   function pilulas(raiz, defs, aoMudar) {
@@ -1489,11 +1556,12 @@
       if (d.tipo === "toggle" || !ativo(d)) return d.rotAtual ? d.rotAtual() : d.rot;
       if (d.tipo === "multi") { const v = d.get(); const o = d.opcoes().find((x) => x.v === v[0]); return v.length === 1 ? (o?.t || d.rot) : `${d.rot} · ${v.length}`; }
       if (d.tipo === "texto") return `${d.rot}: ${d.get()}`;
+      if (d.tipo === "materia") return rotMat(d.get());
       const o = d.opcoes().find((x) => String(x.v) === String(d.get())); return o ? (o.curto || o.t) : d.rot;
     };
     function desenhar() {
       const n = defs.filter((d) => ativo(d) && !d.semLimpar).length;
-      raiz.innerHTML = defs.map((d, i) => `<button type="button" class="fpill${d.tipo === "toggle" ? " toggle" : ""}" data-pil="${i}" aria-pressed="${ativo(d)}"${d.tipo !== "toggle" ? ' aria-haspopup="dialog"' : ""}>${d.ico ? ico(d.ico) : ""}${esc(rot(d))}${d.tipo !== "toggle" ? ico("seta") : ""}</button>`).join("")
+      raiz.innerHTML = defs.map((d, i) => `<button type="button" class="fpill${d.tipo === "toggle" ? " toggle" : ""}${d.cls ? " " + d.cls : ""}" data-pil="${i}" aria-pressed="${ativo(d)}"${d.tipo !== "toggle" ? ' aria-haspopup="dialog"' : ""}${d.dica ? ` title="${esc(d.dica)}"` : ""}>${d.ico ? ico(d.ico) : ""}${esc(rot(d))}${d.tipo !== "toggle" ? ico("seta") : ""}</button>`).join("")
         + (n ? `<button type="button" class="fpill limpar" data-pil-limpar>${ico("x")} Limpar</button>` : "");
     }
     function conteudo(d) {
@@ -1503,13 +1571,17 @@
         const m = d.tipo === "multi" ? v.includes(o.v) : String(v ?? "") === String(o.v);
         return `<button type="button" class="chip${o.h != null ? " area" : ""}" data-op="${esc(String(o.v))}" aria-pressed="${m}"${o.h != null ? ` style="--h:${o.h}"` : ""}>${o.h != null ? "<i></i>" : o.ponto ? `<span class="ponto ${o.ponto}"></span>` : ""}${esc(o.t)}${o.n != null ? ` <span class="n">${fmtInt(o.n)}</span>` : ""}</button>`;
       };
-      const corpo = d.tipo === "texto"
+      const corpo = d.tipo === "materia"
+        ? htmlMaterias({ cont: d.cont ? d.cont() : null, sel: (x) => String(v || "") === x, aberta: POPF.aberta, todas: d.todas || "Todas as matérias" })
+        : d.tipo === "texto"
         ? `<form class="adicionar" data-pil-form><input type="search" value="${esc(v || "")}" placeholder="${esc(d.ph || "")}"${d.lista ? ` list="${d.lista}"` : ""} autocomplete="off"><button class="btn btn-pri" type="submit">Aplicar</button></form>${ops.length ? `<div class="chips" style="margin-top:12px">${ops.slice(0, 24).map(chip).join("")}</div>` : ""}`
         : `<div class="chips">${ops.map(chip).join("")}</div>`;
       return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}`;
     }
     function abrir(i, botao) {
-      const d = defs[i]; POPF.raiz = raiz; POPF.i = i;
+      const d = defs[i];
+      if (POPF.raiz !== raiz || POPF.i !== i) POPF.aberta = d.tipo === "materia" ? String(d.get() || "").split("/")[0] : "";
+      POPF.raiz = raiz; POPF.i = i;
       POPF.el.innerHTML = conteudo(d);
       const folha = matchMedia("(max-width: 860px)").matches;
       POPF.el.classList.toggle("folha", folha);
@@ -1519,6 +1591,8 @@
       requestAnimationFrame(() => { POPF.el.classList.add("vis"); POPF.veu.classList.add("vis"); });
       POPF.el.onclick = (e) => {
         if (e.target.closest("[data-fechar-pop]")) return fecharPopF();
+        const ab = e.target.closest("[data-mt-abrir]");
+        if (ab) { POPF.aberta = POPF.aberta === ab.dataset.mtAbrir ? "" : ab.dataset.mtAbrir; POPF.el.innerHTML = conteudo(d); return; }
         const b = e.target.closest("[data-op]"); if (!b) return;
         const o = (d.opcoes?.() || []).find((x) => String(x.v) === b.dataset.op); const val = o ? o.v : b.dataset.op;
         if (d.tipo === "multi") { const cur = d.get(); d.set(val === "" ? [] : cur.includes(val) ? cur.filter((x) => x !== val) : [...cur, val]); }
@@ -1540,6 +1614,12 @@
     desenhar();
     return { desenhar };
   }
+  // "Ordenar por": mesma aparência em todas as listas; a primeira opção é o padrão.
+  function defOrdem(get, set, opcoes, nota) {
+    const padrao = opcoes[0].v;
+    return { rot: "Ordenar por", titulo: "Ordenar por", tipo: "um", cls: "ordem", ico: "ordem", padrao, obrigatorio: true, semLimpar: true, get, set, nota,
+      dica: "Ordenar por", rotAtual: () => `Ordenar: ${opcoes[0].t.toLowerCase()}`, opcoes: () => opcoes.map((o) => ({ ...o, curto: `Ordenar: ${o.t.toLowerCase()}` })) };
+  }
   // Opções de matéria com contagem e cor.
   const opcoesAreas = (cont, todas = "Todas as matérias") => [{ v: "", t: todas }, ...Object.keys(AREAS).filter((a) => cont[a]).sort((a, b) => cont[b] - cont[a]).map((a) => ({ v: a, t: AREAS[a], n: cont[a], h: AREA_COR[a] }))];
 
@@ -1551,7 +1631,7 @@
   async function vDestaques(main, p) {
     const ds = await destaques();
     const meses = [...new Set(ds.map((r) => r.dj.slice(0, 7)))].sort().reverse();
-    const f = { a: p.get("a") || "", m: p.get("m") || (meses[0] || ""), o: p.get("o") || "", n: p.get("n") || "", q: p.get("q") || "", t: p.get("t") === "1" };
+    const f = { a: p.get("a") || "", m: p.get("m") || (meses[0] || ""), o: p.get("o") || "", n: p.get("n") || "", q: p.get("q") || "", t: p.get("t") === "1", s: p.get("s") || "rel" };
     main.innerHTML = `
       <div id="ds-f">
         ${campoBusca("ds-q", 'Filtrar por termos. Ex.: "bem de família" ou impenhorab$', f.q)}
@@ -1573,23 +1653,26 @@
     };
     const aplicar = () => {
       f.q = $("#ds-q").value;
-      gravarHash("destaques", { ...f, m: f.m === meses[0] ? "" : f.m });
+      gravarHash("destaques", { ...f, m: f.m === meses[0] ? "" : f.m, s: f.s === "rel" ? "" : f.s });
       const c = Busca.compilar(f.q); termos = c.termos;
       const base = ds.filter((r) => (f.m === "todos" || r.dj.startsWith(f.m)) && (!f.o || (f.o === "sup" ? !r.o.endsWith("turma") : r.o.endsWith("turma"))) && (!f.n || r.s >= 10)
         && (!f.t || r.tese || r.tj) && (c.vazio || c.testa(r._n || (r._n = norm([r.em, r.tese, r.tj, r.tema, r.notas].join("\n"))))));
-      contA = {}; base.forEach((r) => (r.ar || []).forEach((a) => (contA[a] = (contA[a] || 0) + 1)));
-      lista = agrupar(base.filter((r) => !f.a || (r.ar || []).includes(f.a))).sort((a, b) => (b.s - a.s) || b.dj.localeCompare(a.dj));
+      contA = contarMat(base, (r) => r.ar, (r) => r.sa);
+      const ord = { rel: (a, b) => (b.s - a.s) || b.dj.localeCompare(a.dj), data: (a, b) => b.dj.localeCompare(a.dj) || (b.s - a.s), julg: (a, b) => (b.dd || "").localeCompare(a.dd || "") || (b.s - a.s) }[f.s] || ((a, b) => b.s - a.s);
+      lista = agrupar(base.filter((r) => casaMat(f.a, r.ar, r.sa)).sort(ord));
       $("#ds-info").innerHTML = `<b>${fmtInt(lista.length)}</b> destaque(s)${f.m && f.m !== "todos" ? ` em ${fmtMesL(f.m)}` : " nos últimos 3 meses"} ${explicacaoHTML(c)}`;
       render(true);
     };
     pilulas($("#ds-pil"), [
-      { rot: "Matéria", tipo: "um", get: () => f.a, set: (v) => (f.a = v), opcoes: () => opcoesAreas(contA) },
+      { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => contA },
       { rot: "Mês", tipo: "um", obrigatorio: true, semLimpar: true, padrao: meses[0], rotAtual: () => fmtMesL(f.m), get: () => f.m, set: (v) => (f.m = v),
         opcoes: () => [...meses.map((m) => ({ v: m, t: fmtMesL(m) })), { v: "todos", t: "Últimos 3 meses" }] },
-      { rot: "Órgão", tipo: "um", get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, { v: "sup", t: "Corte Especial e Seções" }, { v: "turmas", t: "Turmas" }] },
+      { rot: "Órgão", tipo: "um", get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, { v: "sup", t: "Corte Especial e Seções" }, { v: "turmas", t: "Turmas" }],
+        nota: "A Corte Especial e as Seções uniformizam a jurisprudência do Tribunal; as Turmas julgam a maior parte dos recursos." },
       { rot: "Relevância", tipo: "um", get: () => f.n, set: (v) => (f.n = v), opcoes: () => [{ v: "", t: "Relevantes e alta", ponto: "rel" }, { v: "alta", t: "Só alta relevância", curto: "Alta relevância", ponto: "alta" }],
         nota: "Alta relevância: 10 pontos ou mais na classificação automática (veja Sobre)." },
-      { rot: "Só com tese", tipo: "toggle", get: () => f.t, set: (v) => (f.t = v) },
+      { rot: "Só com tese", tipo: "toggle", get: () => f.t, set: (v) => (f.t = v), dica: "Mostra apenas acórdãos com tese jurídica ou tese de julgamento destacada na ementa." },
+      defOrdem(() => f.s, (v) => (f.s = v), [{ v: "rel", t: "Mais relevantes" }, { v: "data", t: "Publicação mais recente" }, { v: "julg", t: "Julgamento mais recente" }]),
     ], aplicar);
     $("#ds-q").addEventListener("input", debounce(aplicar, 250));
     $("#ds-mais").addEventListener("click", () => render(false));
@@ -1619,17 +1702,20 @@
       const periodos = [{ v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, ...meses.map((m) => ({ v: m.m, t: fmtMesL(m.m) }))];
       AC.pil = pilulas($("#ac-pil"), [
         { rot: "Período", tipo: "um", padrao: "u1", obrigatorio: true, semLimpar: true, rotAtual: () => "Último mês", get: () => AC.f.p, set: (v) => (AC.f.p = v), opcoes: () => periodos },
-        { rot: "Matéria", tipo: "um", get: () => AC.f.a, set: (v) => (AC.f.a = v), opcoes: () => [{ v: "", t: "Todas as matérias" }, ...Object.keys(AREAS).map((a) => ({ v: a, t: AREAS[a], h: AREA_COR[a] }))] },
+        { rot: "Matéria", tipo: "materia", get: () => AC.f.a, set: (v) => (AC.f.a = v) },
         { rot: "Órgão", tipo: "um", get: () => AC.f.o, set: (v) => (AC.f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...Object.entries(D.orgaos).map(([k, v]) => ({ v: k, t: v }))] },
-        { rot: "Classe", tipo: "texto", ph: "REsp, AgInt, EREsp", lista: "ac-classes", get: () => AC.f.c, set: (v) => (AC.f.c = v) },
+        { rot: "Classe", titulo: "Classe processual", tipo: "texto", ph: "REsp, AgInt, EREsp", lista: "ac-classes", get: () => AC.f.c, set: (v) => (AC.f.c = v),
+          nota: "Sigla da classe do processo no STJ. Ex.: REsp (recurso especial), AgInt (agravo interno), EREsp (embargos de divergência), HC (habeas corpus)." },
         { rot: "Relator", tipo: "texto", ph: "Nome do(a) ministro(a)", lista: "ac-rels", get: () => AC.f.rl, set: (v) => (AC.f.rl = v) },
         { rot: "Processo", tipo: "texto", ph: "Número. Ex.: 2222623", get: () => AC.f.n, set: (v) => (AC.f.n = digitos(v)) },
-        { rot: "Só com tese", tipo: "toggle", get: () => AC.f.t, set: (v) => (AC.f.t = v) },
-        { rot: "Só destaques", tipo: "toggle", get: () => AC.f.x, set: (v) => (AC.f.x = v) },
-        { rot: "Incluir rotina", tipo: "toggle", get: () => !AC.f.r, set: (v) => (AC.f.r = !v) },
-        { rot: "Ordem", tipo: "um", padrao: "auto", obrigatorio: true, semLimpar: true, rotAtual: () => "Ordem automática", get: () => AC.f.s, set: (v) => (AC.f.s = v),
-          opcoes: () => [{ v: "auto", t: "Automática" }, { v: "rel", t: "Relevância", curto: "Por relevância" }, { v: "data", t: "Mais recentes" }, { v: "julg", t: "Data de julgamento", curto: "Por julgamento" }],
-          nota: "Automática: por relevância quando há termos; sem termos, os mais recentes primeiro." },
+        { rot: "Exibir", titulo: "Quais acórdãos exibir", tipo: "um", padrao: "", obrigatorio: true, rotAtual: () => "Exibir: sem rotina",
+          get: () => (AC.f.t ? "tese" : AC.f.x ? "dest" : AC.f.r ? "" : "tudo"),
+          set: (v) => { AC.f.t = v === "tese"; AC.f.x = v === "dest"; AC.f.r = v !== "tudo"; },
+          opcoes: () => [{ v: "", t: "Sem decisões de rotina (padrão)", curto: "Exibir: sem rotina" }, { v: "tudo", t: "Todas as decisões, inclusive de rotina", curto: "Exibir: tudo" },
+            { v: "tese", t: "Só acórdãos com tese", curto: "Exibir: só com tese" }, { v: "dest", t: "Só destaques (relevantes)", curto: "Exibir: só destaques" }],
+          nota: "<b>Decisões de rotina</b> são acórdãos que apenas aplicam óbices já conhecidos, sem examinar o mérito: Súmula 7/STJ (reexame de provas), Súmulas 282 a 284/STF, falta de impugnação específica, embargos de declaração rejeitados. Ficam ocultas por padrão para não encobrir os julgados úteis. <b>Destaques</b> são os acórdãos classificados como relevantes (veja Sobre)." },
+        defOrdem(() => AC.f.s, (v) => (AC.f.s = v), [{ v: "auto", t: "Automática" }, { v: "rel", t: "Mais relevantes" }, { v: "data", t: "Publicação mais recente" }, { v: "julg", t: "Julgamento mais recente" }],
+          "Automática: com termos de busca, os mais aderentes primeiro; sem termos, os publicados mais recentemente."),
       ], () => buscar());
       $("#ac-q").addEventListener("input", debounce(() => buscar(), 300));
       $("#ac-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
@@ -1668,7 +1754,7 @@
       if (f.r && !f.n && sc0 <= (temTexto ? -3 : -2)) continue;
       if (f.x && sc0 < 6) continue;
       if (f.t && !r.tese && !r.tj) continue;
-      if (f.a && !(r.ar || []).includes(f.a)) continue;
+      if (f.a && !casaMat(f.a, r.ar, r.sa)) continue;
       if (reCl && !reCl.test(norm(r.cl))) continue;
       if (rN && !norm(r.rel).includes(rN)) continue;
       if (temTexto) {
@@ -1704,8 +1790,90 @@
     const lote = AC.lista.slice(AC.mostrados, AC.mostrados + 20);
     ul.insertAdjacentHTML("beforeend", lote.map((r) => cardAcordao(r, { termos: AC.termos })).join(""));
     AC.mostrados += lote.length;
-    if (!AC.lista.length) ul.innerHTML = vazio("pesquisa", "Nenhum acórdão encontrado", "Amplie o período, desligue “Ocultar decisões de rotina” ou revise os termos. Toque em “?” para ver como combinar palavras.");
+    if (!AC.lista.length) ul.innerHTML = vazio("pesquisa", "Nenhum acórdão encontrado", "Amplie o período, escolha “Exibir: tudo” para incluir as decisões de rotina ou revise os termos. Toque em “?” para ver como combinar palavras.");
     const b = $("#ac-mais"); b.hidden = AC.mostrados >= AC.lista.length; b.textContent = `Mostrar mais (${fmtInt(AC.lista.length - AC.mostrados)})`;
+  }
+
+  // ============================================================== SÚMULAS
+  const URL_SUMULA = (n) => `https://scon.stj.jus.br/SCON/pesquisar.jsp?b=SUMU&livre=%40NUM%3D${n}`;
+  const SIT_SUM = { vigente: ["Vigente", "ok"], cancelada: ["Cancelada", "canc"], alterada: ["Redação alterada", "rel"] };
+  function cardSumula(x, termos) {
+    const [sit, cls] = SIT_SUM[x.sit] || SIT_SUM.vigente;
+    return `<li class="card item sumula${x.sit === "cancelada" ? " cancelada" : ""}" data-sum="${x.n}">
+      <div class="item-cab"><span class="item-tit">Súmula ${x.n}</span>${x.sit !== "vigente" ? `<span class="selo ${cls}">${sit}</span>` : ""}
+        <span class="meta">${x.org ? `<span>${esc(x.org)}</span>` : ""}${x.julg ? `<span>Julg. ${fmtData(x.julg)}</span>` : ""}${x.pub ? `<span>Publ. ${fmtData(x.pub)}</span>` : ""}</span></div>
+      <div class="item-sel">${seloMat(x.ar, x.sa)}${x.ass ? `<span class="assunto">${esc(x.ass)}</span>` : ""}</div>
+      <p class="enunciado">${destacar(esc(x.t), termos)}</p>
+      ${x.nota ? `<details class="nota-sum"><summary>${x.sit === "cancelada" ? "Por que foi cancelada" : "Histórico da redação"}</summary><p>${esc(x.nota)}</p></details>` : ""}
+      <div class="acoes">
+        <a class="link-acao" href="${URL_SUMULA(x.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>
+        <a class="link-acao" href="#pesquisa?q=${encodeURIComponent(`"súmula ${x.n}/stj" ou "súmula n. ${x.n}/stj"`)}&p=u12">Acórdãos que citam</a>
+        <span class="dir"><button type="button" class="btn-ico" data-copiar-sum title="Copiar enunciado e referência" aria-label="Copiar">${ico("copiar")}</button></span>
+      </div></li>`;
+  }
+  async function vSumulas(main, p) {
+    const l = await sumulas();
+    const anos = l.map((x) => +x._d.slice(0, 4)).filter(Boolean);
+    const f = { q: p.get("q") || "", a: p.get("a") || "", sit: p.get("sit") ?? "vig", org: p.get("org") || "", per: p.get("per") || "", s: p.get("s") || "rec" };
+    main.innerHTML = `
+      <div id="sm-f">
+        ${campoBusca("sm-q", 'Número ou termos do enunciado. Ex.: 7 ou "dano moral"', f.q)}
+        ${AJUDA_BUSCA}
+        <div class="fd-filtros filtros-lista" id="sm-pil"></div>
+      </div>
+      <div class="barra-res"><p id="sm-info"></p><span class="nota">Fonte: página oficial de súmulas do STJ</span></div>
+      <ol class="lista" id="sm-lista"></ol>
+      <button class="btn btn-claro btn-mais" id="sm-mais" hidden>Mostrar mais</button>`;
+    let lista = [], mostrados = 0, termos = [], ca = {}, cs = {};
+    const PER = [["", "Qualquer data"], ["5", "Últimos 5 anos"], ["10", "Últimos 10 anos"], ["2020", "2020 em diante"], ["2010", "2010 a 2019"], ["2000", "2000 a 2009"], ["1990", "1990 a 1999"]];
+    const anoAtual = +hojeISO().slice(0, 4);
+    const noPer = (x, v) => { if (!v) return true; const a = +x._d.slice(0, 4); if (!a) return false; return v.length === 1 || v === "10" ? a > anoAtual - +v : v === "2020" ? a >= 2020 : a >= +v && a <= +v + 9; };
+    const render = (reset) => {
+      const ul = $("#sm-lista");
+      if (reset) { ul.innerHTML = ""; mostrados = 0; }
+      const lote = lista.slice(mostrados, mostrados + 30);
+      ul.insertAdjacentHTML("beforeend", lote.map((x) => cardSumula(x, termos)).join(""));
+      mostrados += lote.length;
+      if (!lista.length) ul.innerHTML = vazio("sumulas", "Nenhuma súmula encontrada", "Revise os termos ou os filtros. Para ver as canceladas, use o filtro Situação.");
+      const b = $("#sm-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
+    };
+    const aplicar = () => {
+      f.q = $("#sm-q").value;
+      gravarHash("sumulas", { ...f, sit: f.sit === "vig" ? "" : f.sit, s: f.s === "rec" ? "" : f.s });
+      const qT = f.q.trim().replace(/^s[úu]mula\s*(n\.?\s*)?/i, "").replace(/\/stj$/i, "");
+      const numero = /^\d{1,3}$/.test(qT) ? +qT : null;
+      const c = numero != null ? Busca.compilar("") : Busca.compilar(f.q); termos = c.termos;
+      const base = l.filter((x) => (numero != null ? x.n === numero : c.testa(x._n)) && (!f.org || x.org === f.org) && noPer(x, f.per));
+      cs = { vig: 0, canc: 0, todas: base.length }; base.forEach((x) => (x.sit === "cancelada" ? cs.canc++ : cs.vig++));
+      const b2 = base.filter((x) => numero != null || f.sit === "todas" || (f.sit === "canc" ? x.sit === "cancelada" : x.sit !== "cancelada"));
+      ca = contarMat(b2, (x) => x.ar, (x) => x.sa);
+      lista = numero != null ? base : b2.filter((x) => casaMat(f.a, x.ar, x.sa));
+      const ord = { rec: (a, b) => b.n - a.n, num: (a, b) => a.n - b.n, julg: (a, b) => b._d.localeCompare(a._d) || b.n - a.n, ant: (a, b) => a._d.localeCompare(b._d) || a.n - b.n,
+        rel: (a, b) => c.pontua(b._n, b._n) - c.pontua(a._n, a._n) || b.n - a.n }[f.s === "rel" && c.vazio ? "rec" : f.s];
+      lista.sort(ord);
+      $("#sm-info").innerHTML = `<b>${fmtInt(lista.length)}</b> súmula(s)${f.sit === "vig" && numero == null ? " vigentes" : f.sit === "canc" ? " canceladas" : ""} ${explicacaoHTML(c)}`;
+      render(true);
+    };
+    pilulas($("#sm-pil"), [
+      { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => ca },
+      { rot: "Situação", tipo: "um", padrao: "vig", obrigatorio: true, rotAtual: () => "Vigentes", get: () => f.sit, set: (v) => (f.sit = v),
+        opcoes: () => [{ v: "vig", t: "Vigentes", n: cs.vig }, { v: "canc", t: "Canceladas", n: cs.canc, ponto: "canc" }, { v: "todas", t: "Todas", n: cs.todas }],
+        nota: "Vigentes incluem as súmulas cuja redação foi alterada ou revisada; o cartão indica a alteração e mostra a redação anterior." },
+      { rot: "Órgão", tipo: "um", get: () => f.org, set: (v) => (f.org = v), titulo: "Órgão que aprovou", opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...["Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção"].map((o) => ({ v: o, t: o }))],
+        nota: "Primeira Seção: direito público. Segunda Seção: direito privado. Terceira Seção: direito penal. Corte Especial: questões comuns a todas as Seções." },
+      { rot: "Julgamento", tipo: "um", get: () => f.per, set: (v) => (f.per = v), titulo: "Data de aprovação", opcoes: () => PER.map(([v, t]) => ({ v, t })),
+        nota: `Data em que o órgão aprovou a súmula${anos.length ? ` (de ${Math.min(...anos)} a ${Math.max(...anos)})` : ""}. Para as mais antigas sem essa informação, vale a data da publicação.` },
+      defOrdem(() => f.s, (v) => (f.s = v), [{ v: "rec", t: "Mais recentes" }, { v: "num", t: "Número (menor primeiro)" }, { v: "julg", t: "Aprovação mais recente" }, { v: "ant", t: "Aprovação mais antiga" }, { v: "rel", t: "Mais aderentes à busca" }]),
+    ], aplicar);
+    $("#sm-q").addEventListener("input", debounce(aplicar, 200));
+    $("#sm-mais").addEventListener("click", () => render(false));
+    $("#sm-lista").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-copiar-sum]"); if (!b) return;
+      const x = l.find((y) => y.n === +b.closest("[data-sum]").dataset.sum); if (!x) return;
+      copiar(`Súmula ${x.n}/STJ: "${x.t}"${x.org ? ` (${x.org}${x.julg ? `, julgado em ${fmtDataCit(x.julg)}` : ""}${x.pub ? `, DJe de ${fmtDataCit(x.pub)}` : ""})` : ""}${x.sit === "cancelada" ? " [cancelada]" : ""}`, "Súmula copiada.");
+    });
+    ligarAjuda($("#sm-f"), $("#sm-q"), aplicar);
+    aplicar();
   }
 
   // ========================================================== REPETITIVOS
@@ -1747,11 +1915,12 @@
       const base = t.filter((x) => (!f.tipo || x.tp === f.tipo) && (!f.org || x.org === f.org) && (!f.uf || ufs.get(`${x.tp}-${x.n}`)?.has(f.uf))
         && (!f.susp || /suspens/i.test(x.info || "")) && (!f.pauta || emPauta.has(`${x.tp}-${x.n}`))
         && (numero != null ? x.n === numero : c.testa(x._n)));
-      ca = {}; base.forEach((x) => (x.ar || []).forEach((a) => (ca[a] = (ca[a] || 0) + 1)));
-      const b2 = base.filter((x) => !f.a || (x.ar || []).includes(f.a));
+      ca = contarMat(base, (x) => x.ar, (x) => x.sa);
+      const b2 = base.filter((x) => casaMat(f.a, x.ar, x.sa));
       cont = { "": b2.length, andamento: 0, julgado: 0, cancelado: 0 }; b2.forEach((x) => cont[x._g] !== undefined && cont[x._g]++);
       lista = b2.filter((x) => !f.sit || x._g === f.sit);
-      lista.sort(f.s === "num" ? (a, b) => b.n - a.n : (a, b) => (b._mov || "").localeCompare(a._mov || "") || b.n - a.n);
+      const porData = (k) => (a, b) => (b[k] || "").localeCompare(a[k] || "") || b.n - a.n;
+      lista.sort({ num: (a, b) => b.n - a.n, numc: (a, b) => a.n - b.n, afet: porData("afet"), julg: porData("julg") }[f.s] || porData("_mov"));
       $("#rp-info").innerHTML = `<b>${fmtInt(lista.length)}</b> registro(s) ${explicacaoHTML(c)}`;
       render(true);
     };
@@ -1759,15 +1928,15 @@
       { rot: "Situação", tipo: "um", get: () => f.sit, set: (v) => (f.sit = v), opcoes: () => [
         { v: "", t: "Todas", n: cont[""] }, { v: "andamento", t: "Em andamento", n: cont.andamento, ponto: "rel" },
         { v: "julgado", t: "Julgados", n: cont.julgado, ponto: "ok" }, { v: "cancelado", t: "Cancelados/revisados", n: cont.cancelado, ponto: "canc" }] },
-      { rot: "Matéria", tipo: "um", get: () => f.a, set: (v) => (f.a = v), opcoes: () => opcoesAreas(ca) },
-      { rot: "Tipo", tipo: "um", padrao: "Tema", semLimpar: true, obrigatorio: true, get: () => f.tipo, set: (v) => (f.tipo = v), rotAtual: () => "Temas repetitivos",
-        opcoes: () => [{ v: "Tema", t: "Temas repetitivos" }, { v: "Controvérsia", t: "Controvérsias" }, { v: "IAC", t: "IAC" }, { v: "SIRDR", t: "SIRDR" }, { v: "PUIL", t: "PUIL" }, { v: "", t: "Todos os tipos" }] },
+      { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => ca },
+      { rot: "Tipo", titulo: "Tipo de precedente", tipo: "um", padrao: "Tema", semLimpar: true, obrigatorio: true, get: () => f.tipo, set: (v) => (f.tipo = v), rotAtual: () => "Temas repetitivos",
+        opcoes: () => [{ v: "Tema", t: "Temas repetitivos" }, { v: "Controvérsia", t: "Controvérsias" }, { v: "IAC", t: "IAC" }, { v: "SIRDR", t: "SIRDR" }, { v: "PUIL", t: "PUIL" }, { v: "", t: "Todos os tipos" }],
+        nota: "<b>Tema repetitivo</b>: questão decidida pelo rito dos recursos repetitivos, com tese vinculante. <b>Controvérsia</b>: questão em triagem, ainda não afetada. <b>IAC</b>: incidente de assunção de competência. <b>SIRDR</b>: suspensão nacional em IRDR. <b>PUIL</b>: pedido de uniformização de interpretação de lei." },
       { rot: "Órgão", tipo: "um", get: () => f.org, set: (v) => (f.org = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...["Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção"].map((o) => ({ v: o, t: o }))] },
-      { rot: "Origem", tipo: "um", get: () => f.uf, set: (v) => (f.uf = v), titulo: "UF de origem dos processos", opcoes: () => [{ v: "", t: "Qualquer origem" }, ...todasUF.map((u) => ({ v: u, t: u }))] },
-      { rot: "Em pauta", tipo: "toggle", get: () => f.pauta, set: (v) => (f.pauta = v) },
-      { rot: "Com suspensão", tipo: "toggle", get: () => f.susp, set: (v) => (f.susp = v) },
-      { rot: "Ordem", tipo: "um", padrao: "mov", semLimpar: true, obrigatorio: true, get: () => f.s, set: (v) => (f.s = v), rotAtual: () => "Mais movimentados",
-        opcoes: () => [{ v: "mov", t: "Última movimentação", curto: "Mais movimentados" }, { v: "num", t: "Número do tema", curto: "Por número" }] },
+      { rot: "Origem", tipo: "um", get: () => f.uf, set: (v) => (f.uf = v), titulo: "UF de origem dos processos", nota: "Estado de onde vieram os processos vinculados ao tema (leading cases e demais recursos).", opcoes: () => [{ v: "", t: "Qualquer origem" }, ...todasUF.map((u) => ({ v: u, t: u }))] },
+      { rot: "Em pauta", tipo: "toggle", get: () => f.pauta, set: (v) => (f.pauta = v), dica: "Só temas com processo incluído nas próximas sessões de julgamento." },
+      { rot: "Com suspensão", tipo: "toggle", get: () => f.susp, set: (v) => (f.susp = v), dica: "Só temas em que o STJ determinou a suspensão dos processos sobre a questão." },
+      defOrdem(() => f.s, (v) => (f.s = v), [{ v: "mov", t: "Última movimentação" }, { v: "afet", t: "Afetação mais recente" }, { v: "julg", t: "Julgamento mais recente" }, { v: "num", t: "Número (maior primeiro)" }, { v: "numc", t: "Número (menor primeiro)" }]),
     ], aplicar);
     $("#rp-q").addEventListener("input", debounce(aplicar, 200));
     $("#rp-mais").addEventListener("click", () => render(false));
@@ -1790,12 +1959,13 @@
     const pl = await pautas();
     const corpo = $("#pt-corpo");
     const dias = [...new Set(pl.map((x) => x.d))].sort();
-    const f = { q: p.get("q") || "", o: p.get("o") || "", d: p.get("d") || "", rel: p.get("rel") === "1" };
+    const f = { q: p.get("q") || "", o: p.get("o") || "", d: p.get("d") || "", rel: p.get("rel") === "1", s: p.get("s") || "prox" };
+    pl.forEach((x, i) => (x._i = i));
     const arq = String(D.man.pautas?.arquivo || "");
     corpo.innerHTML = `
       <div class="campo-busca">${ico("pesquisa")}<input id="pt-q" type="search" placeholder="Processo, OAB (RS 12345) ou nome do advogado" value="${esc(f.q)}"></div>
       <div class="fd-filtros filtros-lista" id="pt-pil"></div>
-      <div class="barra-res"><p id="pt-info"></p><span class="nota" title="“Relevantes” reúne processos vinculados a precedentes qualificados, embargos de divergência e julgamentos das Seções e da Corte Especial. Por privacidade, o site não exibe os nomes das partes; processos em segredo de justiça aparecem sem advogados.">Pautas de ${fmtData(`${arq.slice(0, 4)}-${arq.slice(4, 6)}-${arq.slice(6, 8)}`)} · sem nomes de partes</span></div>
+      <div class="barra-res"><p id="pt-info"></p><span class="nota" title="Por privacidade, o site não exibe os nomes das partes; processos em segredo de justiça aparecem sem advogados.">Pautas de ${fmtData(`${arq.slice(0, 4)}-${arq.slice(4, 6)}-${arq.slice(6, 8)}`)} · sem nomes de partes</span></div>
       <div id="pt-lista"></div>
       <button class="btn btn-claro btn-mais" id="pt-mais" hidden>Mostrar mais</button>`;
     let lista = [], lim = 150, termoOAB = "", qN = "";
@@ -1815,7 +1985,7 @@
     };
     const aplicar = () => {
       f.q = $("#pt-q").value.trim();
-      gravarHash("pautas", f);
+      gravarHash("pautas", { ...f, s: f.s === "prox" ? "" : f.s });
       termoOAB = /^[A-Za-z]{2}\s*[-/ ]?\s*\d{1,6}[A-Za-z]?$/.test(f.q) ? normOAB(f.q) : "";
       const nd = digitos(f.q); qN = !termoOAB && !/^\d+$/.test(f.q.replace(/[\s.-]/g, "")) ? norm(f.q) : "";
       const base = pl.filter((x) => (!f.o || x.o === f.o) && (!f.rel || f.q || x.s >= 3)
@@ -1823,14 +1993,18 @@
       const cont = {}; base.forEach((x) => (cont[x.d] = (cont[x.d] || 0) + 1));
       contD = cont; totalD = base.length;
       lista = base.filter((x) => !f.d || x.d === f.d);
+      const seg = { rel: (a, b) => (b.s || 0) - (a.s || 0), org: (a, b) => (D.orgaos[a.o] || "").localeCompare(D.orgaos[b.o] || "", "pt-BR"), rela: (a, b) => norm(a.rel).localeCompare(norm(b.rel)) }[f.s];
+      lista.sort((a, b) => a.d.localeCompare(b.d) || (seg ? seg(a, b) : 0) || a._i - b._i);
       $("#pt-info").innerHTML = `<b>${fmtInt(lista.length)}</b> processo(s) em pauta${f.rel && !f.q ? " · só relevantes" : f.q ? " · busca em todas as pautas" : ""}`;
       lim = 150; render();
     };
     let contD = {}, totalD = 0;
     pilulas($("#pt-pil"), [
-      { rot: "Só relevantes", tipo: "toggle", get: () => f.rel, set: (v) => (f.rel = v) },
+      { rot: "Só relevantes", tipo: "toggle", get: () => f.rel, set: (v) => (f.rel = v), dica: "Processos vinculados a precedentes qualificados, embargos de divergência e julgamentos das Seções e da Corte Especial." },
       { rot: "Data", tipo: "um", get: () => f.d, set: (v) => (f.d = v), titulo: "Data da sessão", opcoes: () => [{ v: "", t: "Todas as datas", n: totalD }, ...dias.filter((d) => contD[d]).map((d) => ({ v: d, t: fmtDiaL(d), curto: fmtData(d).slice(0, 5), n: contD[d] }))] },
       { rot: "Órgão", tipo: "um", get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...Object.entries(D.orgaos).map(([k, v]) => ({ v: k, t: v }))] },
+      defOrdem(() => f.s, (v) => (f.s = v), [{ v: "prox", t: "Sessão mais próxima" }, { v: "rel", t: "Mais relevantes primeiro" }, { v: "org", t: "Órgão julgador" }, { v: "rela", t: "Relator(a)" }],
+        "As pautas ficam sempre agrupadas por dia de sessão; a ordem escolhida vale dentro de cada dia."),
     ], aplicar);
     $("#pt-q").addEventListener("input", debounce(aplicar, 250));
     $("#pt-mais").addEventListener("click", () => { lim += 150; render(); });
@@ -2033,6 +2207,10 @@
         <p><span class="selo pri">Azul</span> julgados das Turmas e Seções e marcas de relevância</p>
         <p>Cada matéria tem a sua própria cor: ${Object.keys(AREAS).map((k) => seloArea(k)).join(" ")}</p>
       </div>
+      <h3 style="font-family:var(--ui)">Matérias e assuntos específicos</h3>
+      <p>Cada julgado, tema e súmula recebe uma matéria geral (Civil, Processo Civil, Penal, Processo Penal, Tributário etc.) e, quando possível, um assunto específico (por exemplo, Civil · Responsabilidade civil). No filtro Matéria, toque na matéria para ver os assuntos; “Todos os assuntos” filtra a matéria inteira. A classificação é automática, feita pelos termos da ementa, e pode conter imprecisões.</p>
+      <h3 style="font-family:var(--ui)">Súmulas</h3>
+      <p>A aba Súmulas reúne todos os enunciados do STJ, extraídos da página oficial do Tribunal, com a situação (vigente, cancelada ou com redação alterada), o órgão que aprovou, as datas de julgamento e de publicação e a matéria.</p>
       <h3 style="font-family:var(--ui)">Privacidade</h3>
       <p>O seu radar (assuntos, processos e OAB) e os itens salvos ficam apenas no seu navegador. A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor.</p>
       <h3 style="font-family:var(--ui)">Situação da base</h3>
