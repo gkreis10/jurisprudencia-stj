@@ -474,12 +474,19 @@
       };
       return f(no, true);
     }
+    const STOP_BUSCA = new Set(["de", "da", "do", "das", "dos", "a", "o", "as", "os", "em", "no", "na", "nos", "nas", "para", "por", "com", "um", "uma", "ao", "aos", "pelo", "pela", "pelos", "pelas"]);
     function compilar(q) {
       q = String(q || "").trim();
       if (!q) return { vazio: true, termos: [], testa: () => true, pontua: () => 0, explicacao: "" };
       let ast = null, erro = "";
+      const orig = norm(q).split(/\s+/).filter(Boolean);
       try { ast = parse(q); } catch (e) { erro = e.message; ast = parse(q.replace(/[()]/g, " ")); }
       ast = expandir(ast);
+      // Palavras soltas: ignora artigos e preposições ("bem de família" → bem + família); a frase digitada segue valendo na pontuação.
+      if (ast && ast.t === "e") {
+        const a = ast.a.filter((x) => !(x.t === "termo" && !x.num && STOP_BUSCA.has(x.v)));
+        if (a.length && a.length < ast.a.length) ast = a.length === 1 ? a[0] : { ...ast, a };
+      }
       const termos = positivos(ast);
       const temTexto = !!ast;
       return {
@@ -497,6 +504,7 @@
           // Bônus quando as palavras soltas aparecem juntas, na ordem digitada.
           const soltas = termos.filter((t) => t.t === "termo").map((t) => t.v);
           if (soltas.length > 1 && reDe({ t: "frase", v: soltas }).test(texto)) s += 8;
+          if (orig.length > soltas.length && soltas.length > 1 && orig.every((w) => /^[a-z0-9]+$/.test(w)) && reDe({ t: "frase", v: orig }).test(texto)) s += 10;
           return s;
         },
       };
@@ -601,8 +609,12 @@
     return l;
   });
   const destaques = () => carregar("destaques");
-  const informativos = () => carregar("informativos", (l) => { for (const x of l) x._n = norm(`${x.tema} ${x.t} ${x.ramo || ""} ${x.proc || ""} ${x.sec || ""}`); l.idx = new Map(l.map((x) => [x.id, x])); return l; });
-  const teorInfo = () => carregar("informativos-teor");
+  const prepInfo = (x) => { if (x.an && x.tema) x.tema = frase(x.tema); x._n = norm(`${x.tema} ${x.t} ${x.ramo || ""} ${x.proc || ""} ${x.sec || ""}`); return x; };
+  const informativos = () => carregar("informativos", (l) => { l.forEach(prepInfo); l.idx = new Map(l.map((x) => [x.id, x])); return l; });
+  const infoIndice = () => carregar("informativos/indice");
+  // Edições antigas ficam em arquivos por ano, carregados só quando pedidos.
+  const infoAno = (ano) => carregar(`informativos/${ano}`, (l) => { l.forEach(prepInfo); return l; }).then(async (l) => { const r = await informativos(); for (const x of l) r.idx.set(x.id, x); return l; });
+  const teorInfo = (x) => carregar(`informativos/teor-${(x?.d || "").slice(0, 4) || "0000"}`).catch(() => carregar("informativos-teor"));
   const URL_INFO = (ed) => `https://processo.stj.jus.br/jurisprudencia/externo/informativo/?acao=pesquisarumaedicao&livre=%27${String(ed).padStart(4, "0")}%27.cod.`;
   const sumulas = () => carregar("sumulas", (l) => { for (const x of l) { x._n = norm(`${x.t} ${x.ass || ""} ${x.ramo || ""} ${x.nota || ""}`); x._d = x.julg || x.pub || ""; } return l; });
   const indice = () => carregar("indice", (l) => { for (const x of l) x._n = norm(`${x.h} ${x.tese || ""} ${x.tj || ""}`); return l; });
@@ -1425,9 +1437,9 @@
     { id: "semana", tit: "Resumo da semana", sobre: "O que mudou em 7 dias", ico: "semana", fn: vSemana },
     { id: "radar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true },
     { id: "destaques", tit: "Destaques", sobre: "Acórdãos relevantes", ico: "destaques", fn: vDestaques },
-    { id: "pesquisa", tit: "Pesquisa de acórdãos", sobre: "Acervo de 12 meses", ico: "pesquisa", fn: vPesquisa },
+    { id: "pesquisa", tit: "Pesquisa de acórdãos", sobre: "Acervo de 3 anos", ico: "pesquisa", fn: vPesquisa },
     { id: "repetitivos", tit: "Precedentes qualificados", sobre: "Repetitivos, IAC e controvérsias", ico: "repetitivos", fn: vRepetitivos },
-    { id: "sumulas", tit: "Súmulas", sobre: "Enunciados do STJ", ico: "sumulas", fn: vSumulas },
+    { id: "sumulas", tit: "Súmulas e teses", sobre: "Súmulas e Jurisprudência em Teses", ico: "sumulas", fn: vSumulas },
     { id: "pautas", tit: "Pautas e publicações", sobre: "O que vai ser julgado", ico: "pautas", fn: vPautas },
     { id: "verificar", tit: "Verificar petição", sobre: "Conferência de citações", ico: "verificar", fn: vVerificar },
     { id: "sobre", tit: "Sobre o Radar STJ", sobre: "Fontes e método", ico: "sobre", fn: vSobre },
@@ -1813,7 +1825,7 @@
       const datas = d.datas === "uma"
         ? `<form class="pop-datas" data-pil-datas><label>${esc(d.rotData || "Escolher uma data")}<input type="date" name="a" value="${/^\d{4}-\d{2}-\d{2}$/.test(vd) ? vd : ""}" min="${d.min || ""}" max="${d.max || ""}" required></label><button class="btn btn-pri btn-peq" type="submit">Ir</button></form>`
         : d.datas === "intervalo"
-        ? `<form class="pop-datas" data-pil-datas><label>De<input type="date" name="de" value="${vd.startsWith("d:") ? vd.split(":")[1] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label><label>Até<input type="date" name="ate" value="${vd.startsWith("d:") ? vd.split(":")[2] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label><button class="btn btn-pri btn-peq" type="submit">Aplicar</button></form>` : "";
+        ? `<form class="pop-datas" data-pil-datas><label>De<input type="date" name="de" value="${vd.startsWith("d:") ? vd.split(":")[1] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label><label>Até<input type="date" name="ate" value="${vd.startsWith("d:") ? vd.split(":")[2] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label>${d.edicao ? `<label class="curto">ou edição nº<input type="number" name="ed" inputmode="numeric" min="${d.edicao.min}" max="${d.edicao.max}" placeholder="${d.edicao.max}" value="${vd.startsWith("e:") ? vd.slice(2) : ""}"></label>` : ""}<button class="btn btn-pri btn-peq" type="submit">Aplicar</button></form>` : "";
       return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${datas}${datas && ops.length ? `<p class="pop-grupo">${esc(d.rotAtalhos || "Atalhos")}</p>` : ""}${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}`;
     }
     function abrir(i, botao) {
@@ -1842,6 +1854,7 @@
       if (fd) fd.onsubmit = (e) => {
         e.preventDefault();
         if (d.datas === "uma") { if (!fd.a.value) return; d.set(fd.a.value); }
+        else if (fd.ed && fd.ed.value) { d.set(`e:${+fd.ed.value}`); }
         else { const de = fd.de.value || d.min || "", ate = fd.ate.value || d.max || ""; if (!de && !ate) return; d.set(`d:${de <= ate || !ate ? de : ate}:${de <= ate || !ate ? ate : de}`); }
         desenhar(); aoMudar(); fecharPopF();
       };
@@ -1884,7 +1897,7 @@
   const TIPO_INFO = (x) => (/repetitiv/i.test(x.sec) ? `Repetitivo${x.tr ? ` · Tema ${fmtNumProc(x.tr)}` : ""}` : /assun/i.test(x.sec) ? "IAC" : /s[uú]mula/i.test(x.sec) ? "Súmula" : "");
   function cardInformativo(x, termos = []) {
     const salvo = !!P.salvos[`i:${x.id}`];
-    const proc = x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}${x.p.length > 1 ? ` e mais ${x.p.length - 1}` : ""}` : "Processo em segredo de justiça";
+    const proc = x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}${x.p.length > 1 ? ` e mais ${x.p.length - 1}` : ""}` : /^s[úu]mula/i.test(x.tema || "") ? "Enunciado de súmula" : x.an ? "Nota sem número de processo" : "Processo em segredo de justiça";
     const tipo = TIPO_INFO(x);
     const longa = x.t.length > 700;
     const dj = /DJEN?\s*(?:de\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(x.proc || "");
@@ -1912,21 +1925,21 @@
     if (a === "salvar") alternarSalvo(`i:${x.id}`, { k: "i", id: x.id }, b);
   });
   async function abrirInformativo(x) {
-    const teor = (await teorInfo().catch(() => ({})))[x.id] || [];
+    const teor = (await teorInfo(x).catch(() => ({})))[x.id] || [];
     const ix = x.p?.length ? await carregar("numeros").catch(() => null) : null;
     const noAcervo = ix ? ix.l.find((y) => x.p.some((p) => p.n === y[0])) : null;
     abrirGaveta(`Informativo de Jurisprudência n. ${x.ed}${x.d ? " · " + fmtData(x.d) : ""}`, x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}` : "Nota do Informativo", `
       <div class="item-sel">${seloMat(x.ar, x.sa, 3)}<span class="selo">${esc(x.sec || "")}</span></div>
       <p class="info-tema">${esc(x.tema)}</p>
-      <div class="tese"><b>Destaque</b>${x.t.split("\n").map((l) => `<p>${esc(l)}</p>`).join("")}</div>
+      <div class="tese"><b>${x.an ? "Resumo do julgado" : "Destaque"}</b>${(x.lg && teor[0] && x.an ? teor[0] : x.t).split("\n").map((l) => `<p>${esc(l)}</p>`).join("")}</div>
       <div class="acoes" style="margin:14px 0">
         ${noAcervo ? `<button type="button" class="btn btn-pri btn-peq" id="gi-ementa">Ementa do acórdão</button>` : ""}
         ${x.tr ? `<button type="button" class="btn btn-claro btn-peq" data-ref="t:${x.tr}">Tema ${fmtNumProc(x.tr)}</button>` : ""}
         <button type="button" class="btn btn-claro btn-peq" id="gi-copiar">${ico("copiar")} Copiar destaque</button>
         <a class="btn btn-claro btn-peq" href="${URL_INFO(x.ed)}" target="_blank" rel="noopener">Informativo oficial ${ico("externo")}</a>
       </div>
-      ${teor[0] ? `<h3>Informações do inteiro teor</h3><div class="texto-serif">${teor[0].split("\n").map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
-      <h3>Processo</h3><p class="texto-serif">${esc(x.proc || "Processo em segredo de justiça.")}</p>
+      ${teor[0] && !x.an ? `<h3>Informações do inteiro teor</h3><div class="texto-serif">${teor[0].split("\n").map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
+      <h3>Processo</h3><p class="texto-serif">${esc(x.proc || (/^s[úu]mula/i.test(x.tema || "") ? "Enunciado de súmula aprovado pelo STJ." : x.an ? "A nota não indica o número do processo." : "Processo em segredo de justiça."))}</p>
       ${teor[1] ? `<h3>Informações adicionais</h3><p class="texto-serif">${esc(teor[1])}</p>` : ""}`);
     $("#gi-copiar").addEventListener("click", () => copiar(citInfo(x), "Destaque e referência copiados."));
     $("#gi-ementa")?.addEventListener("click", () => abrirAcordao({ id: noAcervo[4], m: ix.m[noAcervo[2]], o: ix.o[noAcervo[3]], cl: x.p[0].cl, n: noAcervo[0] }));
@@ -1946,16 +1959,31 @@
   });
   const EXPLICA = {
     info: ["Informativo do STJ", "O Informativo de Jurisprudência é a publicação periódica, em regra semanal, em que o próprio STJ seleciona os julgados mais importantes pela novidade da tese e pela repercussão. Cada nota traz o tema, o <b>destaque</b> (a tese decidida), o processo, o relator e as datas. É a curadoria oficial do Tribunal; a aba “Seleção automática” é a triagem feita pelo site sobre todos os acórdãos."],
+    teses: ["Jurisprudência em Teses", "Publicação do STJ que organiza, por assunto, as teses consolidadas do Tribunal. Cada edição trata de um tema (por exemplo, “Bem de família” ou “Direito à educação”) e lista as teses com os precedentes que as sustentam. Útil para fundamentar peças: mostra o entendimento reiterado e os julgados que o confirmam."],
     semana: ["Resumo da semana", "Tudo o que mudou no STJ em uma semana, numa página só: teses firmadas em repetitivos, notas do Informativo, temas afetados, julgados com tese, súmulas aprovadas e repetitivos que vão a julgamento na semana seguinte. Serve para se atualizar em poucos minutos e para enviar à equipe ou ao cliente, por texto, PDF ou link."],
   };
   const ORGAOS_INFO = ["Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção", "Primeira Turma", "Segunda Turma", "Terceira Turma", "Quarta Turma", "Quinta Turma", "Sexta Turma"];
   const GRUPO_ORG = { rep: ["Repetitivos e IAC", (x) => /repetitiv|assun/i.test(x.sec)], secoes: ["Corte Especial e Seções", (x) => /corte especial|se[çc][ãa]o/i.test(x.org || "")], pub: ["Direito público (1ª e 2ª Turmas)", (x) => /^(primeira|segunda) turma/i.test(x.org || "")], priv: ["Direito privado (3ª e 4ª Turmas)", (x) => /^(terceira|quarta) turma/i.test(x.org || "")], pen: ["Direito penal (5ª e 6ª Turmas)", (x) => /^(quinta|sexta) turma/i.test(x.org || "")] };
   const fmtDiaMes = (iso) => fmtData(iso).slice(0, 5);
   async function vInformativos(main, p) {
-    const l = await informativos();
-    const eds = [...new Set(l.map((x) => x.ed))].sort((a, b) => b - a);
-    const dataEd = new Map(l.map((x) => [x.ed, x.d]));
-    const dmin = l.reduce((m, x) => (x.d && x.d < m ? x.d : m), "9999"), dmax = l.reduce((m, x) => (x.d > m ? x.d : m), "");
+    const recentes = await informativos();
+    let l = [...recentes];
+    const ix = await infoIndice().catch(() => null);
+    const eds = ix ? ix.eds.map((e) => e[0]) : [...new Set(l.map((x) => x.ed))].sort((a, b) => b - a);
+    const dataEd = new Map(ix ? ix.eds.map((e) => [e[0], e[1]]) : l.map((x) => [x.ed, x.d]));
+    const anoEd = new Map(ix ? ix.eds.map((e) => [e[0], e[2]]) : []);
+    const datasTodas = [...dataEd.values()].filter(Boolean);
+    const dmin = datasTodas.reduce((m, d) => (d < m ? d : m), "9999"), dmax = datasTodas.reduce((m, d) => (d > m ? d : m), "");
+    const corte = ix ? ix.corte : 0, antigos = ix ? ix.antigos : [];
+    const carregados = new Set();
+    let tokenInf = 0;
+    // Anos antigos que o filtro de período exige.
+    const precisa = () => {
+      if (f.e === "todas") return antigos;
+      if (f.e.startsWith("e:")) { const e = +f.e.slice(2); return e <= corte && anoEd.get(e) ? [anoEd.get(e)] : []; }
+      if (f.e.startsWith("d:")) { const [, de, ate] = f.e.split(":"); return antigos.filter((a) => (!de || a >= de.slice(0, 4)) && (!ate || a <= ate.slice(0, 4))); }
+      return [];
+    };
     const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "u4", o: p.get("o") || "", rl: p.get("rl") || "", s: p.get("s") || "rec" };
     main.innerHTML = `${abasDestaques("")}
       ${caixaExplica("info", ...EXPLICA.info)}
@@ -1987,9 +2015,19 @@
         <ol class="lista-notas">${g.itens.map((x) => cardInformativo(x, termos)).join("")}</ol></section>`).join("");
       const b = $("#if-mais"); b.hidden = lim >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - lim)})`;
     };
-    const aplicar = () => {
+    const aplicar = async () => {
       f.q = $("#if-q").value;
       gravarHash("destaques", { ...f, e: f.e === "u4" ? "" : f.e, s: f.s === "rec" ? "" : f.s });
+      const tk = ++tokenInf;
+      const faltam = precisa().filter((a) => !carregados.has(a));
+      if (faltam.length) {
+        let k = 0;
+        for (const a of faltam) {
+          $("#if-info").innerHTML = `Carregando edições antigas do Informativo (${a})… ${Math.round((k++ / faltam.length) * 100)}%`;
+          try { const la = await infoAno(a); if (!carregados.has(a)) { carregados.add(a); l.push(...la); } } catch { carregados.add(a); }
+          if (tk !== tokenInf) return;
+        }
+      }
       const c = Busca.compilar(f.q); termos = c.termos;
       const rN = norm(f.rl);
       const b0 = l.filter((x) => noPeriodo(x) && c.testa(x._n) && (!rN || norm(x.rel).includes(rN)));
@@ -1999,22 +2037,23 @@
       lista = base.filter((x) => casaMat(f.a, x.ar, x.sa));
       const porId = (a, b) => b.ed - a.ed || a.id.localeCompare(b.id, "pt-BR", { numeric: true });
       const ordem = c.vazio && f.s === "rel" ? "rec" : f.s;
-      if (ordem === "rec") { lista.sort(porId); grupoDe = (x) => ({ k: x.ed, tit: `Informativo nº ${x.ed}`, sub: `${x.d ? fmtDiaL(x.d).replace(/^\S+, /, "") : ""} · ${lista.filter((y) => y.ed === x.ed).length} nota(s)`, link: URL_INFO(x.ed) }); }
+      if (ordem === "rec") { lista.sort(porId); grupoDe = (x) => ({ k: x.ed, tit: `Informativo nº ${x.ed}`, sub: `${x.d ? fmtDiaL(x.d).replace(/^\S+, /, "") + (x.d.slice(0, 4) !== hojeISO().slice(0, 4) ? ` de ${x.d.slice(0, 4)}` : "") : ""} · ${lista.filter((y) => y.ed === x.ed).length} nota(s)`, link: URL_INFO(x.ed) }); }
       if (ordem === "julg") { lista.sort((a, b) => (b.julg || "").localeCompare(a.julg || "") || porId(a, b)); grupoDe = (x) => ({ k: (x.julg || "").slice(0, 7), tit: x.julg ? `Julgados em ${fmtMesL(x.julg.slice(0, 7))}` : "Sem data de julgamento" }); }
       if (ordem === "mat") { const ordA = Object.keys(AREAS); const pos = (x) => { const i = ordA.indexOf((x.ar || [])[0]); return i < 0 ? 99 : i; }; lista.sort((a, b) => pos(a) - pos(b) || porId(a, b)); grupoDe = (x) => { const a = (x.ar || [])[0]; return { k: a || "-", tit: AREAS[a] || "Outras matérias", h: AREA_COR[a], sub: `${lista.filter((y) => (y.ar || [])[0] === a).length} nota(s)` }; }; }
       if (ordem === "rel") { lista.sort((a, b) => c.pontua(b._n, norm(b.tema)) - c.pontua(a._n, norm(a.tema)) || porId(a, b)); grupoDe = null; }
       const nEd = new Set(lista.map((x) => x.ed)).size;
-      $("#if-info").innerHTML = `<b>${fmtInt(lista.length)}</b> nota(s) em ${nEd} edição(ões) ${explicacaoHTML(c)}`;
+      $("#if-info").innerHTML = `<b>${fmtInt(lista.length)}</b> nota(s) em ${nEd} edição(ões) ${explicacaoHTML(c)}${!c.vazio && f.e !== "todas" && antigos.length ? ` <button type="button" class="link-acao" id="if-todas">Buscar em todas as edições, desde ${antigos[0]}</button>` : ""}`;
+      $("#if-todas")?.addEventListener("click", () => { f.e = "todas"; pilInf.desenhar(); aplicar(); });
       lim = 30; render();
     };
     const rotPer = (v) => (v.startsWith("e:") ? `Informativo ${v.slice(2)}` : v.startsWith("d:") ? (() => { const [, de, ate] = v.split(":"); return `${de ? fmtData(de) : "início"} a ${ate ? fmtData(ate) : "hoje"}`; })() : "Período");
-    pilulas($("#if-pil"), [
+    const pilInf = pilulas($("#if-pil"), [
       { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => ca },
-      { rot: "Período", titulo: "Período ou edição", tipo: "um", padrao: "u4", obrigatorio: true, semLimpar: true, rotAtual: () => "Últimas 4 edições", rotValor: rotPer, get: () => f.e, set: (v) => (f.e = v),
+      { rot: "Período", titulo: "Período ou edição", edicao: { min: eds[eds.length - 1], max: eds[0] }, tipo: "um", padrao: "u4", obrigatorio: true, semLimpar: true, rotAtual: () => "Últimas 4 edições", rotValor: rotPer, get: () => f.e, set: (v) => (f.e = v),
         datas: "intervalo", min: dmin, max: dmax, rotAtalhos: "Atalhos", vertical: true, grupos: [["", ""], ["e", "Edição específica"]],
-        opcoes: () => [{ v: "u1", t: `Última edição (nº ${eds[0]}, ${fmtDiaMes(dataEd.get(eds[0]))})`, curto: `Informativo ${eds[0]}` }, { v: "u4", t: "Últimas 4 edições" }, { v: "m3", t: "Últimos 3 meses" }, { v: "m12", t: "Últimos 12 meses" }, { v: "todas", t: `Todas as edições (desde a nº ${eds[eds.length - 1]})`, curto: "Todas as edições" },
-          ...eds.map((e) => ({ g: "e", v: `e:${e}`, t: `Informativo ${e} · ${fmtData(dataEd.get(e))}`, curto: `Informativo ${e}` }))],
-        nota: "Informe as datas de publicação do Informativo ou escolha uma edição. O STJ publica, em regra, uma edição por semana." },
+        opcoes: () => [{ v: "u1", t: `Última edição (nº ${eds[0]}, ${fmtDiaMes(dataEd.get(eds[0]))})`, curto: `Informativo ${eds[0]}` }, { v: "u4", t: "Últimas 4 edições" }, { v: "m3", t: "Últimos 3 meses" }, { v: "m12", t: "Últimos 12 meses" }, { v: "todas", t: `Todas as edições (desde a nº ${eds[eds.length - 1]}${dmin !== "9999" ? `, de ${dmin.slice(0, 4)}` : ""})`, curto: "Todas as edições" },
+          ...eds.slice(0, 12).map((e) => ({ g: "e", v: `e:${e}`, t: `Informativo ${e} · ${fmtData(dataEd.get(e))}`, curto: `Informativo ${e}` }))],
+        nota: "Informe as datas de publicação, digite o número de qualquer edição ou escolha uma das mais recentes. Edições antigas são carregadas na hora e podem levar alguns segundos." },
       { rot: "Órgão", tipo: "um", vertical: true, grupos: [["", ""], ["o", "Órgão julgador"]], get: () => f.o, set: (v) => (f.o = v),
         opcoes: () => [{ v: "", t: "Todos os órgãos", n: co[""] }, ...Object.entries(GRUPO_ORG).map(([k, [t]]) => ({ v: k, t, n: co[k] || 0 })), ...ORGAOS_INFO.filter((o) => co[o]).map((o) => ({ g: "o", v: o, t: o, n: co[o] }))] },
       { rot: "Relator(a)", tipo: "texto", ph: "Nome do(a) ministro(a)", lista: "if-rels", get: () => f.rl, set: (v) => (f.rl = v) },
@@ -2100,9 +2139,12 @@
           <button type="button" class="btn btn-fant btn-peq" id="ac-link">${ico("link")} Copiar link</button></div>
         <ol class="lista" id="ac-lista"></ol>
         <button class="btn btn-claro btn-mais" id="ac-mais" hidden>Mostrar mais</button>`;
-      const periodos = [{ v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, ...meses.map((m) => ({ v: m.m, t: fmtMesL(m.m) }))];
+      const periodos = [{ v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, { v: "u24", t: "Últimos 2 anos" }, { v: "u36", t: `Todo o acervo (desde ${meses.length ? fmtMesL(meses[meses.length - 1].m) : "—"})`, curto: "Todo o acervo" },
+        ...meses.map((m) => ({ g: m.m.slice(0, 4), v: m.m, t: MESES_L[+m.m.slice(5) - 1].replace(/^./, (c) => c.toUpperCase()), curto: fmtMesL(m.m) }))];
+      const anosAc = [...new Set(meses.map((m) => m.m.slice(0, 4)))];
       AC.pil = pilulas($("#ac-pil"), [
-        { rot: "Período", tipo: "um", padrao: "u1", obrigatorio: true, semLimpar: true, rotAtual: () => "Último mês", get: () => AC.f.p, set: (v) => (AC.f.p = v), opcoes: () => periodos },
+        { rot: "Período", tipo: "um", padrao: "u1", obrigatorio: true, semLimpar: true, rotAtual: () => "Último mês", get: () => AC.f.p, set: (v) => (AC.f.p = v), opcoes: () => periodos,
+          grupos: [["", ""], ...anosAc.map((a) => [a, `Mês de publicação · ${a}`])], nota: "Períodos longos carregam mais dados e podem levar alguns segundos. A busca por número de processo sempre percorre todo o acervo." },
         { rot: "Matéria", tipo: "materia", get: () => AC.f.a, set: (v) => (AC.f.a = v) },
         { rot: "Órgão", tipo: "um", get: () => AC.f.o, set: (v) => (AC.f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...Object.entries(D.orgaos).map(([k, v]) => ({ v: k, t: v }))] },
         { rot: "Classe", titulo: "Classe processual", tipo: "texto", ph: "REsp, AgInt, EREsp", lista: "ac-classes", get: () => AC.f.c, set: (v) => (AC.f.c = v),
@@ -2187,7 +2229,7 @@
     }[ordem];
     res.sort(ord);
     AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos;
-    const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo de 12 meses` : meses.length === 1 ? fmtMesL(meses[0]) : `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}`;
+    const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo` : meses.length === 1 ? fmtMesL(meses[0]) : `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}`;
     $("#ac-info").innerHTML = `<b>${fmtInt(AC.lista.length)}</b> resultado(s) · ${rot}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     renderLista(true);
     if (!AC.dl) {
@@ -2322,6 +2364,105 @@
     desenhar();
   }
 
+  // ================================================ JURISPRUDÊNCIA EM TESES
+  const URL_JT = (ed) => `https://scon.stj.jus.br/SCON/jt/doc.jsp?livre=${encodeURIComponent(`'${ed}' INPATH(TIT)`)}`;
+  const tesesJT = () => carregar("teses", (eds) => {
+    const itens = [];
+    for (const e of eds) for (const t of e.teses) itens.push({ id: `${e.ed}-${t.n}`, ed: e.ed, tit: e.tit, ramo: e.ramo || [], ar: t.ar || e.ar || [], sa: t.sa || [], disp: e.disp, ate: e.ate, n: t.n, t: t.t, ac: t.ac || [], nac: t.nac || 0, dm: t.dm || 0, _n: norm(`${e.tit} ${t.t} ${(e.ramo || []).join(" ")}`) });
+    itens.eds = eds; itens.idx = new Map(itens.map((x) => [x.id, x]));
+    return itens;
+  });
+  const abasSumulas = (aba) => `<div class="segmentos" role="tablist" style="margin-bottom:14px">
+      <button type="button" role="tab" data-sm-aba="" aria-selected="${aba !== "teses"}">Súmulas</button>
+      <button type="button" role="tab" data-sm-aba="teses" aria-selected="${aba === "teses"}">Jurisprudência em Teses</button></div>`;
+  const ligarAbasSumulas = (main) => $$("[data-sm-aba]", main).forEach((b) => b.addEventListener("click", () => { location.hash = b.dataset.smAba ? "#sumulas?aba=teses" : "#sumulas"; }));
+  const titJT = (s) => frase(String(s || "").toUpperCase() === s ? s : s).replace(/\b(Ii|Iii|Iv|Vi|Vii|Viii|Ix|Xi|Xii)\b/g, (m) => m.toUpperCase());
+  const fmtAc = (a) => a.replace(/Rel\. Min\. ([^,]+)/, (m, n) => `Rel. Min. ${titulo(n)}`).replace(/, (PRIMEIRA|SEGUNDA|TERCEIRA|QUARTA|QUINTA|SEXTA) (TURMA|SEÇÃO)/, (m, a, b) => `, ${titulo(a)} ${titulo(b)}`).replace(/CORTE ESPECIAL/, "Corte Especial");
+  function cardTese(x, termos = []) {
+    const nPrec = x.nac + x.dm;
+    return `<li class="ncard" data-tese="${esc(x.id)}" style="--h:${AREA_COR[(x.ar || [])[0]] ?? 222}">
+      <div class="nota-cab">${seloMat(x.ar, x.sa)}<span class="nota-org">Edição ${x.ed} · ${esc(titJT(x.tit))}</span></div>
+      <div class="nota-datas">${x.disp ? `<span><b>Disponibilizada</b> ${fmtData(x.disp)}</span>` : ""}${x.ate ? `<span><b>Julgados até</b> ${fmtData(x.ate)}</span>` : ""}</div>
+      <h3 class="nota-tema">Tese ${x.n}</h3>
+      <div class="nota-tese"><p>${destacar(esc(x.t), termos)}</p></div>
+      ${x.ac.length ? `<details class="precedentes"><summary>Precedentes: ${x.nac} acórdão(s)${x.dm ? ` e ${x.dm} decisão(ões) monocrática(s)` : ""}</summary><ul>${x.ac.map((a) => `<li>${esc(fmtAc(a))}</li>`).join("")}</ul>${x.nac > x.ac.length ? `<p class="nota">E mais ${x.nac - x.ac.length} na edição oficial.</p>` : ""}</details>` : ""}
+      <div class="nota-rodape"><span class="nota-proc">${nPrec ? `${nPrec} precedente(s) citados pelo STJ` : "Jurisprudência em Teses"}</span>
+        <span class="dir"><a class="link-acao" href="${URL_JT(x.ed)}" target="_blank" rel="noopener">Edição oficial ${ico("externo")}</a>
+          <button type="button" class="btn-ico" data-tese-copiar title="Copiar tese e referência" aria-label="Copiar">${ico("copiar")}</button></span></div></li>`;
+  }
+  async function vTeses(main, p) {
+    const l = await tesesJT();
+    const eds = l.eds;
+    const dmin = eds.reduce((m, e) => (e.disp && e.disp < m ? e.disp : m), "9999"), dmax = eds.reduce((m, e) => (e.disp > m ? e.disp : m), "");
+    const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "", s: p.get("s") || "" };
+    main.innerHTML = `${abasSumulas("teses")}
+      ${caixaExplica("teses", ...EXPLICA.teses)}
+      <div id="jt-f" class="bloco-filtros">
+        ${campoBusca("jt-q", 'Tese ou assunto. Ex.: "bem de família" ou "dano moral"', f.q)}
+        ${AJUDA_BUSCA}
+        <div class="fd-filtros filtros-lista" id="jt-pil"></div>
+      </div>
+      <div class="barra-res"><p id="jt-info" aria-live="polite"></p><span class="nota">${fmtInt(eds.length)} edições · ${fmtInt(l.length)} teses</span></div>
+      <div id="jt-lista" class="notas"></div>
+      <button class="btn btn-claro btn-mais" id="jt-mais" hidden>Mostrar mais</button>`;
+    ligarAbasSumulas(main);
+    let lista = [], lim = 30, termos = [], ca = {}, grupoDe = null;
+    const noPer = (x) => {
+      if (!f.e) return true;
+      if (f.e.startsWith("e:")) return x.ed === +f.e.slice(2);
+      if (/^m\d+$/.test(f.e)) return x.disp >= somaDias(hojeISO(), -30 * +f.e.slice(1));
+      if (f.e.startsWith("d:")) { const [, de, ate] = f.e.split(":"); return (!de || x.disp >= de) && (!ate || x.disp <= ate); }
+      return true;
+    };
+    const render = () => {
+      const box = $("#jt-lista"); const vis = lista.slice(0, lim);
+      if (!lista.length) { box.innerHTML = vazio("sumulas", "Nenhuma tese encontrada", "Revise os termos, a matéria ou o período."); $("#jt-mais").hidden = true; return; }
+      const grupos = [];
+      for (const x of vis) { const g = grupoDe ? grupoDe(x) : null; const k = g ? g.k : "_"; if (!grupos.length || grupos[grupos.length - 1].k !== k) grupos.push({ ...(g || { k }), itens: [] }); grupos[grupos.length - 1].itens.push(x); }
+      box.innerHTML = grupos.map((g) => `<section class="grupo-notas">${g.tit ? `<header class="grupo-cab"${g.h != null ? ` style="--h:${g.h}"` : ""}><h2>${g.tit}</h2><span>${g.sub || ""}</span>${g.link ? `<a class="link-acao" href="${g.link}" target="_blank" rel="noopener">Edição oficial ${ico("externo")}</a>` : ""}</header>` : ""}
+        <ol class="lista-notas">${g.itens.map((x) => cardTese(x, termos)).join("")}</ol></section>`).join("");
+      const b = $("#jt-mais"); b.hidden = lim >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - lim)})`;
+    };
+    const aplicar = () => {
+      f.q = $("#jt-q").value;
+      gravarHash("sumulas", { aba: "teses", ...f });
+      const c = Busca.compilar(f.q); termos = c.termos;
+      const base = l.filter((x) => noPer(x) && c.testa(x._n));
+      ca = contarMat(base, (x) => x.ar, (x) => x.sa);
+      lista = base.filter((x) => casaMat(f.a, x.ar, x.sa));
+      const porEd = (a, b) => b.ed - a.ed || a.n - b.n;
+      const ordem = f.s ? (c.vazio && f.s === "rel" ? "rec" : f.s) : (c.vazio ? "rec" : "rel");
+      const nTeses = (ed) => lista.filter((y) => y.ed === ed).length;
+      const cabEd = (x) => ({ k: x.ed, tit: `Edição ${x.ed} · ${esc(titJT(x.tit))}`, sub: `${x.disp ? `disponibilizada em ${fmtData(x.disp)} · ` : ""}${nTeses(x.ed)} tese(s)`, link: URL_JT(x.ed), h: AREA_COR[(x.ar || [])[0]] });
+      if (ordem === "rec") { lista.sort(porEd); grupoDe = cabEd; }
+      if (ordem === "tit") { lista.sort((a, b) => norm(a.tit).localeCompare(norm(b.tit)) || a.n - b.n); grupoDe = cabEd; }
+      if (ordem === "mat") { const ordA = Object.keys(AREAS); const pos = (x) => { const i = ordA.indexOf((x.ar || [])[0]); return i < 0 ? 99 : i; }; lista.sort((a, b) => pos(a) - pos(b) || porEd(a, b)); grupoDe = (x) => { const a = (x.ar || [])[0]; return { k: a || "-", tit: AREAS[a] || "Outras matérias", h: AREA_COR[a], sub: `${lista.filter((y) => (y.ar || [])[0] === a).length} tese(s)` }; }; }
+      if (ordem === "prec") { lista.sort((a, b) => (b.nac + b.dm) - (a.nac + a.dm) || porEd(a, b)); grupoDe = null; }
+      if (ordem === "rel") { lista.sort((a, b) => c.pontua(b._n, norm(b.tit)) - c.pontua(a._n, norm(a.tit)) || porEd(a, b)); grupoDe = null; }
+      $("#jt-info").innerHTML = `<b>${fmtInt(lista.length)}</b> tese(s) em ${new Set(lista.map((x) => x.ed)).size} edição(ões) ${explicacaoHTML(c)}`;
+      lim = 30; render();
+    };
+    const rotPer = (v) => (v.startsWith("e:") ? `Edição ${v.slice(2)}` : v.startsWith("d:") ? (() => { const [, de, ate] = v.split(":"); return `${de ? fmtData(de) : "início"} a ${ate ? fmtData(ate) : "hoje"}`; })() : "Período");
+    pilulas($("#jt-pil"), [
+      { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => ca },
+      { rot: "Período", titulo: "Período ou edição", tipo: "um", padrao: "", rotAtual: () => "Todas as edições", rotValor: rotPer, get: () => f.e, set: (v) => (f.e = v),
+        datas: "intervalo", min: dmin, max: dmax, edicao: { min: 1, max: eds[0]?.ed || 999 }, rotAtalhos: "Atalhos", vertical: true, grupos: [["", ""], ["e", "Edições mais recentes"]],
+        opcoes: () => [{ v: "", t: "Todas as edições" }, { v: "m6", t: "Disponibilizadas nos últimos 6 meses" }, { v: "m12", t: "Nos últimos 12 meses" }, { v: "m36", t: "Nos últimos 3 anos" },
+          ...eds.slice(0, 10).map((e) => ({ g: "e", v: `e:${e.ed}`, t: `${e.ed} · ${titJT(e.tit)}`, curto: `Edição ${e.ed}` }))],
+        nota: "As edições reúnem as teses de um assunto e são atualizadas pelo STJ; a data é a de disponibilização da edição." },
+      defOrdem(() => f.s || ($("#jt-q").value.trim() ? "rel" : "rec"), (v) => (f.s = v), [{ v: "rec", t: "Edição mais recente" }, { v: "tit", t: "Assunto (A–Z)" }, { v: "mat", t: "Matéria" }, { v: "prec", t: "Mais precedentes" }, { v: "rel", t: "Mais aderentes à busca" }]),
+    ], aplicar);
+    $("#jt-q").addEventListener("input", debounce(aplicar, 200));
+    $("#jt-mais").addEventListener("click", () => { lim += 30; render(); });
+    $("#jt-lista").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-tese-copiar]"); if (!b) return;
+      const x = l.idx.get(b.closest("[data-tese]").dataset.tese); if (!x) return;
+      copiar(`${x.t} (STJ, Jurisprudência em Teses, Edição n. ${x.ed} – ${titJT(x.tit)}, tese ${x.n}${x.ac[0] ? `; entre outros: ${fmtAc(x.ac[0])}` : ""}.)`, "Tese e referência copiadas.");
+    });
+    ligarAjuda($("#jt-f"), $("#jt-q"), aplicar);
+    aplicar();
+  }
+
   // ============================================================== SÚMULAS
   const URL_SUMULA = (n) => `https://scon.stj.jus.br/SCON/pesquisar.jsp?b=SUMU&livre=%40NUM%3D${n}`;
   const SIT_SUM = { vigente: ["Vigente", "ok"], cancelada: ["Cancelada", "canc"], alterada: ["Redação alterada", "rel"] };
@@ -2340,10 +2481,11 @@
       </div></li>`;
   }
   async function vSumulas(main, p) {
+    if (p.get("aba") === "teses") return vTeses(main, p);
     const l = await sumulas();
     const anos = l.map((x) => +x._d.slice(0, 4)).filter(Boolean);
     const f = { q: p.get("q") || "", a: p.get("a") || "", sit: p.get("sit") ?? "vig", org: p.get("org") || "", per: p.get("per") || "", s: p.get("s") || "rec" };
-    main.innerHTML = `
+    main.innerHTML = `${abasSumulas("")}
       <div id="sm-f">
         ${campoBusca("sm-q", 'Número ou termos do enunciado. Ex.: 7 ou "dano moral"', f.q)}
         ${AJUDA_BUSCA}
@@ -2400,6 +2542,7 @@
       const x = l.find((y) => y.n === +b.closest("[data-sum]").dataset.sum); if (!x) return;
       copiar(`Súmula ${x.n}/STJ: "${x.t}"${x.org ? ` (${x.org}${x.julg ? `, julgado em ${fmtDataCit(x.julg)}` : ""}${x.pub ? `, DJe de ${fmtDataCit(x.pub)}` : ""})` : ""}${x.sit === "cancelada" ? " [cancelada]" : ""}`, "Súmula copiada.");
     });
+    ligarAbasSumulas(main);
     ligarAjuda($("#sm-f"), $("#sm-q"), aplicar);
     aplicar();
   }
@@ -2716,7 +2859,7 @@
       <p>O Radar STJ organiza a jurisprudência do Superior Tribunal de Justiça a partir do <a href="https://dadosabertos.web.stj.jus.br/" target="_blank" rel="noopener">Portal de Dados Abertos do STJ</a>. Uma rotina automática consulta o portal duas vezes por dia e publica o que houver de novo.</p>
       <h3 style="font-family:var(--ui)">Fontes</h3>
       <ul>
-        <li><b>Acórdãos (espelhos):</b> ementa, tese, relator, datas e referências legislativas da Corte Especial, das Seções e das Turmas. O STJ divulga um arquivo por mês e órgão, poucos dias após o fim do mês. O site mantém os últimos 12 meses.</li>
+        <li><b>Acórdãos (espelhos):</b> ementa, tese, relator, datas e referências legislativas da Corte Especial, das Seções e das Turmas. O STJ divulga um arquivo por mês e órgão, poucos dias após o fim do mês. O site mantém os últimos 3 anos (36 meses).</li>
         <li><b>Precedentes qualificados:</b> temas repetitivos, controvérsias, IAC, SIRDR e PUIL, com os processos vinculados. A atualização é diária.</li>
         <li><b>Pautas futuras:</b> processos incluídos nas próximas sessões. A atualização é diária. Por privacidade, o site não exibe os nomes das partes.</li>
         <li><b>Publicações no DJEN:</b> metadados diários dos acórdãos publicados, com cerca de duas semanas de defasagem.</li>
@@ -2738,11 +2881,13 @@
       <h3 style="font-family:var(--ui)">Matérias e assuntos específicos</h3>
       <p>Cada julgado, tema e súmula recebe uma matéria geral (Civil, Processo Civil, Penal, Processo Penal, Tributário etc.) e, quando possível, um assunto específico (por exemplo, Civil · Responsabilidade civil). No filtro Matéria, toque na matéria para ver os assuntos; “Todos os assuntos” filtra a matéria inteira. A classificação é automática, feita pelos termos da ementa, e pode conter imprecisões.</p>
       <h3 style="font-family:var(--ui)">Informativo do STJ</h3>
-      <p>A aba Destaques abre com o Informativo de Jurisprudência, publicado pelo próprio STJ com as teses selecionadas pela novidade e pela repercussão. Cada nota traz o tema, o destaque (a tese) e o processo; as mais recentes também entram no Atualize-se e no Meu radar. A “Seleção automática” continua disponível na segunda aba. O site do STJ recusa acessos automatizados; por isso as edições são extraídas pelo navegador e atualizadas periodicamente.</p>
+      <p>A aba Destaques abre com o Informativo de Jurisprudência, publicado pelo próprio STJ com as teses selecionadas pela novidade e pela repercussão. Cada nota traz o tema, o destaque (a tese) e o processo; as mais recentes também entram no Atualize-se e no Meu radar. A “Seleção automática” continua disponível na segunda aba. O acervo vai desde as primeiras edições: as últimas edições abrem de imediato e, ao buscar em todas as edições ou escolher uma data ou edição antiga, o site carrega as demais por ano. Nas edições antigas, anteriores ao formato atual, o texto é a nota narrativa original e a matéria é deduzida pelos termos da nota. O site do STJ recusa acessos automatizados; por isso as edições são extraídas pelo navegador e atualizadas periodicamente.</p>
       <h3 style="font-family:var(--ui)">Resumo da semana</h3>
       <p>Reúne, em uma página, as teses firmadas em repetitivos, as notas do Informativo, os temas afetados, os julgados com tese, as súmulas aprovadas e os repetitivos pautados para a semana seguinte. Pode ser copiado como texto, impresso ou salvo em PDF.</p>
       <h3 style="font-family:var(--ui)">Súmulas e temas citados</h3>
       <p>Quando a ementa aplica uma súmula do STJ ou um tema repetitivo, o cartão mostra o atalho (“Cita Súmula 7 · Tema 1.137”), que abre o enunciado ou a tese sem sair da tela.</p>
+      <h3 style="font-family:var(--ui)">Jurisprudência em Teses</h3>
+      <p>Na aba Súmulas e teses, a Jurisprudência em Teses reúne todas as edições publicadas pelo STJ, cada uma dedicada a um assunto, com as teses consolidadas e os precedentes que as sustentam (até oito acórdãos por tese, com a indicação do total na edição oficial). É possível buscar por palavras, filtrar por matéria, período de disponibilização ou número da edição e ordenar por edição, assunto, matéria ou número de precedentes.</p>
       <h3 style="font-family:var(--ui)">Súmulas</h3>
       <p>A aba Súmulas reúne todos os enunciados do STJ, extraídos da página oficial do Tribunal, com a situação (vigente, cancelada ou com redação alterada), o órgão que aprovou, as datas de julgamento e de publicação e a matéria.</p>
       <h3 style="font-family:var(--ui)">Privacidade</h3>
