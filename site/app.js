@@ -1049,7 +1049,7 @@
   // Tese pronta para leitura: sem aspas, sem "Tese:" e sem numeração quando há um item só.
   function limparTeseTxt(t) { return limparTese(t, true); }
   function limparTese(t, texto = false) {
-    const itens = String(t).trim().replace(/^["“']+|["”']+$/g, "").replace(/^\s*tese(?:\s*\d+)?\s*[:.-]\s*/i, "").split(/\n+|\s(?=\d{1,2}\.\s*\p{Lu})/u).map((x) => x.trim().replace(/^["“']+|["”']+$/g, "").replace(/^\s*tese(?:\s*\d+)?\s*[:.-]\s*/i, "")).filter(Boolean);
+    const itens = String(t).trim().replace(/^["“']+|["”']+$/g, "").replace(/^\s*tese(?:\s*\d+)?\s*[:.-]\s*/i, "").split(/\n+|\s(?=\d{1,2}\.\s*\p{Lu})|(?<=[\p{Ll}\p{Lu})\]]\.)(?=\d{1,2}\.\s*\p{Lu})/u).map((x) => x.trim().replace(/^["“']+|["”']+$/g, "").replace(/^\s*tese(?:\s*\d+)?\s*[:.-]\s*/i, "")).filter(Boolean);
     const limpos = itens.map((x) => x.replace(/^\d{1,2}\.\s*/, ""));
     return texto ? limpos.join("\n") : limpos.map((x) => esc(x)).join("<br>");
   }
@@ -1888,7 +1888,7 @@
     const tipo = TIPO_INFO(x);
     const longa = x.t.length > 700;
     const dj = /DJEN?\s*(?:de\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(x.proc || "");
-    const datas = [x.julg ? `<span><b>Julgado</b> ${fmtData(x.julg)}</span>` : "", dj ? `<span><b>DJEN</b> ${String(dj[1]).padStart(2, "0")}/${String(dj[2]).padStart(2, "0")}/${dj[3]}</span>` : "", x.d ? `<span><b>Informativo ${x.ed}</b> ${fmtData(x.d)}</span>` : ""].filter(Boolean).join("");
+    const datas = [x.julg ? `<span><b>Julgado</b> ${fmtData(x.julg)}</span>` : "", dj && (!x.julg || `${dj[3]}-${dj[2].padStart(2, "0")}-${dj[1].padStart(2, "0")}` >= x.julg) ? `<span><b>DJEN</b> ${String(dj[1]).padStart(2, "0")}/${String(dj[2]).padStart(2, "0")}/${dj[3]}</span>` : "", x.d ? `<span><b>Informativo ${x.ed}</b> ${fmtData(x.d)}</span>` : ""].filter(Boolean).join("");
     return `<li class="ncard" data-info="${esc(x.id)}" style="--h:${AREA_COR[(x.ar || [])[0]] ?? 222}">
       <div class="nota-cab">${seloMat(x.ar, x.sa)}${tipo ? `<span class="selo ok">${esc(tipo)}</span>` : ""}<span class="nota-org">${esc(x.org || x.sec || "")}</span></div>
       ${datas ? `<div class="nota-datas">${datas}</div>` : ""}
@@ -2228,16 +2228,16 @@
     function novidades(i0) {
       const i1 = somaDias(i0, 6), na = (d) => d && d >= i0 && d <= i1, out = [];
       for (const x of t) {
-        if (x.tp === "Tema" && na(x.julg) && (x.tese || x._teseAguarda)) out.push({ tp: "teses", d: x.julg, ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.tese || "Julgado; a tese será divulgada com a publicação do acórdão.", m: `Julgado em ${fmtData(x.julg)}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ: ${x.tese || "julgado; tese a publicar"}` });
-        if (na(x.afet) && x.q) out.push({ tp: "afet", d: x.afet, ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.q, m: `Afetado em ${fmtData(x.afet)}${/suspens/i.test(x.info || "") ? " · com suspensão de processos" : ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ (afetado): ${x.q}` });
+        if (x.tp === "Tema" && na(x.julg) && (x.tese || x._teseAguarda)) out.push({ tp: "teses", d: x.julg, ds: [["Julgado", x.julg], ["Acórdão publicado", x.pub], ["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.tese ? limparTeseTxt(x.tese) : "Julgado; a tese será divulgada com a publicação do acórdão.", m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ: ${x.tese || "julgado; tese a publicar"}` });
+        if (na(x.afet) && x.q) out.push({ tp: "afet", d: x.afet, ds: [["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.q, m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}${/suspens/i.test(x.info || "") ? " · com suspensão de processos" : ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ (afetado): ${x.q}` });
       }
-      for (const x of inf) if (na(x.d) && !/afeta/i.test(x.sec)) out.push({ tp: "info", d: x.d, ar: x.ar, sa: x.sa, k: x.tema.replace(/\s*Tema\s+\d[\d.]*\.?\s*$/i, "").replace(/\.$/, ""), t: x.t, m: `${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)} · ` : ""}${x.org || x.sec} · Informativo ${x.ed}`, ab: `i:${x.id}`, txt: `${x.tema} ${x.t.replace(/\n/g, " ")} (${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}, ` : ""}${x.org || x.sec}; Informativo ${x.ed})` });
-      for (const r of fj) if (na(r.dj) && (r.tese || r.tj)) out.push({ tp: "julg", d: r.dj, s: r.fs ?? r.s ?? 0, ar: r.ar, sa: r.sa, k: r.as ? frase(r.as).replace(/\.\s+(?=\p{Lu})/gu, " · ") : `${r.cl} ${fmtNumProc(r.n)}`, t: limparTeseTxt(r.tese || r.tj), m: `${r.cl} ${fmtNumProc(r.n)} · ${D.orgaos[r.o] || ""} · publicado em ${fmtData(r.dj)}`, ab: `a:${r.id}`, txt: `${String(r.tese || r.tj).replace(/\n+/g, " ")} (${r.cl} ${fmtNumProc(r.n)}, ${D.orgaos[r.o] || ""})`, esc: true });
-      for (const x of sm) if (na(x.julg) || na(x.pub)) out.push({ tp: "sum", d: x.julg || x.pub, ar: x.ar, sa: x.sa, k: `Súmula ${x.n} · ${x.org || ""}`, t: x.t, m: x.julg ? `Aprovada em ${fmtData(x.julg)}` : `Publicada em ${fmtData(x.pub)}`, ab: `s:${x.n}`, txt: `Súmula ${x.n}/STJ: ${x.t}` });
+      for (const x of inf) if (na(x.d) && !/afeta/i.test(x.sec)) out.push({ tp: "info", d: x.d, ds: [["Julgado", x.julg], ["DJEN", (() => { const m = /DJEN?\s*(?:de\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(x.proc || ""); const iso = m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : ""; return iso && (!x.julg || iso >= x.julg) ? iso : ""; })()], [`Informativo ${x.ed}`, x.d]], ar: x.ar, sa: x.sa, k: x.tema.replace(/\s*Tema\s+\d[\d.]*\.?\s*$/i, "").replace(/\.$/, ""), t: x.t, m: `${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)} · ` : ""}${x.org || x.sec} · Informativo ${x.ed}`, ab: `i:${x.id}`, txt: `${x.tema} ${x.t.replace(/\n/g, " ")} (${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}, ` : ""}${x.org || x.sec}; Informativo ${x.ed})` });
+      for (const r of fj) if (na(r.dj) && (r.tese || r.tj)) out.push({ tp: "julg", d: r.dj, ds: [["Julgado", r.dd], ["Publicado", r.dj]], s: r.fs ?? r.s ?? 0, ar: r.ar, sa: r.sa, k: r.as ? frase(r.as).replace(/\.\s+(?=\p{Lu})/gu, " · ") : `${r.cl} ${fmtNumProc(r.n)}`, t: limparTeseTxt(r.tese || r.tj), m: `${r.cl} ${fmtNumProc(r.n)} · ${D.orgaos[r.o] || ""}${r.rel ? ` · ${relatorFmt(r.rel)}` : ""}`, ab: `a:${r.id}`, txt: `${String(r.tese || r.tj).replace(/\n+/g, " ")} (${r.cl} ${fmtNumProc(r.n)}, ${D.orgaos[r.o] || ""})`, esc: true });
+      for (const x of sm) if (na(x.julg) || na(x.pub)) out.push({ tp: "sum", d: x.julg || x.pub, ds: [["Aprovada", x.julg], ["Publicada", x.pub]], ar: x.ar, sa: x.sa, k: `Súmula ${x.n} · ${x.org || ""}`, t: x.t, m: `Súmula ${x.n}/STJ · ${x.org || ""}`, ab: `s:${x.n}`, txt: `Súmula ${x.n}/STJ: ${x.t}` });
       const vistos = new Set();
       for (const x of pl) for (const [tp, n] of x.temas || []) {
         if (x.d > i1 && x.d <= somaDias(i1, 7) && !vistos.has(`${tp}${n}`)) { vistos.add(`${tp}${n}`); const tt = t.idx.get(`${tp}-${n}`);
-          if (tt) out.push({ tp: "prox", d: x.d, ar: tt.ar, sa: tt.sa, k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[x.o] || tt.org || ""}`, t: tt.q, m: `Sessão de ${fmtDiaL(x.d)}`, ab: `t:${tt.n}`, txt: `${tt.tp} ${tt.n}/STJ, em pauta em ${fmtData(x.d)}: ${tt.q}` }); }
+          if (tt) out.push({ tp: "prox", d: x.d, ds: [["Sessão", x.d], ["Afetado", tt.afet]], ar: tt.ar, sa: tt.sa, k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[x.o] || tt.org || ""}`, t: tt.q, m: `${x.p} · ${fmtDiaL(x.d)}`, ab: `t:${tt.n}`, txt: `${tt.tp} ${tt.n}/STJ, em pauta em ${fmtData(x.d)}: ${tt.q}` }); }
       }
       return out;
     }
@@ -2269,7 +2269,9 @@
       get: () => ini, set: (v) => { location.hash = `#semana?s=${segundaDe(v)}${f.a ? `&a=${f.a}` : ""}${f.tp.length ? `&tp=${f.tp.join(",")}` : ""}${f.g !== "tipo" ? `&g=${f.g}` : ""}`; },
       opcoes: () => semanas.map((w) => ({ v: w, t: `${w === esta ? "Esta semana · " : ""}${intervalo(w)}`, n: contSem.get(w) })) }], () => {});
     const linha = (it) => { const tp = TIPOS_SEM[it.tp], a = (it.ar || [])[0];
+      const datas = (it.ds || []).filter(([, d]) => d).map(([r, d]) => `<span><b>${esc(r)}</b> ${fmtData(d)}</span>`).join("");
       return `<li class="ncard ncard-sem" style="--h:${AREA_COR[a] ?? 222}"><div class="nota-cab"><span class="selo ${tp.cls}">${tp.selo}</span>${seloMat(it.ar, it.sa)}</div>
+        ${datas ? `<div class="nota-datas">${datas}</div>` : ""}
         <h3 class="nota-tema"><button type="button" data-sem="${esc(it.ab)}">${esc(it.k)}</button></h3>
         <div class="nota-tese${it.t.length > 600 ? " longa" : ""}">${it.t.split("\n").map((z) => `<p>${esc(z)}</p>`).join("")}</div>
         ${it.t.length > 600 ? `<button type="button" class="nota-mais" data-sem-ler>Continuar lendo</button>` : ""}
@@ -2312,7 +2314,7 @@
     });
     $("#sem-copiar").addEventListener("click", () => {
       const tipos = Object.keys(TIPOS_SEM).filter((k) => vis.some((x) => x.tp === k));
-      const txt = [`Resumo do STJ — semana de ${intervalo(ini)}${f.a ? ` (${rotMat(f.a)})` : ""}`, ...tipos.map((k) => { const its = vis.filter((x) => x.tp === k); return `\n${TIPOS_SEM[k].longo.toUpperCase()} (${its.length})\n${its.slice(0, 12).map((it) => `• ${it.txt}`).join("\n")}${its.length > 12 ? `\n• e mais ${its.length - 12}` : ""}`; }), `\nFonte: Radar STJ — ${location.href}`].join("\n");
+      const txt = [`Resumo do STJ — semana de ${intervalo(ini)}${f.a ? ` (${rotMat(f.a)})` : ""}`, ...tipos.map((k) => { const its = vis.filter((x) => x.tp === k); return `\n${TIPOS_SEM[k].longo.toUpperCase()} (${its.length})\n${its.slice(0, 12).map((it) => `• ${it.txt}${(it.ds || []).filter(([, d]) => d).length ? ` [${it.ds.filter(([, d]) => d).map(([r, d]) => `${r.toLowerCase()} em ${fmtData(d)}`).join("; ")}]` : ""}`).join("\n")}${its.length > 12 ? `\n• e mais ${its.length - 12}` : ""}`; }), `\nFonte: Radar STJ — ${location.href}`].join("\n");
       copiar(txt, "Resumo copiado. Cole no e-mail ou no WhatsApp.");
     });
     $("#sem-imprimir").addEventListener("click", () => window.print());
