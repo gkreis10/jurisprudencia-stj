@@ -122,6 +122,9 @@
     empresarial: "Empresarial", bancario: "Bancário", tributario: "Tributário", administrativo: "Administrativo",
     previdenciario: "Previdenciário", ambiental: "Ambiental", penal: "Penal e Processo Penal", trabalho: "Trabalho",
   };
+  // Cada matéria tem um matiz fixo, usado em todo o site (selos, filtros, cartões).
+  const AREA_COR = { "proc-civil": 226, civil: 208, consumidor: 24, familia: 330, empresarial: 262, bancario: 190, tributario: 150, administrativo: 42, previdenciario: 172, ambiental: 105, penal: 356, trabalho: 290 };
+  const seloArea = (k, attrs = "") => `<span class="selo area" style="--h:${AREA_COR[k] ?? 222}"${attrs}>${esc(AREAS[k] || k)}</span>`;
   const MOTIVOS = {
     ce: "Corte Especial", secao: "Seção", afetacao: "Afetação ao rito repetitivo", eresp: "Embargos de divergência",
     iac: "IAC / PUIL", tese: "Tese firmada", repetitivo: "Recurso repetitivo", mudanca: "Sinal de mudança de entendimento",
@@ -527,7 +530,7 @@
     const txt = r.tese || r.tj;
     if (!txt) return "";
     const rot = r.tese ? "Tese jurídica" : "Tese de julgamento";
-    const ps = String(txt).split(/\n+/).filter(Boolean);
+    const ps = String(txt).trim().replace(/^["“]+/, "").replace(/["”]+(?=\.?$)/, "").split(/\n+/).filter(Boolean);
     const corpo = ps.map((p) => `<p>${destacar(esc(p), termos)}</p>`).join("");
     return `<div class="tese${compacto ? " compacta" : ""}"><b>${rot}</b>${corpo}</div>`;
   }
@@ -538,10 +541,10 @@
     const [cab, ...corpo] = em.split("\n");
     const niv = nivelAc(r.s ?? 0);
     const salvo = !!P.salvos[`a:${r.id}`];
-    const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 4).map((k) => `<span class="selo pri">${esc(MOTIVOS[k])}</span>`).join("");
-    const areas = (r.ar || []).slice(0, 2).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
+    const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 2).map((k) => `<span class="selo pri">${esc(MOTIVOS[k])}</span>`).join("");
+    const areas = (r.ar || []).slice(0, 1).map((k) => seloArea(k)).join("");
     const temCorpo = corpo.length > 0;
-    const dups = r._dup?.length ? `<p class="duplic">Mesma ementa em ${r._dup.length} outro(s) processo(s): ${r._dup.slice(0, 6).map((d) => `${esc(d.cl)} ${fmtNumProc(d.n)}`).join(", ")}${r._dup.length > 6 ? "…" : ""}</p>` : "";
+    const dups = r._dup?.length ? `<p class="duplic" title="${esc(r._dup.map((d) => `${d.cl} ${fmtNumProc(d.n)}`).join(", "))}">+ ${r._dup.length} processo(s) com a mesma ementa</p>` : "";
     return `<li class="card item" data-id="${esc(r.id)}">
       <div class="item-cab"><button type="button" class="item-tit item-abrir" data-a="abrir" title="Abrir o julgado completo">${esc(r.cl)} ${fmtNumProc(r.n)}</button>
         <span class="meta"><span>${esc(D.orgaos[r.o] || "")}</span>${r.rel ? `<span>Rel. ${esc(relatorFmt(r.rel))}</span>` : ""}${r.dd ? `<span>Julg. ${fmtData(r.dd)}</span>` : ""}<span>Publ. ${fmtData(r.dj)}</span></span></div>
@@ -586,7 +589,7 @@
     const [cab, ...corpo] = (r.em || "").split("\n");
     const salvo = !!P.salvos[`a:${r.id}`];
     const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).map((k) => `<span class="selo pri">${esc(MOTIVOS[k])}</span>`).join("");
-    const areas = (r.ar || []).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
+    const areas = (r.ar || []).map((k) => seloArea(k)).join("");
     const extra = [["Relator(a)", r.rel ? relatorFmt(r.rel) : ""], ["Julgamento", fmtData(r.dd)], ["Publicação", `${(r.djt || "").split(/\s/)[0] || "DJ"} ${fmtData(r.dj)}`], ["Tema", r.tema], ["Notas", r.notas], ["Informações complementares", r.info], ["Referências legislativas", (r.leg || []).join("\n")]]
       .filter(([, v]) => v).map(([l, v]) => `<dt>${l}</dt><dd>${esc(v).replace(/\n/g, "<br>")}</dd>`).join("");
     abrirGaveta(`${D.orgaos[r.o] || ""}${r.dd ? " · julgado em " + fmtData(r.dd) : ""}`, `${r.cl} ${fmtNumProc(r.n)}`, `
@@ -684,7 +687,7 @@
   });
 
   function linhaTema(t, extra = "", termos = []) {
-    const areas = (t.ar || []).slice(0, 2).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
+    const areas = (t.ar || []).slice(0, 2).map((k) => seloArea(k)).join("");
     return `<li class="card item" data-tema="${esc(t.tp)}|${t.n}">
       <div class="item-cab"><button type="button" class="item-tit item-abrir" data-abrir-tema>${esc(t.tp)} ${t.n}</button>${seloSit(t.sit)}${extra}
         <span class="meta"><span>${esc(t.org || "—")}</span>${t._mov ? `<span>Últ. mov. ${fmtData(t._mov)}</span>` : ""}</span></div>
@@ -796,7 +799,7 @@
 
   function cartaoFeed(it, i, total) {
     const tp = FEED_TIPOS[it.tipo];
-    const areas = it.ar.slice(0, 2).map((k) => `<button type="button" class="selo area" data-f="area" data-ar="${k}" title="Ler só ${esc(AREAS[k] || k)}">${esc(AREAS[k] || k)}</button>`).join("");
+    const areas = it.ar.slice(0, 2).map((k) => `<button type="button" class="selo area" data-f="area" data-ar="${k}" style="--h:${AREA_COR[k] ?? 222}" title="Ler só ${esc(AREAS[k] || k)}">${esc(AREAS[k] || k)}</button>`).join("");
     let kicker = "", principal = "", apoio = "", meta = "", acoes = "", rotTexto = "", marcar = false;
     if (it.t) {
       const x = it.t;
@@ -841,7 +844,7 @@
     const pers = it.radar ? `<span class="selo radar" title="Corresponde a um termo do Meu radar">${ico("radar")} ${esc(it.radar.length > 28 ? it.radar.slice(0, 26) + "…" : it.radar)}</span>`
       : it.gosto >= 4 ? `<span class="selo gosto">Do seu interesse</span>` : "";
     const txtPrinc = principal.replace(/<[^>]+>/g, " ");
-    return `<article class="reel" data-k="${esc(it.k)}" data-i="${i}" aria-label="Novidade ${i + 1} de ${total}">
+    return `<article class="reel" data-k="${esc(it.k)}" data-i="${i}" style="--h:${AREA_COR[it.ar[0]] ?? 222}" aria-label="Novidade ${i + 1} de ${total}">
       <div class="reel-in">
         <header class="reel-cab"><span class="selo ${tp.cls}">${tp.selo}</span>${areas}${pers}${novo ? '<span class="novo">Novo</span>' : ""}<span class="reel-tempo">${ico("raio")} ${tempoLeitura(txtPrinc + " " + apoio)}</span></header>
         <p class="reel-kicker">${kicker}</p>
@@ -880,7 +883,7 @@
         const partes = [rep ? `<b>${fmtInt(rep)}</b> movimento${rep > 1 ? "s" : ""} nos repetitivos` : "", jul ? `<b>${fmtInt(jul)}</b> julgado${jul > 1 ? "s" : ""} para ler` : ""].filter(Boolean);
         return `${nFiltros(f) ? "Nos filtros escolhidos: " : "Há "}${partes.join(" e ")}.`; })()}</h2>
       ${blocos.length ? `<div class="capa-grade">${blocos.map((b) => `<button type="button" class="capa-bloco ${b.cls}" data-capa-tp="${b.tps.join(",")}"><b>${fmtInt(b.n)}</b><span>${b.rot}</span></button>`).join("")}</div>` : ""}
-      ${top.length ? `<p class="reel-rot" style="margin-top:22px">Em alta nas matérias</p><div class="capa-areas">${top.map(([a, n]) => `<button type="button" class="chip" data-capa-ar="${a}">${esc(AREAS[a] || a)} <span class="n">${n}</span></button>`).join("")}</div>` : ""}
+      ${top.length ? `<p class="reel-rot" style="margin-top:22px">Em alta nas matérias</p><div class="capa-areas">${top.map(([a, n]) => `<button type="button" class="chip area" style="--h:${AREA_COR[a] ?? 222}" data-capa-ar="${a}"><i></i>${esc(AREAS[a] || a)} <span class="n">${n}</span></button>`).join("")}</div>` : ""}
       <p class="capa-dica">${naoLidos ? `Role para começar ${ico("seta")}` : "Desative “Só não lidos” para rever o que já passou."}</p>
     </div></article>`;
   }
@@ -921,7 +924,7 @@
       $("#fd-filtros").innerHTML = `<button type="button" class="fpill novos" id="fd-novos" aria-pressed="${soNovos}">${ico("raio")} Só não lidos</button>` + Object.keys(rotulo).map((k) => `<button type="button" class="fpill" data-fp="${k}" aria-pressed="${!!ativo[k]()}" aria-haspopup="dialog">${esc(rotulo[k]())}${ico("seta")}</button>`).join("")
         + (nFiltros(f) ? `<button type="button" class="fpill limpar" id="fd-limpar">${ico("x")} Limpar</button>` : "");
     };
-    const opcao = (dim, val, txt, n, marcado) => `<button type="button" class="chip" data-op="${dim}" data-val="${esc(val)}" aria-pressed="${marcado}">${esc(txt)} <span class="n">${n === "" ? "" : fmtInt(n)}</span></button>`;
+    const opcao = (dim, val, txt, n, marcado) => { const h = dim === "ar" && val ? AREA_COR[val] : null; return `<button type="button" class="chip${h != null ? " area" : ""}" data-op="${dim}" data-val="${esc(val)}" aria-pressed="${marcado}"${h != null ? ` style="--h:${h}"` : ""}>${h != null ? "<i></i>" : ""}${esc(txt)} <span class="n">${n === "" ? "" : fmtInt(n)}</span></button>`; };
     function conteudoPop(dim) {
       if (dim === "ar") {
         const c = {}; todos.filter((x) => passaFeed(x, f, "ar") && (!soNovos || !lidos()[x.k])).forEach((x) => x.ar.forEach((a) => (c[a] = (c[a] || 0) + 1)));
@@ -1170,7 +1173,7 @@
   }
   let viewAtual = null;
   async function rotear() {
-    fecharGaveta();
+    fecharGaveta(); fecharPopF();
     if (D.saiFeed) { D.saiFeed(); D.saiFeed = null; }
     const { v, p } = lerHash();
     const def = VIEWS.find((x) => x.id === v);
@@ -1211,65 +1214,60 @@
     const novosRadar = radar.filter((x) => x.novo);
     const configurado = P.termos.length + P.procs.length + P.oabs.length > 0;
 
+    const abas = [
+      ["rep", "Repetitivos", ev30.length], ["pau", "Pautas", plTema.length + plRel.length ? unicos([...plTema, ...plRel], (p) => `${p.p}|${p.d}|${p.pet || ""}`).length : 0],
+      ["des", "Destaques", dsMes.length], ["rad", "Meu radar", configurado ? novosRadar.length : 0],
+    ];
+    const abaIni = abas.some((a) => a[0] === P.painelAba) ? P.painelAba : "rep";
     main.innerHTML = `
       <section class="hero">
         <p class="sobretitulo">${fmtDiaL(hoje)}</p>
         <h2>O que mudou no STJ?</h2>
-        <p>Movimentações em repetitivos, acórdãos que merecem leitura, o que vai a julgamento e o que aconteceu nos assuntos que você acompanha.</p>
         <a class="btn-feed" href="#atualize">${ico("raio")}<span><b>${naoLidos ? `${fmtInt(naoLidos)} novidade${naoLidos > 1 ? "s" : ""} para ler` : "Você está em dia"}</b><small>${naoLidos ? "Leitura rápida, uma tese por vez" : "Rever as últimas teses e julgados"}</small></span>${ico("seta")}</a>
         <form class="hero-busca" id="hero-f" role="search">
           <input id="hero-q" type="search" placeholder="Assunto, “tema 1234” ou número do processo" aria-label="Pesquisar">
           <button class="btn btn-pri" type="submit" aria-label="Pesquisar">${ico("pesquisa")}<span class="so-largo">Pesquisar</span></button>
         </form>
-        <div class="hero-dicas">
-          <button type="button" data-ir="#repetitivos?sit=andamento">Repetitivos em andamento</button>
-          <button type="button" data-ir="#destaques?a=civil">Destaques de Direito Civil</button>
-          <button type="button" data-ir="#destaques?a=consumidor">Destaques de Consumidor</button>
-          <button type="button" data-ir="#pautas?rel=1">Pautas relevantes</button>
-        </div>
       </section>
       <div class="stats">
-        <a class="stat" href="#repetitivos?s=mov">
-          <span class="stat-ico ico-azul">${ico("repetitivos")}</span><span><b>${fmtInt(ev7.length)}</b><span>movimentações em repetitivos nos últimos 7 dias</span></span></a>
-        <a class="stat" href="#destaques">
-          <span class="stat-ico ico-lar">${ico("destaques")}</span><span><b>${fmtInt(dsMes.length)}</b><span>destaques entre os acórdãos de ${mesUlt ? fmtMes(mesUlt) : "—"}</span></span></a>
-        <a class="stat" href="#pautas?rel=1">
-          <span class="stat-ico ico-verde">${ico("pautas")}</span><span><b>${fmtInt(plRel.length)}</b><span>processos relevantes em pauta nos próximos 14 dias</span></span></a>
-        <a class="stat" href="#radar">
-          <span class="stat-ico ico-verm">${ico("radar")}</span><span><b>${configurado ? fmtInt(novosRadar.length) : "—"}</b><span>${configurado ? "novidades no seu radar desde a última visita" : "configure o seu radar de assuntos"}</span></span></a>
+        <button type="button" class="stat" data-pn="rep">
+          <span class="stat-ico ico-verde">${ico("repetitivos")}</span><span><b>${fmtInt(ev7.length)}</b><span>movimentações em repetitivos (7 dias)</span></span></button>
+        <button type="button" class="stat" data-pn="pau">
+          <span class="stat-ico ico-verm">${ico("pautas")}</span><span><b>${fmtInt(plRel.length)}</b><span>processos relevantes em pauta (14 dias)</span></span></button>
+        <button type="button" class="stat" data-pn="des">
+          <span class="stat-ico ico-azul">${ico("destaques")}</span><span><b>${fmtInt(dsMes.length)}</b><span>destaques de ${mesUlt ? fmtMes(mesUlt) : "—"}</span></span></button>
+        <button type="button" class="stat" data-pn="rad">
+          <span class="stat-ico ico-lar">${ico("radar")}</span><span><b>${configurado ? fmtInt(novosRadar.length) : "—"}</b><span>${configurado ? "novidades no seu radar" : "configure o seu radar"}</span></span></button>
       </div>
-
-      <div class="grade-2 secao">
-        <section>
-          <div class="secao-cab"><div><h2>Precedentes qualificados</h2><p>Afetações, julgamentos e publicações dos últimos 30 dias</p></div>
-            <a class="link-acao" href="#repetitivos?s=mov">Ver todos ${ico("seta")}</a></div>
-          <div class="card card-pad">${ev30.length ? `<ol class="eventos">${ev30.slice(0, 9).map((e) => `
+      <section class="secao painel-abas">
+        <div class="secao-cab"><div class="segmentos" role="tablist" id="pn-abas">${abas.map(([k, l, n]) => `<button type="button" role="tab" data-pn="${k}" aria-selected="${k === abaIni}">${l}${k === "rad" && n ? ` <span class="n">${n > 99 ? "99+" : n}</span>` : ""}</button>`).join("")}</div>
+          <a class="link-acao" id="pn-ver" href="#repetitivos?s=mov">Ver todos ${ico("seta")}</a></div>
+        <div id="pn-corpo"></div>
+      </section>`;
+    const lista = (html) => `<div class="card card-pad"><ol class="eventos">${html}</ol></div>`;
+    const PAINEL = {
+      rep: { href: "#repetitivos?s=mov", html: () => ev30.length ? lista(ev30.slice(0, 6).map((e) => `
             <li class="evento" data-tema="${esc(e.t.tp)}|${e.t.n}"><span class="quando">${fmtData(e.d)}</span><span class="marco"><i class="${e.k}"></i></span>
               <div><div class="evento-tit"><button type="button" data-abrir-tema>${esc(e.t.tp)} ${e.t.n} · ${esc(e.txt)}</button></div>
-              <div class="evento-txt">${esc(e.t.tese ? "Tese: " + e.t.tese : e.t.q || "")}${e.t._teseAguarda && e.k !== "afet" ? " · Tese aguardando a publicação do acórdão." : ""}</div></div></li>`).join("")}</ol>` : `<p class="nota">Nenhuma movimentação no período.</p>`}</div>
-        </section>
-        <section>
-          <div class="secao-cab"><div><h2>Seu radar</h2><p>${configurado ? `${P.termos.length} assunto(s), ${P.procs.length + P.oabs.length} processo(s)/OAB` : "Acompanhe assuntos, processos e OAB"}</p></div>
-            <a class="link-acao" href="#radar">${configurado ? "Abrir" : "Configurar"} ${ico("seta")}</a></div>
-          ${configurado ? (radar.length ? `<div class="card card-pad"><ol class="eventos">${radar.slice(0, 5).map(itemRadarCompacto).join("")}</ol></div>`
-            : `<div class="card card-pad"><p class="nota">Nada encontrado ainda para os seus assuntos.</p></div>`)
-            : `<div class="card card-pad"><p class="texto-serif" style="margin-bottom:12px">Cadastre os assuntos que você acompanha (por exemplo, <i>prescrição intercorrente</i> ou <i>tema 1365</i>), os números dos seus processos ou a sua OAB. O site avisa quando houver novidade.</p><a class="btn btn-pri" href="#radar">${ico("mais1")} Configurar meu radar</a></div>`}
-
-          <div class="secao-cab" style="margin-top:22px"><div><h2>Próximas sessões</h2><p>Repetitivos em pauta e julgamentos das Seções e da Corte Especial</p></div>
-            <a class="link-acao" href="#pautas?rel=1">Ver pautas ${ico("seta")}</a></div>
-          <div class="card card-pad">${(plTema.length ? plTema : plRel).length ? `<ol class="eventos">${unicos([...plTema, ...plRel.filter((p) => !p.temas?.length)], (p) => `${p.p}|${p.d}|${p.pet || ""}`).slice(0, 6).map((p) => `
+              <div class="evento-txt">${esc(e.t.tese ? "Tese: " + e.t.tese : e.t.q || "")}</div></div></li>`).join("")) : `<div class="card card-pad"><p class="nota">Nenhuma movimentação nos últimos 30 dias.</p></div>` },
+      pau: { href: "#pautas?rel=1", html: () => { const l = unicos([...plTema, ...plRel.filter((p) => !p.temas?.length)], (p) => `${p.p}|${p.d}|${p.pet || ""}`).slice(0, 6);
+        return l.length ? lista(l.map((p) => `
             <li class="evento"><span class="quando">${fmtData(p.d)}</span><span class="marco"><i class="pauta"></i></span>
               <div><div class="evento-tit">${esc(p.p)}${p.pet ? ` (${esc(p.pet)})` : ""} · ${esc(D.orgaos[p.o] || "")}</div>
-              <div class="evento-txt">${p.temas?.length ? `Vinculado a ${p.temas.map(([tp, n]) => `${tp} ${n}`).join(", ")}` : `Rel. ${esc(p.rel || "")}`}</div></div></li>`).join("")}</ol>` : `<p class="nota">Nenhuma sessão relevante nos próximos dias.</p>`}</div>
-        </section>
-      </div>
-
-      <section class="secao">
-        <div class="secao-cab"><div><h2>Destaques recentes</h2><p>Acórdãos que a classificação automática considera mais relevantes em ${mesUlt ? fmtMesL(mesUlt) : "—"}</p></div>
-          <a class="link-acao" href="#destaques">Ver todos ${ico("seta")}</a></div>
-        <ol class="lista" id="painel-dest">${dsMes.sort((a, b) => b.s - a.s).slice(0, 4).map((r) => cardAcordao(r)).join("")}</ol>
-      </section>`;
-    ligarCards($("#painel-dest"));
+              <div class="evento-txt">${p.temas?.length ? `Vinculado a ${p.temas.map(([tp, n]) => `${tp} ${n}`).join(", ")}` : `Rel. ${esc(p.rel || "")}`}</div></div></li>`).join("")) : `<div class="card card-pad"><p class="nota">Nenhuma sessão relevante nos próximos dias.</p></div>`; } },
+      des: { href: "#destaques", html: () => `<ol class="lista" id="painel-dest">${dsMes.slice().sort((a, b) => b.s - a.s).slice(0, 3).map((r) => cardAcordao(r)).join("")}</ol>` },
+      rad: { href: "#radar", html: () => configurado ? (radar.length ? lista(radar.slice(0, 6).map(itemRadarCompacto).join("")) : `<div class="card card-pad"><p class="nota">Nada encontrado ainda para os seus assuntos.</p></div>`)
+        : `<div class="card card-pad"><p class="texto-serif" style="margin-bottom:12px">Cadastre os assuntos que você acompanha, os números dos seus processos ou a sua OAB. O site avisa quando houver novidade.</p><a class="btn btn-pri" href="#radar">${ico("mais1")} Configurar meu radar</a></div>` },
+    };
+    const mostrar = (k) => {
+      P.painelAba = k; salvarP();
+      $$("#pn-abas [data-pn]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pn === k)));
+      $("#pn-corpo").innerHTML = PAINEL[k].html();
+      $("#pn-ver").href = PAINEL[k].href;
+      const ul = $("#painel-dest"); if (ul) ligarCards(ul);
+    };
+    $$("[data-pn]", main).forEach((b) => b.addEventListener("click", () => { mostrar(b.dataset.pn); if (b.classList.contains("stat")) $(".painel-abas").scrollIntoView({ behavior: "smooth", block: "start" }); }));
+    mostrar(abaIni);
     $("#hero-f").addEventListener("submit", (e) => {
       e.preventDefault();
       const q = $("#hero-q").value.trim(); if (!q) return;
@@ -1278,7 +1276,6 @@
       else if (/^[\d.\s/-]{5,}$/.test(q)) location.hash = `#pesquisa?n=${digitos(q)}&p=u12`;
       else location.hash = `#pesquisa?q=${encodeURIComponent(q)}&p=u3`;
     });
-    $$("[data-ir]", main).forEach((b) => b.addEventListener("click", () => (location.hash = b.dataset.ir)));
   }
   function unicos(l, chave) { const v = new Set(); return l.filter((x) => { const k = chave(x); if (v.has(k)) return false; v.add(k); return true; }); }
   function itemRadarCompacto(it) {
@@ -1291,7 +1288,7 @@
     const tema = it.tipo === "tema" ? ` data-tema="${esc(o.tp)}|${o.n}"` : "";
     return `<li class="evento"${tema}><span class="quando">${fmtData(it.d)}</span><span class="marco"><span class="ponto ${it.nivel}" style="margin-top:0"></span></span>
       <div><div class="evento-tit">${tema ? `<button type="button" data-abrir-tema>${esc(tit)}</button>` : esc(tit)} ${it.novo ? '<span class="selo novo">Novo</span>' : ""}</div>
-      <div class="evento-txt">${esc(txt)}</div><div class="meta" style="margin-top:2px"><span>por “${esc(it.termo)}”</span></div></div></li>`;
+      <div class="evento-txt">${esc(txt)}</div><div class="meta" style="margin-top:2px"><span>por “${esc(it.termo.replace(/"/g, ""))}”</span></div></div></li>`;
   }
 
   // ============================================================ MEU RADAR
@@ -1301,8 +1298,8 @@
     const o = it.obj;
     const novo = it.novo ? '<span class="selo novo">Novo</span>' : "";
     const nivel = `<span class="ponto ${it.nivel}" title="${NIVEL_TX[it.nivel] || ""}"></span>`;
-    const areas = areasItem(it).slice(0, 2).map((k) => `<span class="selo">${esc(AREAS[k] || k)}</span>`).join("");
-    const por = `<span class="meta"><span>por “${esc(it.termo)}”</span></span>`;
+    const areas = areasItem(it).slice(0, 1).map((k) => seloArea(k)).join("");
+    const por = `<span class="meta"><span>por “${esc(it.termo.replace(/"/g, ""))}”</span></span>`;
     if (it.tipo === "acordao") {
       REG_AC.set(String(o.id), o);
       const tese = o.tese || o.tj;
@@ -1348,56 +1345,45 @@
     }
     const aba = p.get("aba") || "novidades";
     const F = { nivel: "", tipo: "", area: "", termo: "" };
+    const vazioRadar = !P.termos.length && !P.procs.length && !P.oabs.length;
     main.innerHTML = `
-      <div class="radar-grade">
-        <aside class="radar-lado">
-          <div class="card card-pad radar-bloco">
-            <h3>Assuntos</h3><p>Use os mesmos operadores da pesquisa: <code>"prova oral"</code>, <code>e</code>, <code>ou</code>, <code>não</code>, <code>prescri$</code>, <code>tema 1234</code>.</p>
-            <form class="adicionar" data-lista="termos"><input placeholder='Ex.: "prescrição intercorrente"' aria-label="Novo assunto"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
-            <div class="tags" data-tags="termos"></div>
-            <div class="sugestoes" id="rd-sug"></div>
+      <div class="card card-pad radar-topo">
+        <div class="radar-cab">
+          <div class="radar-acomp"><h3>Você acompanha</h3><div class="tags" id="rd-todos"></div></div>
+          <button type="button" class="btn btn-claro btn-peq" id="rd-gerir" aria-expanded="${vazioRadar}">${ico("mais1")} Adicionar</button>
+        </div>
+        <div class="painel-filtros${vazioRadar ? "" : " fechado"}" id="rd-edit"><div>
+          <div class="radar-forms">
+            <div class="radar-bloco t-termos"><h3>Assunto</h3>
+              <form class="adicionar" data-lista="termos"><input placeholder='Ex.: "prescrição intercorrente"' aria-label="Novo assunto"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
+              <p class="nota">Aceita "frase", e, ou, não, prescri$ e tema 1234.</p></div>
+            <div class="radar-bloco t-procs"><h3>Processo</h3>
+              <form class="adicionar" data-lista="procs"><input placeholder="Ex.: REsp 2222623" aria-label="Novo processo"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
+              <p class="nota">Avisa quando entrar em pauta ou tiver acórdão.</p></div>
+            <div class="radar-bloco t-oabs"><h3>OAB</h3>
+              <form class="adicionar" data-lista="oabs"><input placeholder="Ex.: RS 12345" aria-label="Nova OAB"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
+              <p class="nota">Mostra seus processos nas próximas pautas.</p></div>
           </div>
-          <div class="card card-pad radar-bloco">
-            <h3>Processos</h3><p>Número do processo ou do registro. Avisa quando entrar em pauta ou tiver acórdão publicado.</p>
-            <form class="adicionar" data-lista="procs"><input placeholder="Ex.: REsp 2222623" aria-label="Novo processo"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
-            <div class="tags" data-tags="procs"></div>
-          </div>
-          <div class="card card-pad radar-bloco">
-            <h3>OAB</h3><p>Mostra os processos com a sua inscrição nas próximas pautas.</p>
-            <form class="adicionar" data-lista="oabs"><input placeholder="Ex.: RS 12345" aria-label="Nova OAB"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
-            <div class="tags" data-tags="oabs"></div>
-          </div>
-          <div class="card card-pad radar-bloco">
-            <h3>Outro dispositivo</h3><p>O radar fica salvo neste navegador. Para usá-lo em outro aparelho, abra lá o link abaixo.</p>
-            <button type="button" class="btn btn-claro btn-peq" id="rd-link">${ico("link")} Copiar link do meu radar</button>
-          </div>
-        </aside>
-        <section>
-          <div class="barra-filtros" style="justify-content:space-between">
-            <div class="segmentos" role="tablist">
-              <button type="button" role="tab" data-aba="novidades" aria-selected="${aba === "novidades"}">Novidades</button>
-              <button type="button" role="tab" data-aba="salvos" aria-selected="${aba === "salvos"}">Salvos (${Object.keys(P.salvos).length})</button>
-            </div>
-            <button type="button" class="btn btn-claro btn-peq" id="rd-visto" hidden>Marcar tudo como visto</button>
-          </div>
-          <div class="card card-pad filtros-radar" id="rd-filtros" hidden>
-            <div class="chips" id="rd-nivel"></div>
-            <div class="barra-filtros" style="margin-top:10px">
-              <select id="rd-tipo" class="sel-auto" aria-label="Tipo"><option value="">Tudo</option><option value="tema">Repetitivos</option><option value="acordao">Acórdãos</option><option value="pauta">Pautas</option><option value="djen">Publicações no DJEN</option></select>
-              <select id="rd-termo" class="sel-auto" aria-label="Assunto"><option value="">Todos os assuntos</option></select>
-            </div>
-            <div class="chips rolagem" id="rd-areas" style="margin-top:10px"></div>
-          </div>
-          <div id="rd-corpo" style="margin-top:14px"></div>
-        </section>
-      </div>`;
+          <div class="sugestoes" id="rd-sug"></div>
+          <button type="button" class="btn btn-fant btn-peq" id="rd-link" style="margin-top:10px">${ico("link")} Copiar link para usar em outro aparelho</button>
+        </div></div>
+      </div>
+      <div class="barra-filtros" style="justify-content:space-between;margin-top:20px">
+        <div class="segmentos" role="tablist">
+          <button type="button" role="tab" data-aba="novidades" aria-selected="${aba === "novidades"}">Novidades</button>
+          <button type="button" role="tab" data-aba="salvos" aria-selected="${aba === "salvos"}">Salvos (${Object.keys(P.salvos).length})</button>
+        </div>
+        <button type="button" class="btn btn-fant btn-peq" id="rd-visto" hidden>Marcar tudo como visto</button>
+      </div>
+      <div class="fd-filtros filtros-lista" id="rd-pil" hidden></div>
+      <div id="rd-corpo" style="margin-top:6px"></div>`;
     const SUGESTOES = ['"prescrição intercorrente"', '"plano de saúde"', '"dano moral" e "in re ipsa"', '"honorários advocatícios"', '"recuperação judicial"', '"alimentos"', '"bem de família"', '"execução fiscal"'];
+    const ROT_K = { termos: "Assunto", procs: "Processo", oabs: "OAB" };
     const redesenharTags = () => {
-      for (const k of ["termos", "procs", "oabs"]) {
-        $(`[data-tags="${k}"]`, main).innerHTML = P[k].map((v, i) => `<span class="tag">${esc(v)}<button type="button" data-rm="${k}|${i}" aria-label="Remover ${esc(v)}">${ico("x")}</button></span>`).join("") || `<span class="nota">Nenhum cadastrado.</span>`;
-      }
+      const tags = ["termos", "procs", "oabs"].flatMap((k) => P[k].map((v, i) => `<span class="tag t-${k}" title="${ROT_K[k]}">${esc(v)}<button type="button" data-rm="${k}|${i}" aria-label="Remover ${esc(v)}">${ico("x")}</button></span>`));
+      $("#rd-todos", main).innerHTML = tags.join("") || `<span class="nota">Nada ainda. Adicione um assunto, um processo ou a sua OAB.</span>`;
       const sug = SUGESTOES.filter((s) => !P.termos.includes(s)).slice(0, 5);
-      $("#rd-sug", main).innerHTML = sug.length ? `<p class="nota" style="margin-top:10px">Sugestões:</p><div class="chips" style="margin-top:6px">${sug.map((s) => `<button type="button" class="chip" aria-pressed="false" data-sug='${esc(s)}'>${ico("mais1")} ${esc(s.replace(/"/g, ""))}</button>`).join("")}</div>` : "";
+      $("#rd-sug", main).innerHTML = sug.length && P.termos.length < 3 ? `<p class="nota" style="margin-top:14px">Sugestões:</p><div class="chips" style="margin-top:6px">${sug.map((s) => `<button type="button" class="chip" aria-pressed="false" data-sug='${esc(s)}'>${ico("mais1")} ${esc(s.replace(/"/g, ""))}</button>`).join("")}</div>` : "";
     };
     redesenharTags();
     $$("form.adicionar", main).forEach((f) => f.addEventListener("submit", (e) => {
@@ -1408,7 +1394,8 @@
       if (!P[k].includes(v)) P[k].push(v);
       salvarP(); inp.value = ""; redesenharTags(); render(); atualizarContadorRadar();
     }));
-    $(".radar-lado", main).addEventListener("click", (e) => {
+    $("#rd-gerir", main).addEventListener("click", (e) => { const pf = $("#rd-edit", main); pf.classList.toggle("fechado"); e.currentTarget.setAttribute("aria-expanded", String(!pf.classList.contains("fechado"))); });
+    $(".radar-topo", main).addEventListener("click", (e) => {
       const s = e.target.closest("[data-sug]");
       if (s) { P.termos.push(s.dataset.sug); salvarP(); redesenharTags(); render(); atualizarContadorRadar(); return; }
       const b = e.target.closest("[data-rm]"); if (!b) return;
@@ -1419,19 +1406,24 @@
       copiar(`${location.origin}${location.pathname}#radar?importar=${encodeURIComponent(cod)}`, "Link do radar copiado.");
     });
     $$("[data-aba]", main).forEach((b) => b.addEventListener("click", () => { gravarHash("radar", { aba: b.dataset.aba === "salvos" ? "salvos" : "" }); vRadar(main, new URLSearchParams(b.dataset.aba === "salvos" ? "aba=salvos" : "")); }));
-    $("#rd-tipo", main).addEventListener("change", (e) => { F.tipo = e.target.value; desenhar(); });
-    $("#rd-termo", main).addEventListener("change", (e) => { F.termo = e.target.value; desenhar(); });
-    $("#rd-nivel", main).addEventListener("click", (e) => { const b = e.target.closest("[data-nv]"); if (!b) return; F.nivel = b.dataset.nv; desenhar(); });
-    $("#rd-areas", main).addEventListener("click", (e) => { const b = e.target.closest("[data-ar]"); if (!b) return; F.area = b.dataset.ar; desenhar(); });
+    let contNv = {}, contTp = {}, contAr = {};
+    const pil = pilulas($("#rd-pil", main), [
+      { rot: "Prioridade", tipo: "um", get: () => F.nivel, set: (v) => (F.nivel = v), opcoes: () => [{ v: "", t: "Todas", n: contNv[""] }, { v: "novo", t: "Só novos", n: contNv.novo },
+        { v: "alta", t: "Alta", n: contNv.alta, ponto: "alta" }, { v: "rel", t: "Relevante", n: contNv.rel, ponto: "rel" }, { v: "acomp", t: "Acompanhar", n: contNv.acomp, ponto: "acomp" }],
+        nota: "Alta: tema em pauta ou movimentado há menos de 30 dias, processo seu em pauta ou acórdão de alta relevância. Relevante: tema em andamento, acórdão relevante ou publicado no seu processo." },
+      { rot: "Tipo", tipo: "um", get: () => F.tipo, set: (v) => (F.tipo = v), opcoes: () => [{ v: "", t: "Tudo" }, ...[["tema", "Repetitivos"], ["acordao", "Acórdãos"], ["pauta", "Pautas"], ["djen", "Publicações no DJEN"]].filter(([k]) => contTp[k]).map(([k, t]) => ({ v: k, t, n: contTp[k] }))] },
+      { rot: "Assunto", tipo: "um", get: () => F.termo, set: (v) => (F.termo = v), opcoes: () => [{ v: "", t: "Todos" }, ...[...new Set(lista.map((x) => x.termo))].map((x) => ({ v: x, t: x }))] },
+      { rot: "Matéria", tipo: "um", get: () => F.area, set: (v) => (F.area = v), opcoes: () => opcoesAreas(contAr) },
+    ], () => desenhar());
     $("#rd-visto", main).addEventListener("click", () => { P.vistoEm = hojeISO(); salvarP(); atualizarContadorRadar(); render(); toast("Tudo marcado como visto."); });
 
     let lista = [], lim = 40;
     async function render() {
       const corpo = $("#rd-corpo", main);
-      if (aba === "salvos") { $("#rd-filtros", main).hidden = true; $("#rd-visto", main).hidden = true; return renderSalvos(corpo); }
+      if (aba === "salvos") { $("#rd-pil", main).hidden = true; $("#rd-visto", main).hidden = true; return renderSalvos(corpo); }
       if (!P.termos.length && !P.procs.length && !P.oabs.length) {
-        $("#rd-filtros", main).hidden = true; $("#rd-visto", main).hidden = true;
-        corpo.innerHTML = vazio("radar", "Seu radar está vazio", "Cadastre à esquerda os assuntos que você acompanha, ou toque em uma das sugestões. O site mostra o que surgiu, por prioridade, e marca o que é novo desde a sua última visita.");
+        $("#rd-pil", main).hidden = true; $("#rd-visto", main).hidden = true;
+        corpo.innerHTML = vazio("radar", "Seu radar está vazio", "Adicione acima os assuntos que você acompanha, ou toque em uma das sugestões. O site mostra o que surgiu, por prioridade, e marca o que é novo desde a sua última visita.");
         return;
       }
       corpo.innerHTML = esqueleto();
@@ -1439,27 +1431,22 @@
       lista = await calcularRadar();
       for (const it of lista) if (it.tipo === "pauta" && it.obj.temas?.length) { const [tp, n] = it.obj.temas[0]; it.temaObj = t.idx.get(`${tp}-${n}`); }
       void pl;
-      $("#rd-filtros", main).hidden = false; $("#rd-visto", main).hidden = false;
-      $("#rd-termo", main).innerHTML = `<option value="">Todos os assuntos</option>` + [...new Set(lista.map((x) => x.termo))].map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
-      $("#rd-termo", main).value = F.termo;
+      $("#rd-pil", main).hidden = false; $("#rd-visto", main).hidden = false;
       lim = 40; desenhar();
     }
     function desenhar() {
+      contTp = {}; lista.filter((x) => !F.termo || x.termo === F.termo).forEach((x) => (contTp[x.tipo] = (contTp[x.tipo] || 0) + 1));
       const base = lista.filter((x) => (!F.tipo || x.tipo === F.tipo) && (!F.termo || x.termo === F.termo));
-      const cont = { alta: 0, rel: 0, acomp: 0 }; base.forEach((x) => cont[x.nivel]++);
-      const novos = base.filter((x) => x.novo).length;
-      $("#rd-nivel", main).innerHTML = [["", `Todos <span class="n">${base.length}</span>`], ["novo", `Novos <span class="n">${novos}</span>`], ["alta", `<span class="ponto alta"></span> Alta <span class="n">${cont.alta}</span>`], ["rel", `<span class="ponto rel"></span> Relevante <span class="n">${cont.rel}</span>`], ["acomp", `<span class="ponto acomp"></span> Acompanhar <span class="n">${cont.acomp}</span>`]]
-        .map(([k, l2]) => `<button type="button" class="chip" data-nv="${k}" aria-pressed="${F.nivel === k}">${l2}</button>`).join("");
+      contNv = { "": base.length, novo: 0, alta: 0, rel: 0, acomp: 0 }; base.forEach((x) => { contNv[x.nivel]++; if (x.novo) contNv.novo++; });
       const b2 = base.filter((x) => !F.nivel || (F.nivel === "novo" ? x.novo : x.nivel === F.nivel));
-      const ca = {}; b2.forEach((x) => areasItem(x).forEach((a) => (ca[a] = (ca[a] || 0) + 1)));
-      $("#rd-areas", main).innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!F.area}">Todas as matérias</button>` + Object.keys(AREAS).filter((a) => ca[a]).sort((a, b) => ca[b] - ca[a]).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${F.area === a}">${AREAS[a]} <span class="n">${ca[a]}</span></button>`).join("");
+      contAr = {}; b2.forEach((x) => areasItem(x).forEach((a) => (contAr[a] = (contAr[a] || 0) + 1)));
+      pil.desenhar();
       const vis = b2.filter((x) => !F.area || areasItem(x).includes(F.area));
-      const termos = [...new Set(vis.map((x) => x.termo))].flatMap((q) => Busca.compilar(q).termos);
+      const termos = [...new Set(vis.map((x) => x.termo))].flatMap((q) => (/^tema\s*:?\s*\d+$/i.test(q.trim()) ? [] : Busca.compilar(q).termos));
       const corpo = $("#rd-corpo", main);
       corpo.innerHTML = `
         <div class="barra-res"><p><b>${fmtInt(vis.length)}</b> resultado(s) · novidades contadas desde ${fmtData(P.vistoEm)}</p></div>
-        ${vis.length ? `<ol class="lista" id="rd-lista">${vis.slice(0, lim).map((x) => itemRadarLinha(x, termos)).join("")}</ol>${vis.length > lim ? `<button class="btn btn-claro btn-mais" id="rd-mais">Mostrar mais (${fmtInt(vis.length - lim)})</button>` : ""}` : vazio("radar", "Nada neste filtro", "Troque os filtros acima para ver os demais resultados.")}
-        <p class="legenda" style="margin-top:12px"><span><span class="ponto alta"></span> tema em pauta ou movimentado há menos de 30 dias; processo seu em pauta; acórdão de alta relevância</span><span><span class="ponto rel"></span> tema em andamento; acórdão relevante; acórdão publicado no seu processo</span><span><span class="ponto acomp"></span> demais resultados</span></p>`;
+        ${vis.length ? `<ol class="lista" id="rd-lista">${vis.slice(0, lim).map((x) => itemRadarLinha(x, termos)).join("")}</ol>${vis.length > lim ? `<button class="btn btn-claro btn-mais" id="rd-mais">Mostrar mais (${fmtInt(vis.length - lim)})</button>` : ""}` : vazio("radar", "Nada neste filtro", "Troque os filtros acima para ver os demais resultados.")}`;
       const ul = $("#rd-lista", main); if (ul) ligarCards(ul);
       $("#rd-mais", main)?.addEventListener("click", () => { lim += 40; desenhar(); });
     }
@@ -1476,6 +1463,86 @@
     render();
   }
 
+  // ================================================= filtros em pílulas
+  // Um botão por filtro; as opções abrem num popover (computador) ou numa
+  // folha inferior (celular). Mantém a tela limpa e igual em todas as abas.
+  const POPF = { el: null, veu: null, raiz: null, i: -1 };
+  function garantirPopF() {
+    if (POPF.el) return;
+    POPF.veu = document.createElement("div"); POPF.veu.className = "fd-veu"; POPF.veu.hidden = true;
+    POPF.el = document.createElement("div"); POPF.el.className = "fd-pop"; POPF.el.hidden = true; POPF.el.setAttribute("role", "dialog");
+    document.body.append(POPF.veu, POPF.el);
+    POPF.veu.addEventListener("click", fecharPopF);
+    document.addEventListener("pointerdown", (e) => { if (!POPF.el.hidden && !POPF.el.contains(e.target) && !e.target.closest("[data-pil]")) fecharPopF(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharPopF(); });
+  }
+  function fecharPopF() {
+    if (!POPF.el || POPF.el.hidden) return;
+    POPF.el.classList.remove("vis"); POPF.veu.classList.remove("vis"); POPF.raiz = null; POPF.i = -1;
+    setTimeout(() => { if (!POPF.el.classList.contains("vis")) { POPF.el.hidden = true; POPF.veu.hidden = true; } }, 200);
+  }
+  function pilulas(raiz, defs, aoMudar) {
+    garantirPopF();
+    const vazioDe = (d) => (d.tipo === "multi" ? [] : d.tipo === "toggle" ? false : (d.padrao ?? ""));
+    const ativo = (d) => (d.tipo === "multi" ? d.get().length > 0 : d.tipo === "toggle" ? !!d.get() : String(d.get() ?? "") !== String(d.padrao ?? ""));
+    const rot = (d) => {
+      if (d.tipo === "toggle" || !ativo(d)) return d.rotAtual ? d.rotAtual() : d.rot;
+      if (d.tipo === "multi") { const v = d.get(); const o = d.opcoes().find((x) => x.v === v[0]); return v.length === 1 ? (o?.t || d.rot) : `${d.rot} · ${v.length}`; }
+      if (d.tipo === "texto") return `${d.rot}: ${d.get()}`;
+      const o = d.opcoes().find((x) => String(x.v) === String(d.get())); return o ? (o.curto || o.t) : d.rot;
+    };
+    function desenhar() {
+      const n = defs.filter((d) => ativo(d) && !d.semLimpar).length;
+      raiz.innerHTML = defs.map((d, i) => `<button type="button" class="fpill${d.tipo === "toggle" ? " toggle" : ""}" data-pil="${i}" aria-pressed="${ativo(d)}"${d.tipo !== "toggle" ? ' aria-haspopup="dialog"' : ""}>${d.ico ? ico(d.ico) : ""}${esc(rot(d))}${d.tipo !== "toggle" ? ico("seta") : ""}</button>`).join("")
+        + (n ? `<button type="button" class="fpill limpar" data-pil-limpar>${ico("x")} Limpar</button>` : "");
+    }
+    function conteudo(d) {
+      const ops = d.opcoes ? d.opcoes() : [];
+      const v = d.get();
+      const chip = (o) => {
+        const m = d.tipo === "multi" ? v.includes(o.v) : String(v ?? "") === String(o.v);
+        return `<button type="button" class="chip${o.h != null ? " area" : ""}" data-op="${esc(String(o.v))}" aria-pressed="${m}"${o.h != null ? ` style="--h:${o.h}"` : ""}>${o.h != null ? "<i></i>" : o.ponto ? `<span class="ponto ${o.ponto}"></span>` : ""}${esc(o.t)}${o.n != null ? ` <span class="n">${fmtInt(o.n)}</span>` : ""}</button>`;
+      };
+      const corpo = d.tipo === "texto"
+        ? `<form class="adicionar" data-pil-form><input type="search" value="${esc(v || "")}" placeholder="${esc(d.ph || "")}"${d.lista ? ` list="${d.lista}"` : ""} autocomplete="off"><button class="btn btn-pri" type="submit">Aplicar</button></form>${ops.length ? `<div class="chips" style="margin-top:12px">${ops.slice(0, 24).map(chip).join("")}</div>` : ""}`
+        : `<div class="chips">${ops.map(chip).join("")}</div>`;
+      return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}`;
+    }
+    function abrir(i, botao) {
+      const d = defs[i]; POPF.raiz = raiz; POPF.i = i;
+      POPF.el.innerHTML = conteudo(d);
+      const folha = matchMedia("(max-width: 860px)").matches;
+      POPF.el.classList.toggle("folha", folha);
+      if (!folha && botao) { const r = botao.getBoundingClientRect(); POPF.el.style.left = `${Math.max(12, Math.min(r.left, innerWidth - 416))}px`; POPF.el.style.top = `${r.bottom + 8}px`; }
+      else { POPF.el.style.left = ""; POPF.el.style.top = ""; }
+      POPF.el.hidden = false; POPF.veu.hidden = !folha;
+      requestAnimationFrame(() => { POPF.el.classList.add("vis"); POPF.veu.classList.add("vis"); });
+      POPF.el.onclick = (e) => {
+        if (e.target.closest("[data-fechar-pop]")) return fecharPopF();
+        const b = e.target.closest("[data-op]"); if (!b) return;
+        const o = (d.opcoes?.() || []).find((x) => String(x.v) === b.dataset.op); const val = o ? o.v : b.dataset.op;
+        if (d.tipo === "multi") { const cur = d.get(); d.set(val === "" ? [] : cur.includes(val) ? cur.filter((x) => x !== val) : [...cur, val]); }
+        else d.set(String(d.get() ?? "") === String(val) && !d.obrigatorio ? vazioDe(d) : val);
+        desenhar(); aoMudar();
+        if (d.tipo === "multi" && val !== "") abrir(i, raiz.querySelector(`[data-pil="${i}"]`)); else fecharPopF();
+      };
+      const fm = $("[data-pil-form]", POPF.el);
+      if (fm) { const inp = $("input", fm); if (!folha) inp.focus(); fm.onsubmit = (e) => { e.preventDefault(); d.set(inp.value.trim()); desenhar(); aoMudar(); fecharPopF(); }; }
+    }
+    raiz.addEventListener("click", (e) => {
+      if (e.target.closest("[data-pil-limpar]")) { defs.forEach((d) => { if (!d.semLimpar) d.set(vazioDe(d)); }); fecharPopF(); desenhar(); return aoMudar(); }
+      const b = e.target.closest("[data-pil]"); if (!b) return;
+      const i = +b.dataset.pil, d = defs[i];
+      if (d.tipo === "toggle") { d.set(!d.get()); fecharPopF(); desenhar(); return aoMudar(); }
+      if (POPF.raiz === raiz && POPF.i === i && !POPF.el.hidden) return fecharPopF();
+      abrir(i, b);
+    });
+    desenhar();
+    return { desenhar };
+  }
+  // Opções de matéria com contagem e cor.
+  const opcoesAreas = (cont, todas = "Todas as matérias") => [{ v: "", t: todas }, ...Object.keys(AREAS).filter((a) => cont[a]).sort((a, b) => cont[b] - cont[a]).map((a) => ({ v: a, t: AREAS[a], n: cont[a], h: AREA_COR[a] }))];
+
   // ============================================================ DESTAQUES
   function campoBusca(id, ph, valor = "") {
     return `<div class="campo-busca">${ico("pesquisa")}<input id="${id}" type="search" placeholder='${esc(ph)}' value="${esc(valor)}" autocomplete="off" spellcheck="false">
@@ -1485,26 +1552,17 @@
     const ds = await destaques();
     const meses = [...new Set(ds.map((r) => r.dj.slice(0, 7)))].sort().reverse();
     const f = { a: p.get("a") || "", m: p.get("m") || (meses[0] || ""), o: p.get("o") || "", n: p.get("n") || "", q: p.get("q") || "", t: p.get("t") === "1" };
-    const porMes = D.man.meses[0] ? Object.values(D.man.meses[0].orgaos).reduce((s, x) => s + x.n, 0) : 0;
     main.innerHTML = `
-      <p class="aviso info">${ico("sobre")}<span>Dos cerca de ${fmtInt(Math.round(porMes / 100) * 100)} acórdãos publicados por mês, aqui ficam os que reúnem sinais de relevância: Corte Especial ou Seção, tese, rito repetitivo, embargos de divergência, afetação, superação de entendimento. A rotina (Súmula 7, embargos rejeitados) fica de fora. <a href="#sobre">Como funciona</a></span></p>
-      <div class="card card-pad" style="margin-top:14px" id="ds-f">
-        <div class="barra-filtros">
-          ${campoBusca("ds-q", 'Filtrar por termos. Ex.: "bem de família" ou impenhorab$', f.q)}
-          <select id="ds-m" class="sel-auto" aria-label="Mês">${meses.map((m) => `<option value="${m}">${fmtMesL(m)}</option>`).join("")}<option value="todos">Últimos 3 meses</option></select>
-          <select id="ds-o" class="sel-auto" aria-label="Órgão"><option value="">Todos os órgãos</option><option value="sup">Corte Especial e Seções</option><option value="turmas">Turmas</option></select>
-          <select id="ds-n" class="sel-auto" aria-label="Nível"><option value="">Relevantes e alta</option><option value="alta">Só alta relevância</option></select>
-        </div>
+      <div id="ds-f">
+        ${campoBusca("ds-q", 'Filtrar por termos. Ex.: "bem de família" ou impenhorab$', f.q)}
         ${AJUDA_BUSCA}
-        <div class="barra-filtros" style="margin-top:12px"><label class="alternar"><input type="checkbox" id="ds-t"><span class="trilho"></span>Só com tese</label></div>
-        <div class="chips rolagem" id="ds-areas" style="margin-top:12px"></div>
+        <div class="fd-filtros filtros-lista" id="ds-pil"></div>
       </div>
-      <div class="barra-res"><p id="ds-info"></p></div>
+      <div class="barra-res"><p id="ds-info"></p><a class="link-acao" href="#sobre">Como selecionamos ${ico("seta")}</a></div>
       <ol class="lista" id="ds-lista"></ol>
       <button class="btn btn-claro btn-mais" id="ds-mais" hidden>Mostrar mais</button>`;
-    $("#ds-m").value = f.m; $("#ds-o").value = f.o; $("#ds-n").value = f.n; $("#ds-t").checked = f.t;
     const ul = $("#ds-lista"); ligarCards(ul);
-    let lista = [], mostrados = 0, termos = [];
+    let lista = [], mostrados = 0, termos = [], contA = {};
     const render = (reset) => {
       if (reset) { ul.innerHTML = ""; mostrados = 0; }
       const lote = lista.slice(mostrados, mostrados + 20);
@@ -1514,21 +1572,26 @@
       const b = $("#ds-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
     };
     const aplicar = () => {
-      f.q = $("#ds-q").value; f.m = $("#ds-m").value; f.o = $("#ds-o").value; f.n = $("#ds-n").value; f.t = $("#ds-t").checked;
+      f.q = $("#ds-q").value;
       gravarHash("destaques", { ...f, m: f.m === meses[0] ? "" : f.m });
       const c = Busca.compilar(f.q); termos = c.termos;
       const base = ds.filter((r) => (f.m === "todos" || r.dj.startsWith(f.m)) && (!f.o || (f.o === "sup" ? !r.o.endsWith("turma") : r.o.endsWith("turma"))) && (!f.n || r.s >= 10)
         && (!f.t || r.tese || r.tj) && (c.vazio || c.testa(r._n || (r._n = norm([r.em, r.tese, r.tj, r.tema, r.notas].join("\n"))))));
-      const cont = {}; base.forEach((r) => (r.ar || []).forEach((a) => (cont[a] = (cont[a] || 0) + 1)));
-      $("#ds-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!f.a}">Todas as matérias</button>` +
-        Object.keys(AREAS).filter((a) => cont[a] || f.a === a).sort((a, b) => (cont[b] || 0) - (cont[a] || 0)).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${f.a === a}">${AREAS[a]} <span class="n">${cont[a] || 0}</span></button>`).join("");
+      contA = {}; base.forEach((r) => (r.ar || []).forEach((a) => (contA[a] = (contA[a] || 0) + 1)));
       lista = agrupar(base.filter((r) => !f.a || (r.ar || []).includes(f.a))).sort((a, b) => (b.s - a.s) || b.dj.localeCompare(a.dj));
-      $("#ds-info").innerHTML = `<b>${fmtInt(lista.length)}</b> destaque(s)${f.m && f.m !== "todos" ? ` em ${fmtMesL(f.m)}` : " nos últimos 3 meses"} · por relevância ${explicacaoHTML(c)}`;
+      $("#ds-info").innerHTML = `<b>${fmtInt(lista.length)}</b> destaque(s)${f.m && f.m !== "todos" ? ` em ${fmtMesL(f.m)}` : " nos últimos 3 meses"} ${explicacaoHTML(c)}`;
       render(true);
     };
-    $("#ds-areas").addEventListener("click", (e) => { const b = e.target.closest("[data-ar]"); if (!b) return; f.a = b.dataset.ar; aplicar(); });
+    pilulas($("#ds-pil"), [
+      { rot: "Matéria", tipo: "um", get: () => f.a, set: (v) => (f.a = v), opcoes: () => opcoesAreas(contA) },
+      { rot: "Mês", tipo: "um", obrigatorio: true, semLimpar: true, padrao: meses[0], rotAtual: () => fmtMesL(f.m), get: () => f.m, set: (v) => (f.m = v),
+        opcoes: () => [...meses.map((m) => ({ v: m, t: fmtMesL(m) })), { v: "todos", t: "Últimos 3 meses" }] },
+      { rot: "Órgão", tipo: "um", get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, { v: "sup", t: "Corte Especial e Seções" }, { v: "turmas", t: "Turmas" }] },
+      { rot: "Relevância", tipo: "um", get: () => f.n, set: (v) => (f.n = v), opcoes: () => [{ v: "", t: "Relevantes e alta", ponto: "rel" }, { v: "alta", t: "Só alta relevância", curto: "Alta relevância", ponto: "alta" }],
+        nota: "Alta relevância: 10 pontos ou mais na classificação automática (veja Sobre)." },
+      { rot: "Só com tese", tipo: "toggle", get: () => f.t, set: (v) => (f.t = v) },
+    ], aplicar);
     $("#ds-q").addEventListener("input", debounce(aplicar, 250));
-    ["#ds-m", "#ds-o", "#ds-n", "#ds-t"].forEach((s) => $(s).addEventListener("change", aplicar));
     $("#ds-mais").addEventListener("click", () => render(false));
     ligarAjuda($("#ds-f"), $("#ds-q"), aplicar);
     aplicar();
@@ -1536,68 +1599,53 @@
 
   // ============================================================= PESQUISA
   async function vPesquisa(main, p, mesma) {
+    const F = AC.f = {
+      p: p.get("p") || "u1", o: p.get("o") || "", a: p.get("a") || "", c: p.get("c") || "", rl: p.get("rl") || "", n: p.get("n") || "",
+      s: p.get("s") || "auto", r: p.get("r") !== "0", x: p.get("x") === "1", t: p.get("t") === "1",
+    };
     if (!mesma || !$("#ac-q")) {
       const meses = D.man.meses;
       main.innerHTML = `
-        <div class="card card-pad" id="ac-f">
-          <div class="barra-filtros">
-            ${campoBusca("ac-q", 'Termos da ementa ou da tese. Ex.: "prova oral" e nulidade')}
-            <select id="ac-periodo" class="sel-auto" aria-label="Período">${[["u1", `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`], ["u3", "Últimos 3 meses"], ["u6", "Últimos 6 meses"], ["u12", "Últimos 12 meses"]].map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}<optgroup label="Mês">${meses.map((m) => `<option value="${m.m}">${fmtMesL(m.m)}</option>`).join("")}</optgroup></select>
-            <button type="button" class="btn btn-claro" id="ac-mais-f" aria-expanded="false">${ico("filtro")} Filtros <span id="ac-nf"></span></button>
-          </div>
+        <div id="ac-f">
+          ${campoBusca("ac-q", 'Termos da ementa ou da tese. Ex.: "prova oral" e nulidade')}
           ${AJUDA_BUSCA}
-          <div class="painel-filtros fechado" id="ac-pf"><div>
-            <div class="grade-filtros" style="padding-top:12px">
-              <div class="campo"><label for="ac-orgao">Órgão julgador</label><select id="ac-orgao"><option value="">Todos</option>${Object.entries(D.orgaos).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
-              <div class="campo"><label for="ac-area">Matéria</label><select id="ac-area"><option value="">Todas</option>${Object.entries(AREAS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
-              <div class="campo"><label for="ac-classe">Classe</label><input id="ac-classe" list="ac-classes" placeholder="REsp, AgInt, EREsp"><datalist id="ac-classes"></datalist></div>
-              <div class="campo"><label for="ac-rel">Relator(a)</label><input id="ac-rel" list="ac-rels" placeholder="Nome"><datalist id="ac-rels"></datalist></div>
-              <div class="campo"><label for="ac-proc">Número do processo</label><input id="ac-proc" inputmode="numeric" placeholder="Ex.: 2222623"></div>
-              <div class="campo"><label for="ac-ordem">Ordenar por</label><select id="ac-ordem"><option value="auto">Automático</option><option value="rel">Relevância</option><option value="data">Mais recentes</option><option value="julg">Data de julgamento</option></select></div>
-            </div>
-          </div></div>
-          <div class="barra-filtros" style="margin-top:12px;gap:18px">
-            <label class="alternar"><input type="checkbox" id="ac-rotina" checked><span class="trilho"></span>Ocultar decisões de rotina</label>
-            <label class="alternar"><input type="checkbox" id="ac-tese"><span class="trilho"></span>Só com tese</label>
-            <label class="alternar"><input type="checkbox" id="ac-dest"><span class="trilho"></span>Só destaques</label>
-          </div>
+          <div class="fd-filtros filtros-lista" id="ac-pil"></div>
+          <datalist id="ac-classes"></datalist><datalist id="ac-rels"></datalist>
         </div>
         <div class="barra-res"><p id="ac-info" aria-live="polite"></p><div class="progresso" id="ac-prog" hidden><i></i></div>
-          <button type="button" class="btn btn-fant btn-peq" id="ac-link">${ico("link")} Copiar link da pesquisa</button></div>
+          <button type="button" class="btn btn-fant btn-peq" id="ac-link">${ico("link")} Copiar link</button></div>
         <ol class="lista" id="ac-lista"></ol>
         <button class="btn btn-claro btn-mais" id="ac-mais" hidden>Mostrar mais</button>`;
-      const rodar = debounce(() => buscar(), 300);
-      ["#ac-q", "#ac-classe", "#ac-rel", "#ac-proc"].forEach((s) => $(s).addEventListener("input", rodar));
-      ["#ac-periodo", "#ac-orgao", "#ac-area", "#ac-ordem", "#ac-rotina", "#ac-dest", "#ac-tese"].forEach((s) => $(s).addEventListener("change", () => buscar()));
-      $("#ac-mais-f").addEventListener("click", (e) => { const pf = $("#ac-pf"); pf.classList.toggle("fechado"); e.currentTarget.setAttribute("aria-expanded", String(!pf.classList.contains("fechado"))); });
+      const periodos = [{ v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, ...meses.map((m) => ({ v: m.m, t: fmtMesL(m.m) }))];
+      AC.pil = pilulas($("#ac-pil"), [
+        { rot: "Período", tipo: "um", padrao: "u1", obrigatorio: true, semLimpar: true, rotAtual: () => "Último mês", get: () => AC.f.p, set: (v) => (AC.f.p = v), opcoes: () => periodos },
+        { rot: "Matéria", tipo: "um", get: () => AC.f.a, set: (v) => (AC.f.a = v), opcoes: () => [{ v: "", t: "Todas as matérias" }, ...Object.keys(AREAS).map((a) => ({ v: a, t: AREAS[a], h: AREA_COR[a] }))] },
+        { rot: "Órgão", tipo: "um", get: () => AC.f.o, set: (v) => (AC.f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...Object.entries(D.orgaos).map(([k, v]) => ({ v: k, t: v }))] },
+        { rot: "Classe", tipo: "texto", ph: "REsp, AgInt, EREsp", lista: "ac-classes", get: () => AC.f.c, set: (v) => (AC.f.c = v) },
+        { rot: "Relator", tipo: "texto", ph: "Nome do(a) ministro(a)", lista: "ac-rels", get: () => AC.f.rl, set: (v) => (AC.f.rl = v) },
+        { rot: "Processo", tipo: "texto", ph: "Número. Ex.: 2222623", get: () => AC.f.n, set: (v) => (AC.f.n = digitos(v)) },
+        { rot: "Só com tese", tipo: "toggle", get: () => AC.f.t, set: (v) => (AC.f.t = v) },
+        { rot: "Só destaques", tipo: "toggle", get: () => AC.f.x, set: (v) => (AC.f.x = v) },
+        { rot: "Incluir rotina", tipo: "toggle", get: () => !AC.f.r, set: (v) => (AC.f.r = !v) },
+        { rot: "Ordem", tipo: "um", padrao: "auto", obrigatorio: true, semLimpar: true, rotAtual: () => "Ordem automática", get: () => AC.f.s, set: (v) => (AC.f.s = v),
+          opcoes: () => [{ v: "auto", t: "Automática" }, { v: "rel", t: "Relevância", curto: "Por relevância" }, { v: "data", t: "Mais recentes" }, { v: "julg", t: "Data de julgamento", curto: "Por julgamento" }],
+          nota: "Automática: por relevância quando há termos; sem termos, os mais recentes primeiro." },
+      ], () => buscar());
+      $("#ac-q").addEventListener("input", debounce(() => buscar(), 300));
       $("#ac-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
       $("#ac-mais").addEventListener("click", () => renderLista(false));
       ligarCards($("#ac-lista"));
       ligarAjuda($("#ac-f"), $("#ac-q"), () => buscar());
-    }
+    } else AC.pil?.desenhar();
     $("#ac-q").value = p.get("q") || "";
-    $("#ac-periodo").value = p.get("p") || "u1"; if (!$("#ac-periodo").value) $("#ac-periodo").value = "u1";
-    $("#ac-orgao").value = p.get("o") || "";
-    $("#ac-area").value = p.get("a") || "";
-    $("#ac-classe").value = p.get("c") || "";
-    $("#ac-rel").value = p.get("rl") || "";
-    $("#ac-proc").value = p.get("n") || "";
-    $("#ac-ordem").value = p.get("s") || "auto";
-    $("#ac-rotina").checked = p.get("r") !== "0";
-    $("#ac-dest").checked = p.get("x") === "1";
-    $("#ac-tese").checked = p.get("t") === "1";
-    const nf = ["#ac-orgao", "#ac-area", "#ac-classe", "#ac-rel", "#ac-proc"].filter((s) => $(s).value).length;
-    if (nf) $("#ac-pf").classList.remove("fechado");
     if (p.get("foco")) setTimeout(() => $("#ac-q").focus(), 50);
     await buscar();
   }
-  const AC = { lista: [], mostrados: 0, termos: [], token: 0, dl: false };
+  const AC = { lista: [], mostrados: 0, termos: [], token: 0, dl: false, f: null, pil: null };
   async function buscar() {
     const tk = ++AC.token;
-    const f = { q: $("#ac-q").value, p: $("#ac-periodo").value, o: $("#ac-orgao").value, a: $("#ac-area").value, c: $("#ac-classe").value.trim(), rl: $("#ac-rel").value.trim(), n: digitos($("#ac-proc").value), s: $("#ac-ordem").value, r: $("#ac-rotina").checked, x: $("#ac-dest").checked, t: $("#ac-tese").checked };
+    const f = { ...AC.f, q: $("#ac-q").value, c: (AC.f.c || "").trim(), rl: (AC.f.rl || "").trim(), n: digitos(AC.f.n) };
     gravarHash("pesquisa", { ...f, p: f.p === "u1" ? "" : f.p, s: f.s === "auto" ? "" : f.s, r: f.r ? "" : "0", x: f.x, t: f.t });
-    const nf = [f.o, f.a, f.c, f.rl, f.n].filter(Boolean).length;
-    $("#ac-nf").textContent = nf ? `(${nf})` : "";
     const todos = D.man.meses.map((m) => m.m);
     const meses = /^\d{4}-\d{2}$/.test(f.p) ? [f.p] : todos.slice(0, +(/^u(\d+)$/.exec(f.p)?.[1] || 1));
     const orgs = f.o ? [f.o] : Object.keys(D.orgaos);
@@ -1669,29 +1717,15 @@
     const todasUF = [...new Set(pt.lista.map((x) => x.uf).filter(Boolean))].sort();
     const f = { q: p.get("q") || "", tipo: p.has("tipo") ? (p.get("tipo") === "todos" ? "" : p.get("tipo")) : "Tema", sit: p.get("sit") || "", org: p.get("org") || "", uf: p.get("uf") || "", a: p.get("a") || "", susp: p.get("susp") === "1", pauta: p.get("pauta") === "1", s: p.get("s") || "mov" };
     main.innerHTML = `
-      <div class="card card-pad" id="rp-f">
-        <div class="barra-filtros">
-          ${campoBusca("rp-q", 'Questão, tese ou assunto. Ex.: "prescrição intercorrente" ou o número do tema', f.q)}
-          <select id="rp-tipo" class="sel-auto" aria-label="Tipo"><option value="Tema">Temas repetitivos</option><option value="Controvérsia">Controvérsias</option><option value="IAC">IAC</option><option value="SIRDR">SIRDR</option><option value="PUIL">PUIL</option><option value="">Todos os tipos</option></select>
-          <select id="rp-org" class="sel-auto" aria-label="Órgão"><option value="">Todos os órgãos</option><option>Corte Especial</option><option>Primeira Seção</option><option>Segunda Seção</option><option>Terceira Seção</option></select>
-          <select id="rp-uf" class="sel-auto" aria-label="UF de origem"><option value="">Qualquer origem</option>${todasUF.map((u) => `<option>${u}</option>`).join("")}</select>
-          <select id="rp-s" class="sel-auto" aria-label="Ordenar"><option value="mov">Última movimentação</option><option value="num">Número</option></select>
-        </div>
+      <div id="rp-f">
+        ${campoBusca("rp-q", 'Questão, tese ou assunto. Ex.: "prescrição intercorrente" ou o número do tema', f.q)}
         ${AJUDA_BUSCA}
-        <div class="chips rolagem" id="rp-areas" style="margin-top:12px"></div>
-        <div class="barra-filtros" style="margin-top:12px;justify-content:space-between">
-          <div class="chips" id="rp-sit"></div>
-          <div class="barra-filtros" style="gap:18px">
-            <label class="alternar"><input type="checkbox" id="rp-pauta"><span class="trilho"></span>Em pauta</label>
-            <label class="alternar"><input type="checkbox" id="rp-susp"><span class="trilho"></span>Com suspensão</label>
-          </div>
-        </div>
+        <div class="fd-filtros filtros-lista" id="rp-pil"></div>
       </div>
       <div class="barra-res"><p id="rp-info"></p><button type="button" class="btn btn-fant btn-peq" id="rp-link">${ico("link")} Copiar link</button></div>
       <ol class="lista" id="rp-lista"></ol>
       <button class="btn btn-claro btn-mais" id="rp-mais" hidden>Mostrar mais</button>`;
-    $("#rp-tipo").value = f.tipo; $("#rp-org").value = f.org; $("#rp-uf").value = f.uf; $("#rp-s").value = f.s; $("#rp-susp").checked = f.susp; $("#rp-pauta").checked = f.pauta;
-    let lista = [], mostrados = 0, termos = [];
+    let lista = [], mostrados = 0, termos = [], ca = {}, cont = {};
     const render = (reset) => {
       const ul = $("#rp-lista");
       if (reset) { ul.innerHTML = ""; mostrados = 0; }
@@ -1706,28 +1740,36 @@
       const b = $("#rp-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
     };
     const aplicar = () => {
-      f.q = $("#rp-q").value; f.tipo = $("#rp-tipo").value; f.org = $("#rp-org").value; f.uf = $("#rp-uf").value; f.s = $("#rp-s").value; f.susp = $("#rp-susp").checked; f.pauta = $("#rp-pauta").checked;
+      f.q = $("#rp-q").value;
       gravarHash("repetitivos", { ...f, tipo: f.tipo === "Tema" ? "" : f.tipo || "todos", s: f.s === "mov" ? "" : f.s });
       const qT = f.q.trim(); const numero = /^\d+$/.test(qT) ? +qT : null;
       const c = numero != null ? Busca.compilar("") : Busca.compilar(f.q); termos = c.termos;
       const base = t.filter((x) => (!f.tipo || x.tp === f.tipo) && (!f.org || x.org === f.org) && (!f.uf || ufs.get(`${x.tp}-${x.n}`)?.has(f.uf))
         && (!f.susp || /suspens/i.test(x.info || "")) && (!f.pauta || emPauta.has(`${x.tp}-${x.n}`))
         && (numero != null ? x.n === numero : c.testa(x._n)));
-      const ca = {}; base.forEach((x) => (x.ar || []).forEach((a) => (ca[a] = (ca[a] || 0) + 1)));
-      $("#rp-areas").innerHTML = `<button type="button" class="chip" data-ar="" aria-pressed="${!f.a}">Todas as matérias</button>` + Object.keys(AREAS).filter((a) => ca[a] || f.a === a).sort((a, b) => (ca[b] || 0) - (ca[a] || 0)).map((a) => `<button type="button" class="chip" data-ar="${a}" aria-pressed="${f.a === a}">${AREAS[a]} <span class="n">${fmtInt(ca[a] || 0)}</span></button>`).join("");
+      ca = {}; base.forEach((x) => (x.ar || []).forEach((a) => (ca[a] = (ca[a] || 0) + 1)));
       const b2 = base.filter((x) => !f.a || (x.ar || []).includes(f.a));
-      const cont = { andamento: 0, julgado: 0, cancelado: 0 }; b2.forEach((x) => cont[x._g] !== undefined && cont[x._g]++);
-      $("#rp-sit").innerHTML = [["", "Todas", b2.length], ["andamento", "Em andamento", cont.andamento], ["julgado", "Julgados", cont.julgado], ["cancelado", "Cancelados/revisados", cont.cancelado]]
-        .map(([k, l, n]) => `<button type="button" class="chip" data-sit="${k}" aria-pressed="${f.sit === k}">${l} <span class="n">${fmtInt(n)}</span></button>`).join("");
+      cont = { "": b2.length, andamento: 0, julgado: 0, cancelado: 0 }; b2.forEach((x) => cont[x._g] !== undefined && cont[x._g]++);
       lista = b2.filter((x) => !f.sit || x._g === f.sit);
       lista.sort(f.s === "num" ? (a, b) => b.n - a.n : (a, b) => (b._mov || "").localeCompare(a._mov || "") || b.n - a.n);
       $("#rp-info").innerHTML = `<b>${fmtInt(lista.length)}</b> registro(s) ${explicacaoHTML(c)}`;
       render(true);
     };
-    $("#rp-sit").addEventListener("click", (e) => { const b = e.target.closest("[data-sit]"); if (!b) return; f.sit = b.dataset.sit; aplicar(); });
-    $("#rp-areas").addEventListener("click", (e) => { const b = e.target.closest("[data-ar]"); if (!b) return; f.a = b.dataset.ar; aplicar(); });
+    pilulas($("#rp-pil"), [
+      { rot: "Situação", tipo: "um", get: () => f.sit, set: (v) => (f.sit = v), opcoes: () => [
+        { v: "", t: "Todas", n: cont[""] }, { v: "andamento", t: "Em andamento", n: cont.andamento, ponto: "rel" },
+        { v: "julgado", t: "Julgados", n: cont.julgado, ponto: "ok" }, { v: "cancelado", t: "Cancelados/revisados", n: cont.cancelado, ponto: "canc" }] },
+      { rot: "Matéria", tipo: "um", get: () => f.a, set: (v) => (f.a = v), opcoes: () => opcoesAreas(ca) },
+      { rot: "Tipo", tipo: "um", padrao: "Tema", semLimpar: true, obrigatorio: true, get: () => f.tipo, set: (v) => (f.tipo = v), rotAtual: () => "Temas repetitivos",
+        opcoes: () => [{ v: "Tema", t: "Temas repetitivos" }, { v: "Controvérsia", t: "Controvérsias" }, { v: "IAC", t: "IAC" }, { v: "SIRDR", t: "SIRDR" }, { v: "PUIL", t: "PUIL" }, { v: "", t: "Todos os tipos" }] },
+      { rot: "Órgão", tipo: "um", get: () => f.org, set: (v) => (f.org = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...["Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção"].map((o) => ({ v: o, t: o }))] },
+      { rot: "Origem", tipo: "um", get: () => f.uf, set: (v) => (f.uf = v), titulo: "UF de origem dos processos", opcoes: () => [{ v: "", t: "Qualquer origem" }, ...todasUF.map((u) => ({ v: u, t: u }))] },
+      { rot: "Em pauta", tipo: "toggle", get: () => f.pauta, set: (v) => (f.pauta = v) },
+      { rot: "Com suspensão", tipo: "toggle", get: () => f.susp, set: (v) => (f.susp = v) },
+      { rot: "Ordem", tipo: "um", padrao: "mov", semLimpar: true, obrigatorio: true, get: () => f.s, set: (v) => (f.s = v), rotAtual: () => "Mais movimentados",
+        opcoes: () => [{ v: "mov", t: "Última movimentação", curto: "Mais movimentados" }, { v: "num", t: "Número do tema", curto: "Por número" }] },
+    ], aplicar);
     $("#rp-q").addEventListener("input", debounce(aplicar, 200));
-    ["#rp-tipo", "#rp-org", "#rp-uf", "#rp-s", "#rp-susp", "#rp-pauta"].forEach((s) => $(s).addEventListener("change", aplicar));
     $("#rp-mais").addEventListener("click", () => render(false));
     $("#rp-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
     ligarAjuda($("#rp-f"), $("#rp-q"), aplicar);
@@ -1749,20 +1791,13 @@
     const corpo = $("#pt-corpo");
     const dias = [...new Set(pl.map((x) => x.d))].sort();
     const f = { q: p.get("q") || "", o: p.get("o") || "", d: p.get("d") || "", rel: p.get("rel") === "1" };
+    const arq = String(D.man.pautas?.arquivo || "");
     corpo.innerHTML = `
-      <div class="card card-pad">
-        <div class="barra-filtros">
-          <div class="campo-busca">${ico("pesquisa")}<input id="pt-q" type="search" placeholder="Processo, OAB (RS 12345) ou nome do advogado" value="${esc(f.q)}"></div>
-          <select id="pt-o" class="sel-auto" aria-label="Órgão"><option value="">Todos os órgãos</option>${Object.entries(D.orgaos).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
-          <label class="alternar"><input type="checkbox" id="pt-rel"><span class="trilho"></span>Só relevantes</label>
-        </div>
-        <div class="chips rolagem" id="pt-dias" style="margin-top:12px"></div>
-      </div>
-      <p class="aviso info" style="margin-top:12px">${ico("sobre")}<span>Pautas publicadas pelo STJ (arquivo de ${fmtData(`${String(D.man.pautas?.arquivo || "").slice(0, 4)}-${String(D.man.pautas?.arquivo || "").slice(4, 6)}-${String(D.man.pautas?.arquivo || "").slice(6, 8)}`)}). “Relevantes” reúne processos vinculados a precedentes qualificados, embargos de divergência e julgamentos das Seções e da Corte Especial. Por privacidade, o site não exibe os nomes das partes; processos em segredo de justiça aparecem sem advogados.</span></p>
-      <div class="barra-res"><p id="pt-info"></p></div>
+      <div class="campo-busca">${ico("pesquisa")}<input id="pt-q" type="search" placeholder="Processo, OAB (RS 12345) ou nome do advogado" value="${esc(f.q)}"></div>
+      <div class="fd-filtros filtros-lista" id="pt-pil"></div>
+      <div class="barra-res"><p id="pt-info"></p><span class="nota" title="“Relevantes” reúne processos vinculados a precedentes qualificados, embargos de divergência e julgamentos das Seções e da Corte Especial. Por privacidade, o site não exibe os nomes das partes; processos em segredo de justiça aparecem sem advogados.">Pautas de ${fmtData(`${arq.slice(0, 4)}-${arq.slice(4, 6)}-${arq.slice(6, 8)}`)} · sem nomes de partes</span></div>
       <div id="pt-lista"></div>
       <button class="btn btn-claro btn-mais" id="pt-mais" hidden>Mostrar mais</button>`;
-    $("#pt-o").value = f.o; $("#pt-rel").checked = f.rel;
     let lista = [], lim = 150, termoOAB = "", qN = "";
     const render = () => {
       const vis = lista.slice(0, lim);
@@ -1779,21 +1814,25 @@
       $("#pt-mais").hidden = lista.length <= lim;
     };
     const aplicar = () => {
-      f.q = $("#pt-q").value.trim(); f.o = $("#pt-o").value; f.rel = $("#pt-rel").checked;
+      f.q = $("#pt-q").value.trim();
       gravarHash("pautas", f);
       termoOAB = /^[A-Za-z]{2}\s*[-/ ]?\s*\d{1,6}[A-Za-z]?$/.test(f.q) ? normOAB(f.q) : "";
       const nd = digitos(f.q); qN = !termoOAB && !/^\d+$/.test(f.q.replace(/[\s.-]/g, "")) ? norm(f.q) : "";
       const base = pl.filter((x) => (!f.o || x.o === f.o) && (!f.rel || f.q || x.s >= 3)
         && (!f.q || (termoOAB ? (x.adv || []).some((a) => a[0] === termoOAB) : /^\d+$/.test(f.q.replace(/[\s./-]/g, "")) ? (x.reg === nd || digitos(x.p) === nd || digitos(x.p).includes(nd)) : x._b.includes(qN))));
       const cont = {}; base.forEach((x) => (cont[x.d] = (cont[x.d] || 0) + 1));
-      $("#pt-dias").innerHTML = `<button type="button" class="chip" data-d="" aria-pressed="${!f.d}">Todas as datas <span class="n">${fmtInt(base.length)}</span></button>` + dias.filter((d) => cont[d]).map((d) => `<button type="button" class="chip" data-d="${d}" aria-pressed="${f.d === d}">${fmtData(d).slice(0, 5)} <span class="n">${cont[d]}</span></button>`).join("");
+      contD = cont; totalD = base.length;
       lista = base.filter((x) => !f.d || x.d === f.d);
       $("#pt-info").innerHTML = `<b>${fmtInt(lista.length)}</b> processo(s) em pauta${f.rel && !f.q ? " · só relevantes" : f.q ? " · busca em todas as pautas" : ""}`;
       lim = 150; render();
     };
-    $("#pt-dias").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; f.d = b.dataset.d; aplicar(); });
+    let contD = {}, totalD = 0;
+    pilulas($("#pt-pil"), [
+      { rot: "Só relevantes", tipo: "toggle", get: () => f.rel, set: (v) => (f.rel = v) },
+      { rot: "Data", tipo: "um", get: () => f.d, set: (v) => (f.d = v), titulo: "Data da sessão", opcoes: () => [{ v: "", t: "Todas as datas", n: totalD }, ...dias.filter((d) => contD[d]).map((d) => ({ v: d, t: fmtDiaL(d), curto: fmtData(d).slice(0, 5), n: contD[d] }))] },
+      { rot: "Órgão", tipo: "um", get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...Object.entries(D.orgaos).map(([k, v]) => ({ v: k, t: v }))] },
+    ], aplicar);
     $("#pt-q").addEventListener("input", debounce(aplicar, 250));
-    ["#pt-o", "#pt-rel"].forEach((s) => $(s).addEventListener("change", aplicar));
     $("#pt-mais").addEventListener("click", () => { lim += 150; render(); });
     aplicar();
   }
@@ -1984,6 +2023,16 @@
       <p>Cada acórdão recebe uma pontuação automática. Somam pontos o julgamento pela Corte Especial (+5) ou por Seção (+4), a tese jurídica registrada (+6), a afetação ao rito repetitivo (+6), os embargos de divergência (+4), o tema repetitivo (+3) e as menções a superação ou mudança de entendimento e a questão nova (+4), a modulação e a distinção (+3) e a divergência (+2). Perdem pontos os agravos internos e os embargos de declaração (−1) e os fundamentos de rotina, como Súmula 7, Súmulas 283/284 do STF, embargos rejeitados e reexame de provas (até −4).</p>
       <p>No Atualize-se, a tese de julgamento de cada acórdão é lida item por item. Saem da fila os julgados em que todos os itens apenas aplicam óbices ou entendimentos consolidados (Súmulas 5, 7, 83, 182, 211, 282 e 284, prequestionamento, embargos de declaração, prisão preventiva por fundamentação usual, dosimetria), e perdem posição os que repetem em série a mesma tese. Quando só parte dos itens tem conteúdo próprio, o cartão mostra apenas esses itens; a tese completa continua na ementa.</p>
       <p>Com 10 pontos ou mais, o acórdão é de <b>alta relevância</b>; de 6 a 9, <b>relevante</b>; de 2 a 5, marcado para <b>acompanhar</b>. A área do direito é identificada pelas palavras da verbetação. É uma triagem para orientar a leitura, e não uma avaliação jurídica.</p>
+      <h3 style="font-family:var(--ui)">Como ler as cores</h3>
+      <p>As cores têm sempre o mesmo significado em todas as telas.</p>
+      <div class="legenda-cores">
+        <p><span class="selo ok">Verde</span> tese firmada e tema julgado</p>
+        <p><span class="selo rel">Âmbar</span> tema afetado ou em andamento e relevância média</p>
+        <p><span class="selo alta">Vermelho</span> o que pede atenção agora: em pauta, alta relevância</p>
+        <p><span class="selo acomp">Azul-claro</span> acórdão de repetitivo publicado e itens para acompanhar</p>
+        <p><span class="selo pri">Azul</span> julgados das Turmas e Seções e marcas de relevância</p>
+        <p>Cada matéria tem a sua própria cor: ${Object.keys(AREAS).map((k) => seloArea(k)).join(" ")}</p>
+      </div>
       <h3 style="font-family:var(--ui)">Privacidade</h3>
       <p>O seu radar (assuntos, processos e OAB) e os itens salvos ficam apenas no seu navegador. A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor.</p>
       <h3 style="font-family:var(--ui)">Situação da base</h3>
