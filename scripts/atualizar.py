@@ -780,12 +780,31 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
                         "tese": (r.get("tese") or "")[:600],
                         "tj": (r.get("tj") or "")[:900],
                     }))
+    # Fila do "Atualize-se": acórdãos recentes com tese ou relevância alta.
+    lim_feed = (dt.date.today() - dt.timedelta(days=80)).isoformat()
+    feed = []
+    for mes in recentes:
+        for arq in sorted((SITE_DATA / "acordaos" / mes).glob("*.json")):
+            for r in ler_json(arq, []):
+                if (r.get("dj") or "") < lim_feed:
+                    continue
+                if not (r.get("tese") or r.get("tj") or r.get("s", 0) >= LIMIAR_DESTAQUE):
+                    continue
+                feed.append(limpar_vazios({
+                    "id": r.get("id"), "m": mes, "o": r.get("o"), "cl": r.get("cl"), "n": r.get("n"),
+                    "reg": r.get("reg"), "dj": r.get("dj"), "dd": r.get("dd"), "rel": r.get("rel"),
+                    "s": r.get("s", 0), "ar": r.get("ar"), "rz": r.get("rz"),
+                    "h": (r.get("em") or "").split("\n", 1)[0][:320],
+                    "tese": (r.get("tese") or "")[:600], "tj": (r.get("tj") or "")[:900],
+                }))
+    feed.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
+    gravar_json(SITE_DATA / "atualize.json", feed)
     dest.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
     indice.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
     gravar_json(SITE_DATA / "destaques.json", dest)
     gravar_json(SITE_DATA / "indice.json", indice)
-    log(f"Destaques: {len(dest)}; índice do radar: {len(indice)} acórdãos ({', '.join(recentes)}).")
-    return {"n": len(dest), "indice": len(indice), "meses": recentes, "limiar": LIMIAR_DESTAQUE}
+    log(f"Destaques: {len(dest)}; índice do radar: {len(indice)}; fila do Atualize-se: {len(feed)} ({', '.join(recentes)}).")
+    return {"n": len(dest), "indice": len(indice), "feed": len(feed), "meses": recentes, "limiar": LIMIAR_DESTAQUE}
 
 # --------------------------------------------------------------------------
 def main():
