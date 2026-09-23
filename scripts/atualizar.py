@@ -1189,6 +1189,105 @@ def atualizar_sumulas() -> dict:
     return {"n": len(lista), "vigentes": vig, "coletadoEm": coletado}
 
 
+# --------------------------------------------------------------------------
+# 8. Informativo de Jurisprudência do STJ (curadoria oficial do Tribunal).
+#    Mesmo esquema das súmulas: tenta a página oficial e, se recusada, usa a
+#    extração guardada em site/informativos-fonte.json.
+# --------------------------------------------------------------------------
+INFO_FONTE = RAIZ / "site" / "informativos-fonte.json"
+MESES_PT = {m: i + 1 for i, m in enumerate("janeiro fevereiro marco abril maio junho julho agosto setembro outubro novembro dezembro".split())}
+RAMO_INFO = [
+    ("proc-penal", r"processual penal"), ("proc-civil", r"processual civil"), ("penal", r"direito penal"),
+    ("tributario", r"tributario"), ("administrativo", r"administrativo"), ("bancario", r"bancario"),
+    ("penal", r"execucao penal"),
+    ("previdenciario", r"previdenciario"), ("consumidor", r"consumidor"), ("empresarial", r"empresarial|falimentar|recuperacao|marcario|propriedade industrial|societario"),
+    ("familia", r"crianca e do adolescente|familia|sucess"), ("ambiental", r"ambiental"), ("civil", r"direito civil|registral|notarial|autoral|digital"),
+    ("trabalho", r"trabalho"),
+]
+RE_PROC_INFO = re.compile(r"((?:[A-Z][A-Za-z]*\s(?:no|na|nos|nas|em)\s)*[A-Z][A-Za-z]+)\s(\d{1,3}(?:\.\d{3})+|\d+)-([A-Z]{2})\b")
+
+
+def _itens_info(t: str) -> str:
+    """Separa em linhas os itens numerados colados no texto ("...anular.2. É")."""
+    t = re.sub(r"(?<=[.;:])\s*(?=(?:\d{1,2}|[IVX]{1,4})[.)]\s*[A-ZÁÉÍÓÚÂÊÔÃÕÇ])", "\n", (t or "").strip())
+    return re.sub(r"\n{2,}", "\n", t)
+
+
+def _data_pt(txt: str) -> str:
+    m = re.search(r"(\d{1,2}) de ([a-zç]+) de (\d{4})", sem_acento(txt or ""))
+    if not m or m.group(2) not in MESES_PT:
+        return ""
+    return f"{m.group(3)}-{MESES_PT[m.group(2)]:02d}-{int(m.group(1)):02d}"
+
+
+def _coletar_informativos_online(desde: int) -> dict:
+    out = {}
+    for n in range(desde, desde + 12):
+        url = f"https://processo.stj.jus.br/jurisprudencia/externo/informativo/?acao=pesquisarumaedicao&livre=%27{n:04d}%27.cod."
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            html = r.read().decode(r.headers.get_content_charset() or "utf-8", "replace")
+        if "clsInformativoBlocoItem" not in html:
+            break
+        out[str(n)] = {"html": True}  # a extração detalhada é feita pelo navegador; aqui só se detecta edição nova
+    return out
+
+
+def atualizar_informativos() -> dict:
+    fonte = ler_json(INFO_FONTE, {})
+    eds = fonte.get("edicoes", {})
+    if eds:
+        try:
+            novas = _coletar_informativos_online(max(int(k) for k in eds) + 1)
+            if novas:
+                log(f"Informativo: há {len(novas)} edição(ões) nova(s) no STJ ainda não extraída(s).")
+        except Exception as e:  # noqa: BLE001
+            log(f"Informativo: página oficial indisponível ({e}); usando a extração de {fonte.get('coletadoEm', '')[:10]}.")
+    lista, teores = [], {}
+    for num, ed in eds.items():
+        data = _data_pt(ed.get("tit", ""))
+        for i, x in enumerate(ed.get("notas", [])):
+            proc = x.get("Processo") or ""
+            ramo = sem_acento(x.get("Ramo do Direito") or "")
+            ar = []
+            for k, rx in RAMO_INFO:
+                if re.search(rx, ramo) and k not in ar:
+                    ar.append(k)
+            tema = (x.get("Tema") or "").strip()
+            dest = _itens_info(x.get("destaque") or "")
+            if not dest:
+                continue
+            procs, vistos_p = [], set()
+            for m in RE_PROC_INFO.finditer(proc):
+                n_ = re.sub(r"\D", "", m.group(2))
+                if n_ not in vistos_p and not m.group(1).startswith("Tema"):
+                    vistos_p.add(n_)
+                    procs.append({"cl": m.group(1), "n": n_, "uf": m.group(3)})
+            rel = re.search(r"Rel\.\s+(?:Ministr[oa]|Desembargador[a]? convocad[oa] do [A-Z0-9]+|Juiz[a]? convocad[oa])\s+([^,]+)", proc)
+            julg = re.search(r"julgado em (\d{1,2})/(\d{1,2})/(\d{4})", proc)
+            orgao = ""
+            for nome in ("Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção", "Primeira Turma", "Segunda Turma", "Terceira Turma", "Quarta Turma", "Quinta Turma", "Sexta Turma"):
+                if nome in proc:
+                    orgao = nome
+                    break
+            tm = re.search(r"\(Tema (\d[\d.]*)\)", proc)
+            texto = sem_acento(f"{tema} {dest}")
+            teores[f"{num}-{i + 1}"] = [_itens_info(x.get("teor") or "")[:6000], (x.get("adic") or "")[:800]]
+            lista.append(limpar_vazios({
+                "id": f"{num}-{i + 1}", "ed": int(num), "d": data, "sec": (x.get("sec") or "").title().replace(" De ", " de ").replace(" Da ", " da "),
+                "ramo": re.sub(r"\b(Do|Da|Dos|Das|De|E)\b", lambda m: m.group(1).lower(), (x.get("Ramo do Direito") or "").title()),
+                "ar": ar, "sa": subareas(texto, ar), "tema": tema, "t": dest,
+                "proc": proc[:600], "p": procs[:4], "rel": rel.group(1).strip() if rel else "", "org": orgao,
+                "julg": f"{julg.group(3)}-{int(julg.group(2)):02d}-{int(julg.group(1)):02d}" if julg else "",
+                "tr": int(tm.group(1).replace(".", "")) if tm else None,
+            }))
+    lista.sort(key=lambda x: (-x["ed"], x["id"]))
+    gravar_json(SITE_DATA / "informativos.json", lista)
+    gravar_json(SITE_DATA / "informativos-teor.json", teores)
+    log(f"Informativo: {len(lista)} notas de {len(eds)} edições.")
+    return {"n": len(lista), "edicoes": len(eds), "ultima": max((int(k) for k in eds), default=0), "coletadoEm": fonte.get("coletadoEm", "")}
+
+
 # Rótulos das submatérias, lidos pelo site.
 def gravar_taxonomia() -> None:
     gravar_json(SITE_DATA / "submaterias.json", {a: [[k, rot] for k, rot, _ in lst] for a, lst in SUBAREAS.items() if lst})
@@ -1248,6 +1347,13 @@ def main():
         erros.append(f"súmulas: {e}")
         log("ERRO súmulas:", e)
 
+    informativos = {}
+    try:
+        informativos = atualizar_informativos()
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"informativos: {e}")
+        log("ERRO informativos:", e)
+
     radar = {}
     try:
         radar = atualizar_radar(args.dias_radar, meses_disp)
@@ -1282,6 +1388,7 @@ def main():
         "destaques": destaques or manifesto_ant.get("destaques", {}),
         "pautas": pautas or manifesto_ant.get("pautas", {}),
         "sumulas": sumulas or manifesto_ant.get("sumulas", {}),
+        "informativos": informativos or manifesto_ant.get("informativos", {}),
         "esquema": ESQUEMA,
         "erros": erros,
     }
