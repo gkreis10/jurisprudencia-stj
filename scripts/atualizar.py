@@ -1214,10 +1214,14 @@ def _itens_info(t: str) -> str:
 
 
 def _data_pt(txt: str) -> str:
-    m = re.search(r"(\d{1,2}) de ([a-zç]+) de (\d{4})", sem_acento(txt or ""))
-    if not m or m.group(2) not in MESES_PT:
-        return ""
-    return f"{m.group(3)}-{MESES_PT[m.group(2)]:02d}-{int(m.group(1)):02d}"
+    """Última data por extenso do texto ("18 a 29 de junho de 2012", "1º de junho de 2012")."""
+    t = sem_acento(txt or "").replace("º", "").replace("°", "")
+    ms = re.findall(r"(\d{1,2})o? (?:de )?([a-z]+)(?: de (\d{4}))?", t)
+    ano = re.findall(r"\b((?:19|20)\d{2})\b", t)
+    for d, mes, a in reversed(ms):
+        if mes in MESES_PT and (a or ano):
+            return f"{a or ano[-1]}-{MESES_PT[mes]:02d}-{int(d):02d}"
+    return ""
 
 
 def _coletar_informativos_online(desde: int) -> dict:
@@ -1233,9 +1237,97 @@ def _coletar_informativos_online(desde: int) -> dict:
     return out
 
 
+INFO_FONTES_ANTIGAS = RAIZ / "fontes" / "informativos"
+RE_CIT_ANTIGA = re.compile(r"((?:[A-Z][A-Za-z]*\s(?:no|na|nos|nas|em)\s)*[A-Z][A-Za-z]+ \d[\d.]*-[A-Z]{2},?\s*Rel\.\s*(?:Min|Ministr)[^;]*?julgad[oa]s?\s+em\s+\d{1,2}/\d{1,2}/\d{4})")
+ORG_NOME = {sem_acento(v).upper(): k for k, v in ORGAOS.items()}
+
+
+# Notas antigas não trazem o ramo do direito: deduz pela linguagem e pelo órgão.
+_TERMOS_AREA = [
+    ("tributario", r"tribut|imposto|icms|\biss\b|ipi\b|contribuic\w+ (social|previdenciaria)|cofins|execucao fiscal|fisco"),
+    ("previdenciario", r"previdenci|\binss\b|aposentadoria|beneficio assistencial|auxilio-doenca"),
+    ("administrativo", r"servidor|administracao publica|licitac|improbidade|concurso publico|desapropria|ente publico|poder publico"),
+    ("ambiental", r"ambiental|meio ambiente"),
+    ("consumidor", r"consumidor|\bcdc\b|fornecedor|relacao de consumo|plano de saude"),
+    ("bancario", r"bancari|instituicao financeira|cedula de credito|alienacao fiduciaria|cartao de credito"),
+    ("empresarial", r"falencia|recuperacao judicial|sociedade|societari|marca|patente|duplicata|cheque|nota promissoria"),
+    ("familia", r"alimentos|divorcio|uniao estavel|paternidade|heranca|sucess|inventario|guarda"),
+    ("proc-penal", r"habeas corpus|prisao preventiva|denuncia|acao penal|tribunal do juri|nulidade processual penal|flagrante"),
+    ("penal", r"\bcrime|\bpena\b|delito|furto|roubo|trafico|homicidio|estupro|execucao penal"),
+    ("proc-civil", r"\bcpc\b|recurso especial|agravo|embargos|execucao|cumprimento de sentenca|honorarios|competencia|tutela|acao rescisoria|citacao|coisa julgada"),
+    ("civil", r"contrato|responsabilidade civil|dano moral|indeniza|posse|propriedade|usucapiao|condominio|locacao|seguro|prescricao"),
+]
+_PERMITIDAS_ORG = {"penal": {"penal", "proc-penal", "ambiental"}, "privado": {"civil", "consumidor", "bancario", "empresarial", "familia", "proc-civil"}, "publico": {"tributario", "previdenciario", "administrativo", "ambiental", "proc-civil"}}
+
+
+def _areas_por_termos(t: str, slug: str) -> list[str]:
+    grupo = "penal" if slug in PENAIS else "privado" if slug in PRIVADO else "publico" if slug in PUBLICO else ""
+    out = [a for a, rx in _TERMOS_AREA if re.search(rx, t) and (not grupo or a in _PERMITIDAS_ORG[grupo])]
+    return out[:2]
+
+
+def _nota_info(num: str, i: int, x: dict, data: str) -> tuple[dict | None, list]:
+    """Normaliza uma nota do Informativo (formato atual, com destaque, ou antigo, narrativo)."""
+    orgao, sec = "", (x.get("sec") or "")
+    if x.get("antigo"):
+        tema = (x.get("tit") or "").strip()
+        txt = (x.get("txt") or "").strip()
+        if not txt:
+            return None, []
+        cits = [m.group(1) for m in RE_CIT_ANTIGA.finditer(txt)]
+        proc = "; ".join(cits)
+        corpo = txt
+        if cits and txt.rstrip(". ").endswith(cits[-1].rstrip(". ")):
+            corpo = txt[: txt.rfind(cits[0])].strip() if txt.rfind(cits[0]) > 60 else txt
+        slug = ORG_NOME.get(sem_acento(sec).upper(), "")
+        orgao = ORGAOS.get(slug, "")
+        ar = areas_do_direito(f"{tema}. {corpo[:600]}", slug) if tema or corpo else []
+        if not ar:
+            ar = _areas_por_termos(sem_acento(f"{tema} {corpo[:1500]}"), slug)
+        dest, teor, adic = corpo, "", ""
+        ramo = ""
+    else:
+        proc = x.get("Processo") or ""
+        ramo_n = sem_acento(x.get("Ramo do Direito") or "")
+        ar = []
+        for k, rx in RAMO_INFO:
+            if re.search(rx, ramo_n) and k not in ar:
+                ar.append(k)
+        tema = (x.get("Tema") or "").strip()
+        dest = _itens_info(x.get("destaque") or "")
+        if not dest:
+            return None, []
+        teor, adic = _itens_info(x.get("teor") or ""), (x.get("adic") or "")
+        ramo = re.sub(r"\b(Do|Da|Dos|Das|De|E)\b", lambda m: m.group(1).lower(), (x.get("Ramo do Direito") or "").title())
+    procs, vistos_p = [], set()
+    for m in RE_PROC_INFO.finditer(proc):
+        n_ = re.sub(r"\D", "", m.group(2))
+        if n_ not in vistos_p and not m.group(1).startswith("Tema"):
+            vistos_p.add(n_)
+            procs.append({"cl": m.group(1), "n": n_, "uf": m.group(3)})
+    rel = re.search(r"Rel\.\s+(?:Min\.|Ministr[oa]|Desembargador[a]? convocad[oa] do [A-Z0-9]+|Juiz[a]? convocad[oa])\s+([^,]+)", proc)
+    julg = re.search(r"julgad[oa]s? em (\d{1,2})/(\d{1,2})/(\d{4})", proc)
+    if not orgao:
+        for nome in ORGAOS.values():
+            if nome in proc:
+                orgao = nome
+                break
+    tm = re.search(r"\(Tema (\d[\d.]*)\)", proc)
+    nid = f"{num}-{i + 1}"
+    longo = len(dest) > 900
+    reg = limpar_vazios({
+        "id": nid, "ed": int(num), "d": data, "sec": sec.title().replace(" De ", " de ").replace(" Da ", " da "), "ramo": ramo,
+        "ar": ar, "sa": subareas(sem_acento(f"{tema} {dest[:800]}"), ar), "tema": tema, "t": dest[:900] + ("…" if longo else ""), "lg": 1 if longo else None,
+        "proc": proc[:600], "p": procs[:4], "rel": rel.group(1).strip() if rel else "", "org": orgao,
+        "julg": f"{julg.group(3)}-{int(julg.group(2)):02d}-{int(julg.group(1)):02d}" if julg else "",
+        "tr": int(tm.group(1).replace(".", "")) if tm else None, "an": 1 if x.get("antigo") else None,
+    })
+    return reg, [teor[:6000] if teor else (dest if longo else ""), adic[:800]]
+
+
 def atualizar_informativos() -> dict:
     fonte = ler_json(INFO_FONTE, {})
-    eds = fonte.get("edicoes", {})
+    eds = dict(fonte.get("edicoes", {}))
     if eds:
         try:
             novas = _coletar_informativos_online(max(int(k) for k in eds) + 1)
@@ -1243,49 +1335,89 @@ def atualizar_informativos() -> dict:
                 log(f"Informativo: há {len(novas)} edição(ões) nova(s) no STJ ainda não extraída(s).")
         except Exception as e:  # noqa: BLE001
             log(f"Informativo: página oficial indisponível ({e}); usando a extração de {fonte.get('coletadoEm', '')[:10]}.")
-    lista, teores = [], {}
+    # Edições antigas, extraídas em lotes e guardadas fora do site publicado.
+    for arq in sorted(INFO_FONTES_ANTIGAS.glob("*.json")) if INFO_FONTES_ANTIGAS.exists() else []:
+        for k, v in ler_json(arq, {}).get("edicoes", {}).items():
+            eds.setdefault(k, v)
+    todas, teores = [], {}
     for num, ed in eds.items():
         data = _data_pt(ed.get("tit", ""))
         for i, x in enumerate(ed.get("notas", [])):
-            proc = x.get("Processo") or ""
-            ramo = sem_acento(x.get("Ramo do Direito") or "")
-            ar = []
-            for k, rx in RAMO_INFO:
-                if re.search(rx, ramo) and k not in ar:
-                    ar.append(k)
-            tema = (x.get("Tema") or "").strip()
-            dest = _itens_info(x.get("destaque") or "")
-            if not dest:
-                continue
-            procs, vistos_p = [], set()
-            for m in RE_PROC_INFO.finditer(proc):
-                n_ = re.sub(r"\D", "", m.group(2))
-                if n_ not in vistos_p and not m.group(1).startswith("Tema"):
-                    vistos_p.add(n_)
-                    procs.append({"cl": m.group(1), "n": n_, "uf": m.group(3)})
-            rel = re.search(r"Rel\.\s+(?:Ministr[oa]|Desembargador[a]? convocad[oa] do [A-Z0-9]+|Juiz[a]? convocad[oa])\s+([^,]+)", proc)
-            julg = re.search(r"julgado em (\d{1,2})/(\d{1,2})/(\d{4})", proc)
-            orgao = ""
-            for nome in ("Corte Especial", "Primeira Seção", "Segunda Seção", "Terceira Seção", "Primeira Turma", "Segunda Turma", "Terceira Turma", "Quarta Turma", "Quinta Turma", "Sexta Turma"):
-                if nome in proc:
-                    orgao = nome
-                    break
-            tm = re.search(r"\(Tema (\d[\d.]*)\)", proc)
-            texto = sem_acento(f"{tema} {dest}")
-            teores[f"{num}-{i + 1}"] = [_itens_info(x.get("teor") or "")[:6000], (x.get("adic") or "")[:800]]
-            lista.append(limpar_vazios({
-                "id": f"{num}-{i + 1}", "ed": int(num), "d": data, "sec": (x.get("sec") or "").title().replace(" De ", " de ").replace(" Da ", " da "),
-                "ramo": re.sub(r"\b(Do|Da|Dos|Das|De|E)\b", lambda m: m.group(1).lower(), (x.get("Ramo do Direito") or "").title()),
-                "ar": ar, "sa": subareas(texto, ar), "tema": tema, "t": dest,
-                "proc": proc[:600], "p": procs[:4], "rel": rel.group(1).strip() if rel else "", "org": orgao,
-                "julg": f"{julg.group(3)}-{int(julg.group(2)):02d}-{int(julg.group(1)):02d}" if julg else "",
-                "tr": int(tm.group(1).replace(".", "")) if tm else None,
-            }))
-    lista.sort(key=lambda x: (-x["ed"], x["id"]))
-    gravar_json(SITE_DATA / "informativos.json", lista)
-    gravar_json(SITE_DATA / "informativos-teor.json", teores)
-    log(f"Informativo: {len(lista)} notas de {len(eds)} edições.")
-    return {"n": len(lista), "edicoes": len(eds), "ultima": max((int(k) for k in eds), default=0), "coletadoEm": fonte.get("coletadoEm", "")}
+            reg, teor = _nota_info(num, i, x, data)
+            if reg:
+                todas.append(reg)
+                if any(teor):
+                    teores[reg["id"]] = teor
+    todas.sort(key=lambda x: (-x["ed"], x["id"]))
+    ultima = max((x["ed"] for x in todas), default=0)
+    corte = ultima - 103  # cerca de dois anos de edições ficam no arquivo principal
+    recentes = [x for x in todas if x["ed"] > corte]
+    gravar_json(SITE_DATA / "informativos.json", recentes)
+    pasta = SITE_DATA / "informativos"
+    pasta.mkdir(exist_ok=True)
+    for f in pasta.glob("*.json"):
+        f.unlink()
+    por_ano, teor_ano, idx = {}, {}, {}
+    for x in todas:
+        ano = (x.get("d") or "0000")[:4]
+        idx.setdefault(x["ed"], [x["ed"], x.get("d", ""), ano, 0])[3] += 1
+        if x["ed"] <= corte:
+            por_ano.setdefault(ano, []).append(x)
+        if x["id"] in teores:
+            teor_ano.setdefault(ano, {})[x["id"]] = teores[x["id"]]
+    for ano, l in por_ano.items():
+        gravar_json(pasta / f"{ano}.json", l)
+    for ano, d in teor_ano.items():
+        gravar_json(pasta / f"teor-{ano}.json", d)
+    gravar_json(pasta / "indice.json", {"corte": corte, "eds": sorted(idx.values(), key=lambda e: -e[0]), "antigos": sorted(por_ano)})
+    gravar_json(SITE_DATA / "informativos-teor.json", {k: v for x in recentes if (v := teores.get(x["id"])) for k in [x["id"]]})
+    log(f"Informativo: {len(todas)} notas de {len(eds)} edições ({len(recentes)} no arquivo principal).")
+    return {"n": len(todas), "edicoes": len(eds), "ultima": ultima, "primeira": min((x["ed"] for x in todas), default=0), "coletadoEm": fonte.get("coletadoEm", "")}
+
+
+# --------------------------------------------------------------------------
+# 9. Jurisprudência em Teses (STJ): teses consolidadas por assunto, com os
+#    precedentes de cada uma. Extraída pelo navegador (o STJ recusa robôs).
+# --------------------------------------------------------------------------
+JT_FONTE = RAIZ / "fontes" / "jurisprudencia-em-teses.json"
+RAMO_JT = RAMO_INFO + [("empresarial", r"propriedade intelectual"), ("administrativo", r"direitos humanos")]
+
+
+def _iso_br(d: str) -> str:
+    m = re.match(r"(\d{2})/(\d{2})/(\d{4})", d or "")
+    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else ""
+
+
+def atualizar_teses() -> dict:
+    fonte = ler_json(JT_FONTE, {})
+    eds, ramos = fonte.get("edicoes", {}), fonte.get("ramos", {})
+    ramo_de = {}
+    for r, lst in ramos.items():
+        for e in lst:
+            ramo_de.setdefault(str(e), []).append(r.title().replace(" Do ", " do ").replace(" Da ", " da ").replace(" E ", " e ").replace(" De ", " de "))
+    out = []
+    for k, e in eds.items():
+        rs = ramo_de.get(str(k), [])
+        ar = []
+        for r in rs:
+            for a, rx in RAMO_JT:
+                if re.search(rx, sem_acento(r)) and a not in ar:
+                    ar.append(a)
+        if not ar and re.search(r"autoral|marco civil|internet", sem_acento(e.get("tit", ""))):
+            ar = ["civil"]
+        teses = []
+        for t in e.get("teses", []):
+            txt = sem_acento(f"{e.get('tit', '')} {t.get('t', '')}")
+            ar_t = [] if ar else _areas_por_termos(txt, "")  # edições temáticas (ex.: Covid-19)
+            sa = subareas(txt, ar or ar_t)
+            teses.append(limpar_vazios({"n": t.get("n"), "t": t.get("t", ""), "ac": t.get("ac", [])[:8], "nac": t.get("nac"), "dm": t.get("dm"), "ar": ar_t, "sa": sa}))
+        out.append(limpar_vazios({"ed": int(k), "tit": e.get("tit", ""), "ramo": rs, "ar": ar, "disp": _iso_br(e.get("disp")), "ate": _iso_br(e.get("ate")), "teses": teses}))
+    out.sort(key=lambda x: -x["ed"])
+    if out:
+        gravar_json(SITE_DATA / "teses.json", out)
+    n = sum(len(x["teses"]) for x in out)
+    log(f"Jurisprudência em Teses: {len(out)} edições, {n} teses.")
+    return {"edicoes": len(out), "teses": n, "coletadoEm": fonte.get("coletadoEm", "")}
 
 
 # Rótulos das submatérias, lidos pelo site.
@@ -1354,6 +1486,13 @@ def main():
         erros.append(f"informativos: {e}")
         log("ERRO informativos:", e)
 
+    teses = {}
+    try:
+        teses = atualizar_teses()
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"teses: {e}")
+        log("ERRO teses:", e)
+
     radar = {}
     try:
         radar = atualizar_radar(args.dias_radar, meses_disp)
@@ -1389,6 +1528,7 @@ def main():
         "pautas": pautas or manifesto_ant.get("pautas", {}),
         "sumulas": sumulas or manifesto_ant.get("sumulas", {}),
         "informativos": informativos or manifesto_ant.get("informativos", {}),
+        "teses": teses or manifesto_ant.get("teses", {}),
         "esquema": ESQUEMA,
         "erros": erros,
     }
