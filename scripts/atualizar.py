@@ -191,37 +191,146 @@ def mes_menos(ano_mes: str, n: int) -> str:
 # --------------------------------------------------------------------------
 # Enriquecimento: área do direito e relevância
 # --------------------------------------------------------------------------
-ESQUEMA = 2  # aumente quando mudar o enriquecimento; os arquivos são refeitos sem novo download
+ESQUEMA = 5  # aumente quando mudar o enriquecimento; os arquivos são refeitos sem novo download
 
 
 def sem_acento(s: str) -> str:
     return unicodedata.normalize("NFD", s or "").encode("ascii", "ignore").decode().lower()
 
 
-AREAS = [
-    ("penal", r"\bpenal\b|habeas corpus|\bprocesso penal|execucao penal|trafico de drogas|\bcrimes?\b|dosimetria|prisao preventiva|\bjuri\b"),
-    ("proc-civil", r"processual civil|processo civil|direito processual\b(?! penal)|cumprimento de sentenca|honorarios advocaticios|acao rescisoria|tutela provisoria"),
-    ("civil", r"\bdireito civil\b|^civil\b|\bcivil e\b|responsabilidade civil|\bcontrat|dano moral|danos morais|usucapiao|\bposse\b|propriedade|condominio|locacao|direito privado"),
-    ("familia", r"\bfamilia\b|\balimentos\b|\bguarda\b|divorcio|uniao estavel|sucess|inventario|partilha|testamento|regime de bens|adocao"),
-    ("consumidor", r"consumidor|\bcdc\b|plano de saude|operadora de (plano de )?saude|relacao de consumo"),
-    ("empresarial", r"empresarial|recuperacao judicial|falencia|societari|sociedade anonima|\bmarcas?\b|propriedade industrial|titulo de credito|duplicata|\bcheque\b|nota promissoria"),
-    ("bancario", r"bancari|instituicao financeira|cedula de credito|alienacao fiduciaria|cartao de credito|juros remuneratorios|capitalizacao de juros|superendividamento"),
-    ("tributario", r"tributari|\bicms\b|\bpis\b|cofins|imposto de renda|\biss\b|\bipi\b|\biptu\b|execucao fiscal|contribuicao previdenciaria|credito tributario"),
-    ("administrativo", r"administrativ|servidor publico|improbidade|licitacao|concurso publico|desapropriacao|mandado de seguranca|responsabilidade do estado"),
-    ("previdenciario", r"previdenciari|aposentadoria|beneficio previdenciario|\binss\b|auxilio-doenca|pensao por morte"),
-    ("ambiental", r"ambiental|meio ambiente"),
-    ("trabalho", r"trabalhista|justica do trabalho|\bfgts\b"),
+# Área do direito: primeiro a rotulação oficial que abre a verbetação
+# ("DIREITO TRIBUTÁRIO.", "PROCESSUAL CIVIL E CONSUMIDOR."); depois palavras-chave,
+# aceitas somente quando o órgão julgador tem competência para a matéria.
+PRIVADO = {"segunda-secao", "terceira-turma", "quarta-turma"}
+PUBLICO = {"primeira-secao", "primeira-turma", "segunda-turma"}
+PENAIS = {"terceira-secao", "quinta-turma", "sexta-turma"}
+TODOS = PRIVADO | PUBLICO | PENAIS | {"corte-especial"}
+
+ROTULOS = [
+    ("penal", r"processual penal|processo penal|execucao penal|\bpenal\b"),
+    ("proc-civil", r"processual civil|processo civil|direito processual\b(?! penal)"),
+    ("civil", r"(?<!processual )(?<!processo )\bcivil\b|direito privado"),
+    ("familia", r"(?<!bem de )\bfamilia\b|sucessoes|sucessorio"),
+    ("consumidor", r"consumidor"),
+    ("empresarial", r"empresarial|comercial|falimentar|societario|recuperacao judicial"),
+    ("bancario", r"bancario"),
+    ("tributario", r"tributario|\bfiscal\b"),
+    ("administrativo", r"administrativo|adminstrativo"),
+    ("previdenciario", r"previdenciario"),
+    ("ambiental", r"ambiental"),
+    ("trabalho", r"trabalho|trabalhista"),
 ]
-AREAS_RE = [(k, re.compile(v)) for k, v in AREAS]
-PENAIS = {"quinta-turma", "sexta-turma", "terceira-secao"}
+ROTULOS_RE = [(k, re.compile(v)) for k, v in ROTULOS]
+PALAVRAS_ROTULO = set("""direito direitos e do da de dos das o a processual processo penal civil privado publico
+familia sucessoes sucessorio consumidor empresarial comercial falimentar societario recuperacao judicial bancario
+tributario fiscal execucao administrativo previdenciario ambiental trabalho trabalhista constitucional internacional
+eleitoral registral notarial urbanistico economico securitario imobiliario agrario desportivo militar sancionador
+financeiro minerario ementa adminstrativo""".split())
+
+TEMAS_CHAVE = [
+    ("familia", PRIVADO, r"(?<!bem de )\bfamilia\b|alimentos (gravidicos|provisorios|definitivos|avoengos)|pensao alimenticia|acao de alimentos|execucao de alimentos|obrigacao alimentar|\bguarda (compartilhada|unilateral|de (menor|filho|crianca))|divorcio|uniao estavel|paternidade|maternidade|inventario|partilha|heranca|herdeir|testament|sucessao (hereditaria|causa mortis|testamentaria)|regime de bens|adocao|alienacao parental|poder familiar|curatela|interdicao"),
+    ("consumidor", PRIVADO, r"consumidor|\bcdc\b|plano de saude|operadora de (plano de )?saude|relacao de consumo"),
+    ("bancario", PRIVADO, r"bancari|instituicao financeira|cedula de credito|alienacao fiduciaria|cartao de credito|juros remuneratorios|capitalizacao de juros|superendividamento|contrato de mutuo|emprestimo consignado"),
+    ("empresarial", PRIVADO, r"recuperacao judicial|falencia|societari|sociedade (anonima|limitada|empresaria)|dissolucao (parcial )?de sociedade|propriedade industrial|\bmarcas?\b|patente|titulo de credito|duplicata|nota promissoria"),
+    ("civil", PRIVADO, r"responsabilidade civil|\bcontrat|dano moral|danos morais|usucapiao|\bposse\b|condominio|locacao|direito de propriedade|\bseguro\b|compra e venda|direito autoral"),
+    ("tributario", PUBLICO, r"\bicms\b|\bpis\b|cofins|imposto|\biss\b|\bipi\b|\biptu\b|execucao fiscal|credito tributario|contribuicao (previdenciaria|social)|\btributo"),
+    ("administrativo", PUBLICO, r"servidor publico|servidores publicos|improbidade|licitacao|concurso publico|desapropriacao|responsabilidade civil do estado|ato administrativo|agencia reguladora|processo administrativo disciplinar"),
+    ("previdenciario", PUBLICO, r"aposentadoria|beneficio previdenciario|\binss\b|auxilio-doenca|pensao por morte|\brgps\b"),
+    ("ambiental", TODOS, r"meio ambiente|dano ambiental|ambiental"),
+    ("penal", PENAIS, r"habeas corpus|trafico de drogas|dosimetria|prisao preventiva|\bjuri\b|execucao penal|\bcrimes?\b|\bpena\b"),
+    ("proc-civil", PRIVADO | PUBLICO, r"cumprimento de sentenca|honorarios advocaticios|acao rescisoria|tutela provisoria|agravo de instrumento|embargos a execucao|embargos de terceiro"),
+]
+TEMAS_CHAVE_RE = [(k, orgs, re.compile(v)) for k, orgs, v in TEMAS_CHAVE]
+
+
+def _segmento_rotulo(seg: str) -> bool:
+    palavras = re.findall(r"[a-z]+", seg)
+    return bool(palavras) and all(w in PALAVRAS_ROTULO for w in palavras) and any(w not in {"direito", "e", "do", "da", "de", "dos", "das", "o", "a", "ementa"} for w in palavras)
 
 
 def areas_do_direito(em: str, orgao: str) -> list[str]:
-    cab = sem_acento((em or "")[:600])
-    res = [k for k, rx in AREAS_RE if rx.search(cab)]
-    if orgao in PENAIS and "penal" not in res:
-        res.insert(0, "penal")
+    cab = sem_acento((em or "").split("\n", 1)[0][:700])
+    res: list[str] = []
+    for seg in re.split(r"[.;]\s+", cab)[:6]:
+        if _segmento_rotulo(seg):
+            for k, rx in ROTULOS_RE:
+                if rx.search(seg) and k not in res:
+                    res.append(k)
+    comp = orgao if orgao in TODOS else ""
+    for k, orgs, rx in TEMAS_CHAVE_RE:
+        if k in res or orgao == "corte-especial":  # na Corte Especial vale só a rotulação oficial
+            continue
+        if comp not in orgs:
+            continue
+        if rx.search(cab):
+            res.append(k)
+    if not res and orgao in PENAIS:
+        res.append("penal")
+    # Uma matéria só entra se o órgão julga aquele ramo (evita "família" na 1ª Seção).
+    if orgao in PUBLICO:
+        res = [a for a in res if a not in {"familia", "consumidor", "bancario", "empresarial", "penal"} or a in _rotulos_explicitos(cab)]
+    elif orgao in PRIVADO:
+        res = [a for a in res if a not in {"tributario", "previdenciario", "penal"} or a in _rotulos_explicitos(cab)]
+    elif orgao in PENAIS:
+        res = [a for a in res if a in {"penal", "ambiental"} or a in _rotulos_explicitos(cab)]
     return res[:4]
+
+
+def _rotulos_explicitos(cab: str) -> set[str]:
+    out = set()
+    for seg in re.split(r"[.;]\s+", cab)[:6]:
+        if _segmento_rotulo(seg):
+            out |= {k for k, rx in ROTULOS_RE if rx.search(seg)}
+    return out
+
+
+ORG_TEMA_GRUPO = {"Primeira Seção": PUBLICO, "Segunda Seção": PRIVADO, "Terceira Seção": PENAIS, "Corte Especial": TODOS}
+RAMOS_TEMA = [
+    ("proc-civil", r"processual civil"), ("administrativo", r"administrativo"),
+    ("tributario", r"tributario|^pis$|pasep|^simples$|^sesc$|^senac$"), ("civil", r"direito civil"),
+    ("previdenciario", r"previdenci"), ("penal", r"penal"), ("consumidor", r"consumidor"), ("ambiental", r"ambiental"),
+]
+
+
+def areas_do_tema(t: dict) -> list[str]:
+    ass = t.get("ass", "")
+    tops = [re.sub(r"^\d+-\s*", "", x).strip() for x in ass.split(",")]
+    res = []
+    for top in tops:
+        if top and top.upper() == top and re.search(r"[A-Z]", top):
+            tn = sem_acento(top)
+            for k, rx in RAMOS_TEMA:
+                if re.search(rx, tn) and k not in res:
+                    res.append(k)
+    grupo = ORG_TEMA_GRUPO.get(t.get("org", ""), TODOS)
+    texto = sem_acento(f"{ass} {t.get('q', '')}")
+    for k, orgs, rx in TEMAS_CHAVE_RE:
+        if k not in res and (grupo is TODOS or grupo & orgs) and rx.search(texto):
+            res.append(k)
+    return res[:4]
+
+
+RE_TESE = re.compile(r"teses? de julgamento\s*:?\s*", re.I)
+RE_FIM_TESE = re.compile(r"\n?\s*(dispositivos? (legais? )?relevantes?|legisla[cç][aã]o relevante|jurisprud[eê]ncia relevante|jurisprud[eê]ncia citada)", re.I)
+
+
+def extrair_tese(em: str) -> str:
+    if not em:
+        return ""
+    m = RE_TESE.search(em)
+    if not m:
+        d = re.search(r"dispositivo e tese", em, re.I)
+        m = re.search(r"\btese\s*:\s*", em[d.end():], re.I) if d else None
+        if not m:
+            return ""
+        ini = d.end() + m.end()
+    else:
+        ini = m.end()
+    txt = em[ini:ini + 2500]
+    f = RE_FIM_TESE.search(txt)
+    if f:
+        txt = txt[: f.start()]
+    return txt.strip(" \n:;\"“”'")[:1500]
 
 
 SINAIS = [
@@ -281,6 +390,9 @@ def pontuar(r: dict) -> tuple[int, list[str]]:
 
 def enriquecer(r: dict) -> dict:
     r["ar"] = areas_do_direito(r.get("em", ""), r.get("o", ""))
+    r["tj"] = extrair_tese(r.get("em", ""))
+    if not r["tj"]:
+        r.pop("tj")
     r["s"], r["rz"] = pontuar(r)
     if not r["ar"]:
         r.pop("ar")
@@ -439,6 +551,10 @@ def atualizar_temas() -> dict:
             "rg": compactar(x.get("numeroRepercussaoGeralSTF")),
             "rgd": compactar(x.get("descricaoRepercussaoGeral")),
         }))
+    for t in temas:
+        a = areas_do_tema(t)
+        if a:
+            t["ar"] = a
     # A base oficial traz algumas linhas repetidas: mantém uma por registro.
     unicos = {}
     for t in temas:
@@ -661,7 +777,8 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
                     indice.append(limpar_vazios({
                         "id": r.get("id"), "m": mes, "o": r.get("o"), "cl": r.get("cl"), "n": r.get("n"),
                         "reg": r.get("reg"), "dj": r.get("dj"), "s": sc, "ar": r.get("ar"), "h": cab,
-                        "tese": (r.get("tese") or "")[:400],
+                        "tese": (r.get("tese") or "")[:600],
+                        "tj": (r.get("tj") or "")[:900],
                     }))
     dest.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
     indice.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
