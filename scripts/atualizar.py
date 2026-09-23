@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
+import hashlib
+import unicodedata
 import datetime as dt
 import io
 import json
@@ -184,6 +187,120 @@ def mes_menos(ano_mes: str, n: int) -> str:
     return f"{total // 12:04d}-{total % 12 + 1:02d}"
 
 
+
+# --------------------------------------------------------------------------
+# Enriquecimento: área do direito e relevância
+# --------------------------------------------------------------------------
+ESQUEMA = 2  # aumente quando mudar o enriquecimento; os arquivos são refeitos sem novo download
+
+
+def sem_acento(s: str) -> str:
+    return unicodedata.normalize("NFD", s or "").encode("ascii", "ignore").decode().lower()
+
+
+AREAS = [
+    ("penal", r"\bpenal\b|habeas corpus|\bprocesso penal|execucao penal|trafico de drogas|\bcrimes?\b|dosimetria|prisao preventiva|\bjuri\b"),
+    ("proc-civil", r"processual civil|processo civil|direito processual\b(?! penal)|cumprimento de sentenca|honorarios advocaticios|acao rescisoria|tutela provisoria"),
+    ("civil", r"\bdireito civil\b|^civil\b|\bcivil e\b|responsabilidade civil|\bcontrat|dano moral|danos morais|usucapiao|\bposse\b|propriedade|condominio|locacao|direito privado"),
+    ("familia", r"\bfamilia\b|\balimentos\b|\bguarda\b|divorcio|uniao estavel|sucess|inventario|partilha|testamento|regime de bens|adocao"),
+    ("consumidor", r"consumidor|\bcdc\b|plano de saude|operadora de (plano de )?saude|relacao de consumo"),
+    ("empresarial", r"empresarial|recuperacao judicial|falencia|societari|sociedade anonima|\bmarcas?\b|propriedade industrial|titulo de credito|duplicata|\bcheque\b|nota promissoria"),
+    ("bancario", r"bancari|instituicao financeira|cedula de credito|alienacao fiduciaria|cartao de credito|juros remuneratorios|capitalizacao de juros|superendividamento"),
+    ("tributario", r"tributari|\bicms\b|\bpis\b|cofins|imposto de renda|\biss\b|\bipi\b|\biptu\b|execucao fiscal|contribuicao previdenciaria|credito tributario"),
+    ("administrativo", r"administrativ|servidor publico|improbidade|licitacao|concurso publico|desapropriacao|mandado de seguranca|responsabilidade do estado"),
+    ("previdenciario", r"previdenciari|aposentadoria|beneficio previdenciario|\binss\b|auxilio-doenca|pensao por morte"),
+    ("ambiental", r"ambiental|meio ambiente"),
+    ("trabalho", r"trabalhista|justica do trabalho|\bfgts\b"),
+]
+AREAS_RE = [(k, re.compile(v)) for k, v in AREAS]
+PENAIS = {"quinta-turma", "sexta-turma", "terceira-secao"}
+
+
+def areas_do_direito(em: str, orgao: str) -> list[str]:
+    cab = sem_acento((em or "")[:600])
+    res = [k for k, rx in AREAS_RE if rx.search(cab)]
+    if orgao in PENAIS and "penal" not in res:
+        res.insert(0, "penal")
+    return res[:4]
+
+
+SINAIS = [
+    ("mudanca", 4, r"superacao|overruling|mudanca de (entendimento|orientacao|jurisprudencia)|alteracao (do|de) entendimento|revisao (da|de) (tese|jurisprudencia|entendimento)|nova orientacao|evolucao jurisprudencial"),
+    ("inedito", 4, r"questao (nova|inedita)|primeira vez|tema inedito|nao ha precedentes"),
+    ("repetitivo", 3, r"recursos? especia(l|is) repetitiv|rito dos (recursos )?repetitivos|tema repetitivo|representativo d[ae] controversia|precedente qualificado|incidente de assuncao de competencia"),
+    ("modulacao", 3, r"modulacao"),
+    ("distincao", 3, r"distinguishing|\bdistincao\b"),
+    ("divergencia", 2, r"embargos de divergencia|dissidio jurisprudencial|divergencia (entre|jurisprudencial)"),
+]
+SINAIS_RE = [(k, p, re.compile(v)) for k, p, v in SINAIS]
+ROTINA = [
+    (re.compile(r"sumula (n\.? ?)?7(/stj|\b)"), 2),
+    (re.compile(r"sumula (n\.? ?)?(284|283|282|356)(/stf|\b)"), 1),
+    (re.compile(r"sumula (n\.? ?)?(83|211|182|115|126|5)(/stj|\b)"), 1),
+    (re.compile(r"embargos de declaracao rejeitados|embargos rejeitados|ausencia de omissao|inexistencia de (omissao|vicio)"), 2),
+    (re.compile(r"agravo (interno|regimental) (nao provido|desprovido|improvido)|agravo (interno|regimental) a que se nega"), 1),
+    (re.compile(r"reexame (de|do conjunto) (fatos|provas|fatico)|revolvimento"), 1),
+    (re.compile(r"intempestiv|deficiencia (na|de) fundamentacao|nao impugnacao (especifica )?dos fundamentos"), 1),
+]
+
+
+def pontuar(r: dict) -> tuple[int, list[str]]:
+    """Relevância heurística (quanto maior, mais importante) e os motivos."""
+    s, rz = 0, []
+    o, cl, em = r.get("o", ""), r.get("cl", ""), sem_acento(r.get("em", ""))
+    if o == "corte-especial":
+        s += 5; rz.append("ce")
+    elif o.endswith("-secao"):
+        s += 4; rz.append("secao")
+    if cl.startswith("ProAfR"):
+        s += 6; rz.append("afetacao")
+    if re.match(r"^(EREsp|EAREsp|EDv)", cl):
+        s += 4; rz.append("eresp")
+    if re.match(r"^(IAC|IRDR|IUJ|PUIL)", cl):
+        s += 4; rz.append("iac")
+    if cl in ("REsp", "RMS", "CC", "MS", "HC", "RHC", "AR", "Rcl"):
+        s += 1
+    if re.match(r"^(AgInt|AgRg|EDcl)", cl):
+        s -= 1
+    if r.get("tese"):
+        s += 6; rz.append("tese")
+    if r.get("tema"):
+        s += 3
+        if "repetitivo" not in rz:
+            rz.append("repetitivo")
+    for k, p, rx in SINAIS_RE:
+        if rx.search(em):
+            s += p
+            if k not in rz:
+                rz.append(k)
+    s -= min(sum(p for rx, p in ROTINA if rx.search(em)), 4)
+    if re.search(r"recurso especial (parcialmente )?provido|recurso provido|ordem concedida", em[-400:]):
+        s += 1
+    return s, rz
+
+
+def enriquecer(r: dict) -> dict:
+    r["ar"] = areas_do_direito(r.get("em", ""), r.get("o", ""))
+    r["s"], r["rz"] = pontuar(r)
+    if not r["ar"]:
+        r.pop("ar")
+    if not r["rz"]:
+        r.pop("rz")
+    return r
+
+
+def migrar_esquema(estado: dict) -> None:
+    if estado.get("_esquema") == ESQUEMA:
+        return
+    base = SITE_DATA / "acordaos"
+    n = 0
+    for arq in sorted(base.glob("*/*.json")) if base.exists() else []:
+        lista = [enriquecer(x) for x in ler_json(arq, [])]
+        gravar_json(arq, lista)
+        n += len(lista)
+    estado["_esquema"] = ESQUEMA
+    log(f"Esquema {ESQUEMA}: {n} acórdãos reprocessados.")
+
 # --------------------------------------------------------------------------
 # 1. Espelhos de acórdãos
 # --------------------------------------------------------------------------
@@ -249,7 +366,7 @@ def atualizar_espelhos(meses: int, estado: dict) -> dict:
             slug, r, versao, registros = f.result()
             por_mes: dict[str, dict] = {}
             for reg in registros:
-                t = limpar_vazios(transformar_espelho(reg, slug))
+                t = enriquecer(limpar_vazios(transformar_espelho(reg, slug)))
                 if not t.get("id"):
                     continue
                 mes = (t.get("dj") or t.get("dd") or "")[:7]
@@ -351,6 +468,33 @@ def atualizar_temas() -> dict:
     gravar_json(SITE_DATA / "historico_temas.json", hist)
     gravar_json(SITE_DATA / "temas.json", temas)
     log(f"Precedentes qualificados: {len(temas)} registros; {len(hist)} evento(s) no histórico.")
+
+    # Processos vinculados aos precedentes (leading cases, tribunal de origem).
+    try:
+        urlp = next(r["url"] for r in pac["resources"] if nome_recurso(r).lower().startswith("processos"))
+        linhas = list(csv.DictReader(io.StringIO(baixar(urlp).decode("utf-8-sig"))))
+        procs = []
+        for x in linhas:
+            try:
+                num = int(x.get("numeroPrecedente") or 0)
+            except ValueError:
+                continue
+            procs.append(limpar_vazios({
+                "tp": x.get("tipoPrecedente", "").strip(), "n": num,
+                "p": (x.get("Processo") or "").strip(),
+                "reg": (x.get("numeroRegistro") or "").strip(),
+                "lc": (x.get("leadingCase") or "").strip() == "S",
+                "uf": (x.get("origemUF") or "").strip(),
+                "trib": (x.get("siglaTribunalOrigem") or "").strip(),
+                "rel": (x.get("ministroRelator") or x.get("NOME_MINISTRO_AFETACAO") or "").strip(),
+                "afet": (x.get("dataAfetacao") or "").strip(),
+                "julg": (x.get("dataJulgamento") or "").strip(),
+                "susp": int(x.get("quantidadeProcessosSuspensoNaOrigem") or 0) if (x.get("quantidadeProcessosSuspensoNaOrigem") or "").strip().isdigit() else 0,
+            }))
+        gravar_json(SITE_DATA / "processos_temas.json", procs)
+        log(f"Processos vinculados a precedentes: {len(procs)}.")
+    except Exception as e:  # noqa: BLE001
+        log("  ! processos vinculados indisponíveis:", e)
     return {"n": len(temas), "temas": sum(1 for t in temas if t.get("tp") == "Tema")}
 
 
@@ -432,6 +576,100 @@ def atualizar_radar(dias: int, meses_disp: list[str]) -> dict:
     return {"n": len(itens), "dias": datas}
 
 
+
+# --------------------------------------------------------------------------
+# 4. Pautas futuras (sem nomes das partes; apenas advogados e OAB)
+# --------------------------------------------------------------------------
+ORG_PAUTA = {"T1": "primeira-turma", "T2": "segunda-turma", "T3": "terceira-turma", "T4": "quarta-turma",
+             "T5": "quinta-turma", "T6": "sexta-turma", "S1": "primeira-secao", "S2": "segunda-secao",
+             "S3": "terceira-secao", "CE": "corte-especial"}
+
+
+def atualizar_pautas() -> dict:
+    pac = pacote("pautas-futuras")
+    arqs = [r for r in pac["resources"] if re.search(r"\d{8}", nome_recurso(r)) and nome_recurso(r).endswith(".gz")]
+    if not arqs:
+        raise RuntimeError("nenhum arquivo de pauta")
+    ult = max(arqs, key=lambda r: data_recurso(r))
+    bruto = json.loads(gzip.decompress(baixar(ult["url"])).decode("utf-8"))
+    reg2t: dict[str, list] = {}
+    for x in ler_json(SITE_DATA / "processos_temas.json", []):
+        if x.get("reg"):
+            reg2t.setdefault(x["reg"], []).append([x["tp"], x["n"]])
+    hoje = HOJE.isoformat()
+    itens, vistos = [], set()
+    for x in bruto:
+        d = data_br_para_iso(x.get("dataSessão") or x.get("dataSessao"))
+        if not d or d < hoje:
+            continue
+        o = ORG_PAUTA.get((x.get("orgaoJulgador") or "").strip(), "")
+        reg = str(x.get("numeroRegistro") or "")
+        pet = (x.get("siglaPeticao") or "").strip()
+        k = (d, o, reg, pet, x.get("numeroPeticao"))
+        if k in vistos:
+            continue
+        vistos.add(k)
+        seg = (x.get("segredoDeJustica") or "N").upper() == "S"
+        adv = []
+        if not seg:
+            for parte in x.get("partes") or []:
+                for a in parte.get("advogados") or []:
+                    par = [(a.get("codigoOAB") or "").strip(), (a.get("nomeAdvogado") or "").strip()]
+                    if par[0] and par not in adv:
+                        adv.append(par)
+        temas = reg2t.get(reg, [])
+        cl = (x.get("siglaClasse") or "").strip()
+        s = 0
+        if o == "corte-especial":
+            s += 3
+        elif o.endswith("secao"):
+            s += 3
+        if temas:
+            s += 6
+        if re.match(r"^(EREsp|EAREsp|IAC|PUIL|ProAfR)", cl):
+            s += 3
+        if not pet:
+            s += 1
+        itens.append(limpar_vazios({
+            "d": d, "o": o, "p": (x.get("processo") or "").strip(), "cl": cl, "reg": reg,
+            "pet": pet, "rel": (x.get("Relator") or "").strip(), "pub": data_br_para_iso(x.get("dataPublicacaoPauta")),
+            "seg": seg, "adv": adv, "temas": temas, "s": s,
+        }))
+    itens.sort(key=lambda i: (i["d"], -i.get("s", 0), i.get("o", ""), i.get("p", "")))
+    gravar_json(SITE_DATA / "pautas.json", itens)
+    log(f"Pautas: {len(itens)} processos em sessões a partir de hoje (arquivo {nome_recurso(ult)}).")
+    return {"n": len(itens), "arquivo": data_recurso(ult), "comTema": sum(1 for i in itens if i.get("temas"))}
+
+
+# --------------------------------------------------------------------------
+# 5. Destaques e índice leve para o "Meu radar"
+# --------------------------------------------------------------------------
+LIMIAR_DESTAQUE = 6
+
+
+def gerar_destaques(meses_disp: list[str]) -> dict:
+    recentes = sorted(meses_disp)[-3:]
+    dest, indice = [], []
+    for mes in recentes:
+        for arq in sorted((SITE_DATA / "acordaos" / mes).glob("*.json")):
+            for r in ler_json(arq, []):
+                sc = r.get("s", 0)
+                if sc >= LIMIAR_DESTAQUE:
+                    dest.append(r)
+                if sc >= -1:
+                    cab = (r.get("em") or "").split("\n", 1)[0][:320]
+                    indice.append(limpar_vazios({
+                        "id": r.get("id"), "m": mes, "o": r.get("o"), "cl": r.get("cl"), "n": r.get("n"),
+                        "reg": r.get("reg"), "dj": r.get("dj"), "s": sc, "ar": r.get("ar"), "h": cab,
+                        "tese": (r.get("tese") or "")[:400],
+                    }))
+    dest.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
+    indice.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
+    gravar_json(SITE_DATA / "destaques.json", dest)
+    gravar_json(SITE_DATA / "indice.json", indice)
+    log(f"Destaques: {len(dest)}; índice do radar: {len(indice)} acórdãos ({', '.join(recentes)}).")
+    return {"n": len(dest), "indice": len(indice), "meses": recentes, "limiar": LIMIAR_DESTAQUE}
+
 # --------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser()
@@ -452,7 +690,18 @@ def main():
         log("ERRO espelhos:", e)
     finally:
         gravar_json(CACHE / "estado.json", estado)
+    try:
+        migrar_esquema(estado)
+    finally:
+        gravar_json(CACHE / "estado.json", estado)
     meses_disp = podar_meses(args.meses)
+
+    destaques = {}
+    try:
+        destaques = gerar_destaques(meses_disp)
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"destaques: {e}")
+        log("ERRO destaques:", e)
 
     temas = {}
     try:
@@ -467,6 +716,13 @@ def main():
     except Exception as e:  # noqa: BLE001
         erros.append(f"radar: {e}")
         log("ERRO radar:", e)
+
+    pautas = {}
+    try:
+        pautas = atualizar_pautas()
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"pautas: {e}")
+        log("ERRO pautas:", e)
 
     # Manifesto lido pelo site
     manifesto_ant = ler_json(SITE_DATA / "manifest.json", {})
@@ -485,12 +741,15 @@ def main():
         "ultimoArquivoEspelhos": ultimos or manifesto_ant.get("ultimoArquivoEspelhos", {}),
         "temas": temas or manifesto_ant.get("temas", {}),
         "radar": radar or manifesto_ant.get("radar", {}),
+        "destaques": destaques or manifesto_ant.get("destaques", {}),
+        "pautas": pautas or manifesto_ant.get("pautas", {}),
+        "esquema": ESQUEMA,
         "erros": erros,
     }
     gravar_json(SITE_DATA / "manifest.json", manifesto)
     log("Concluído." + (f" Com {len(erros)} erro(s)." if erros else ""))
     # Falha total apenas se nada pôde ser atualizado.
-    if len(erros) == 3:
+    if len(erros) >= 5:
         sys.exit(1)
 
 
