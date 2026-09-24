@@ -25,6 +25,7 @@ import hashlib
 import unicodedata
 import datetime as dt
 import io
+import zipfile
 import json
 import os
 import re
@@ -666,33 +667,58 @@ def limpar_vazios(d: dict) -> dict:
     return {k: v for k, v in d.items() if v not in ("", None, [], {})}
 
 
-def atualizar_espelhos(meses: int, estado: dict) -> dict:
-    """Baixa os arquivos mensais novos ou alterados e distribui os acórdãos em
-    site/data/acordaos/AAAA-MM/<orgao>.json, pelo mês de publicação."""
+# O STJ publica os espelhos em arquivos mensais a partir de maio de 2022 e, para o período
+# anterior, um arquivo histórico compactado (20220508.zip) com todos os acórdãos até 08/05/2022.
+INICIO_MENSAIS = "2022-05"
+
+
+def atualizar_espelhos(corte: str, estado: dict) -> dict:
+    """Baixa os arquivos novos ou alterados e distribui os acórdãos em
+    site/data/acordaos/AAAA-MM/<orgao>.json, pelo mês de publicação (a partir de `corte`)."""
     base = SITE_DATA / "acordaos"
-    corte_download = mes_menos(f"{HOJE.year:04d}-{HOJE.month:02d}", meses + 1)
     pendentes = []
     ultimos = {}
     for slug in ORGAOS:
         pac = pacote(f"espelhos-de-acordaos-{slug}")
         for r in pac["resources"]:
             d = data_recurso(r)
-            if not d or not nome_recurso(r).endswith(".json"):
+            nome = nome_recurso(r).lower()
+            versao = r.get("last_modified") or r.get("metadata_modified") or r.get("created")
+            if nome.endswith(".zip"):
+                # Arquivo histórico: processado uma vez para cada início de acervo.
+                chave = f"{r['id']}|{corte}"
+                if corte < INICIO_MENSAIS and estado.get(chave) != versao:
+                    pendentes.append((slug, r, versao, chave))
+                continue
+            if not d or not nome.endswith(".json"):
                 continue
             ultimos[slug] = max(ultimos.get(slug, ""), d)
-            if f"{d[:4]}-{d[4:6]}" < corte_download:
+            if f"{d[:4]}-{d[4:6]}" < corte:
                 continue
-            chave = r["id"]
-            versao = r.get("last_modified") or r.get("metadata_modified") or r.get("created")
-            if estado.get(chave) == versao:
+            if estado.get(r["id"]) == versao:
                 continue
-            pendentes.append((slug, r, versao))
+            pendentes.append((slug, r, versao, r["id"]))
     log(f"Espelhos: {len(pendentes)} arquivo(s) novo(s) ou alterado(s).")
 
     def processar(item):
-        slug, r, versao = item
-        bruto = baixar(r["url"])
-        return slug, r, versao, _json_tolerante(bruto.decode("utf-8-sig"))
+        slug, r, versao, chave = item
+        bruto = baixar(r["url"], timeout=1800)
+        if nome_recurso(r).lower().endswith(".zip"):
+            registros = []
+            with zipfile.ZipFile(io.BytesIO(bruto)) as z:
+                for info in z.infolist():
+                    # Cada arquivo interno cobre um período e leva a data final no nome (ex.: 20201231.json).
+                    fim = re.search(r"(\d{8})", info.filename)
+                    if not info.filename.lower().endswith(".json") or (fim and f"{fim.group(1)[:4]}-{fim.group(1)[4:6]}" < corte):
+                        continue
+                    dados = _json_tolerante(z.read(info).decode("utf-8-sig"))
+                    if isinstance(dados, dict):
+                        dados = next((v for v in dados.values() if isinstance(v, list)), [])
+                    registros.extend(x for x in dados if isinstance(x, dict))
+            registros = [x for x in registros if (data_br_para_iso(x.get("dataPublicacao")) or data_compacta_para_iso(x.get("dataDecisao")))[:7] >= corte]
+            log(f"  arquivo histórico de {ORGAOS[slug]}: {len(registros)} acórdãos a partir de {corte}")
+            return slug, r, versao, chave, registros
+        return slug, r, versao, chave, _json_tolerante(bruto.decode("utf-8-sig"))
 
     # Agrupa em memória por (mês, órgão) e grava ao final de cada arquivo.
     # Um arquivo defeituoso não interrompe os demais; é tentado de novo na próxima execução.
@@ -701,29 +727,29 @@ def atualizar_espelhos(meses: int, estado: dict) -> dict:
         futs = {ex.submit(processar, p): p for p in pendentes}
         for f in as_completed(futs):
             try:
-                slug, r, versao, registros = f.result()
+                slug, r, versao, chave, registros = f.result()
             except Exception as e:  # noqa: BLE001
-                slug, r, _ = futs[f]
+                slug, r, _, _ = futs[f]
                 falhas.append(f"{ORGAOS[slug]} {nome_recurso(r)}: {e}")
                 log(f"  ! {ORGAOS[slug]} {nome_recurso(r)}: {e}")
                 continue
             por_mes: dict[str, dict] = {}
             for reg in registros:
-                t = enriquecer(limpar_vazios(transformar_espelho(reg, slug)))
+                t = limpar_vazios(transformar_espelho(reg, slug))
                 if not t.get("id"):
                     continue
                 mes = (t.get("dj") or t.get("dd") or "")[:7]
-                if not re.fullmatch(r"\d{4}-\d{2}", mes):
+                if not re.fullmatch(r"\d{4}-\d{2}", mes) or mes < corte:
                     continue
-                por_mes.setdefault(mes, {})[str(t["id"])] = t
+                por_mes.setdefault(mes, {})[str(t["id"])] = enriquecer(t)
             for mes, novos in por_mes.items():
                 arq = base / mes / f"{slug}.json"
                 atuais = {str(x["id"]): x for x in ler_json(arq, [])}
                 atuais.update(novos)
                 lista = sorted(atuais.values(), key=lambda x: (x.get("dj", ""), x.get("id", 0)), reverse=True)
                 gravar_json(arq, lista)
-            estado[r["id"]] = versao
-            log(f"  + {ORGAOS[slug]} {nome_recurso(r)}: {len(registros)} acórdãos")
+            estado[chave] = versao
+            log(f"  + {ORGAOS[slug]} {nome_recurso(r)}: {sum(len(v) for v in por_mes.values())} acórdãos no acervo")
     if falhas:
         estado["_falhas_espelhos"] = falhas[:20]
     else:
@@ -763,14 +789,13 @@ def _json_tolerante(txt: str):
     return out
 
 
-def podar_meses(meses: int) -> list[str]:
+def podar_meses(corte: str) -> list[str]:
     base = SITE_DATA / "acordaos"
     if not base.exists():
         return []
     todos = sorted(p.name for p in base.iterdir() if p.is_dir() and re.fullmatch(r"\d{4}-\d{2}", p.name))
     if not todos:
         return []
-    corte = mes_menos(todos[-1], meses - 1)
     for m in todos:
         if m < corte:
             for f in (base / m).glob("*"):
@@ -1563,8 +1588,11 @@ def gravar_taxonomia() -> None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--meses", type=int, default=12, help="meses de acórdãos mantidos no site")
+    ap.add_argument("--desde", default="", help="AAAA-MM: primeiro mês do acervo (tem precedência sobre --meses)")
     ap.add_argument("--dias-radar", type=int, default=15, help="dias de publicação no radar")
     args = ap.parse_args()
+    corte = args.desde if re.fullmatch(r"\d{4}-\d{2}", args.desde or "") else mes_menos(f"{HOJE.year:04d}-{HOJE.month:02d}", args.meses)
+    log(f"Acervo de acórdãos a partir de {corte}.")
 
     SITE_DATA.mkdir(parents=True, exist_ok=True)
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -1573,7 +1601,7 @@ def main():
 
     ultimos = {}
     try:
-        ultimos = atualizar_espelhos(args.meses, estado)
+        ultimos = atualizar_espelhos(corte, estado)
         erros += [f"espelhos: {x}" for x in estado.get("_falhas_espelhos", [])]
     except Exception as e:  # noqa: BLE001
         erros.append(f"espelhos: {e}")
@@ -1584,7 +1612,7 @@ def main():
         migrar_esquema(estado)
     finally:
         gravar_json(CACHE / "estado.json", estado)
-    meses_disp = podar_meses(args.meses)
+    meses_disp = podar_meses(corte)
 
     destaques = {}
     try:
