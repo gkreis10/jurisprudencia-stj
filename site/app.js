@@ -645,9 +645,27 @@
   const indice = () => carregar("indice", (l) => { for (const x of l) x._n = norm(`${x.h} ${x.tese || ""} ${x.tj || ""}`); return l; });
   const djen = () => carregar("radar", (l) => { for (const x of l) x._p = norm(`${x.p} ${x.r || ""}`); return l; });
 
+  // Arquivos mensais de acórdãos: publicados compactados (.json.gz) para caber o acervo longo;
+  // o navegador descompacta. Sem suporte a descompactação, usa o .json (mantido para os meses recentes).
+  async function getJSONgz(url) {
+    if (typeof DecompressionStream !== "undefined") {
+      try {
+        const r = await fetch(`${url}.gz`, { cache: "no-cache" });
+        if (r.ok) {
+          const buf = new Uint8Array(await r.arrayBuffer());
+          const txt = buf[0] === 0x1f && buf[1] === 0x8b ? await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text() : new TextDecoder().decode(buf);
+          return JSON.parse(txt);
+        }
+      } catch { /* tenta o .json */ }
+    }
+    return getJSON(url);
+  }
+  const MAX_SHARDS = 260; // cerca de dois anos de arquivos na memória; os mais antigos saem primeiro
   function shard(mes, slug) {
     const k = `${mes}/${slug}`;
-    if (!D.shards.has(k)) D.shards.set(k, getJSON(`data/acordaos/${mes}/${slug}.json`).catch((e) => { D.shards.delete(k); throw e; }));
+    if (D.shards.has(k)) { const v = D.shards.get(k); D.shards.delete(k); D.shards.set(k, v); return v; }
+    D.shards.set(k, getJSONgz(`data/acordaos/${mes}/${slug}.json`).catch((e) => { D.shards.delete(k); throw e; }));
+    while (D.shards.size > MAX_SHARDS) D.shards.delete(D.shards.keys().next().value);
     return D.shards.get(k);
   }
   async function carregarShards(pares, onProg) {
@@ -1484,7 +1502,7 @@
     { id: "semana", tit: "Resumo da semana", sobre: "O que mudou em 7 dias", ico: "semana", fn: vSemana },
     { id: "radar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true },
     { id: "destaques", tit: "Destaques", sobre: "Acórdãos relevantes", ico: "destaques", fn: vDestaques },
-    { id: "pesquisa", tit: "Pesquisa de acórdãos", sobre: "Acervo de 3 anos", ico: "pesquisa", fn: vPesquisa },
+    { id: "pesquisa", tit: "Pesquisa de acórdãos", sobre: "Acervo de acórdãos", ico: "pesquisa", fn: vPesquisa },
     { id: "repetitivos", tit: "Precedentes qualificados", sobre: "Repetitivos, IAC e controvérsias", ico: "repetitivos", fn: vRepetitivos },
     { id: "sumulas", tit: "Súmulas e teses", sobre: "Súmulas e Jurisprudência em Teses", ico: "sumulas", fn: vSumulas },
     { id: "pautas", tit: "Pautas e publicações", sobre: "O que vai ser julgado", ico: "pautas", fn: vPautas },
@@ -1822,10 +1840,11 @@
       { rot: "Matéria", tipo: "materia", get: () => F.area, set: (v) => (F.area = v), cont: () => contAr },
       defOrdem(() => F.s, (v) => (F.s = v), [{ v: "pri", t: "Prioridade" }, { v: "rec", t: "Mais recentes" }, { v: "termo", t: "Assunto acompanhado" }],
         "Prioridade: primeiro o que é novo desde a sua última visita, depois por nível (alta, relevante, acompanhar) e data."),
-    ], () => desenhar());
+    ], () => { pgRd.pag = 1; desenhar(); });
     $("#rd-visto", main).addEventListener("click", () => { P.vistoEm = hojeISO(); salvarP(); atualizarContadorRadar(); render(); toast("Tudo marcado como visto."); });
 
-    let lista = [], lim = 40;
+    let lista = [];
+    const pgRd = paginador("rd", () => desenhar(), "#rd-corpo");
     async function render() {
       const corpo = $("#rd-corpo", main);
       if (aba === "salvos") { $("#rd-pil", main).hidden = true; $("#rd-visto", main).hidden = true; return renderSalvos(corpo); }
@@ -1840,7 +1859,7 @@
       for (const it of lista) if (it.tipo === "pauta" && it.obj.temas?.length) { const [tp, n] = it.obj.temas[0]; it.temaObj = t.idx.get(`${tp}-${n}`); }
       void pl;
       $("#rd-pil", main).hidden = false; $("#rd-visto", main).hidden = false;
-      lim = 40; desenhar();
+      pgRd.pag = 1; desenhar();
     }
     function desenhar() {
       contTp = {}; lista.filter((x) => !F.termo || x.termo === F.termo).forEach((x) => (contTp[x.tipo] = (contTp[x.tipo] || 0) + 1));
@@ -1856,9 +1875,8 @@
       const corpo = $("#rd-corpo", main);
       corpo.innerHTML = `
         <div class="barra-res"><p><b>${fmtInt(vis.length)}</b> resultado(s) · novidades contadas desde ${fmtData(P.vistoEm)}</p></div>
-        ${vis.length ? `<ol class="lista" id="rd-lista">${vis.slice(0, lim).map((x) => itemRadarLinha(x, termos)).join("")}</ol>${vis.length > lim ? `<button class="btn btn-claro btn-mais" id="rd-mais">Mostrar mais (${fmtInt(vis.length - lim)})</button>` : ""}` : vazio("radar", "Nada neste filtro", "Troque os filtros acima para ver os demais resultados.")}`;
+        ${vis.length ? `<ol class="lista" id="rd-lista">${pgRd.fatia(vis).map((x) => itemRadarLinha(x, termos)).join("")}</ol>${pgRd.html(vis.length)}` : vazio("radar", "Nada neste filtro", "Troque os filtros acima para ver os demais resultados.")}`;
       const ul = $("#rd-lista", main); if (ul) ligarCards(ul);
-      $("#rd-mais", main)?.addEventListener("click", () => { lim += 40; desenhar(); });
     }
     async function renderSalvos(corpo) {
       if (!Object.keys(P.salvos).length) { corpo.innerHTML = vazio("salvar", "Nenhum item salvo", "Use o marcador nos acórdãos, temas, notas do Informativo, pautas e publicações do DJEN para guardar o que você quer acompanhar."); return; }
@@ -1891,6 +1909,45 @@
     }
     render();
   }
+
+  // ================================================= paginação
+  // Páginas numeradas ("1 2 3 4 5 … 37") e escolha de itens por página (10, 25, 50), iguais em todas as listas.
+  const POR_PAG = [10, 25, 50];
+  const porPag = () => (POR_PAG.includes(P.porPag) ? P.porPag : 25);
+  const PAGINADORES = new Map();
+  function paginador(id, desenhar, alvo) {
+    const pg = {
+      pag: 1,
+      ir(n) { pg.pag = n; desenhar(); const el = alvo && document.querySelector(alvo); if (el) { const y = el.getBoundingClientRect().top + scrollY - 90; if (y < scrollY) scrollTo({ top: y, behavior: "smooth" }); } },
+      fatia(l) { const pp = porPag(), n = Math.max(1, Math.ceil(l.length / pp)); if (pg.pag > n) pg.pag = n; if (pg.pag < 1) pg.pag = 1; return l.slice((pg.pag - 1) * pp, pg.pag * pp); },
+      html(total) { return htmlPaginas(id, total, pg.pag); },
+    };
+    PAGINADORES.set(id, pg);
+    return pg;
+  }
+  function htmlPaginas(id, total, pag) {
+    const pp = porPag(), n = Math.max(1, Math.ceil(total / pp));
+    if (total <= POR_PAG[0]) return "";
+    const nums = [];
+    const faixa = (a, b) => { for (let i = a; i <= b; i++) nums.push(i); };
+    if (n <= 7) faixa(1, n);
+    else if (pag <= 4) { faixa(1, 5); nums.push("…", n); }
+    else if (pag >= n - 3) { nums.push(1, "…"); faixa(n - 4, n); }
+    else { nums.push(1, "…"); faixa(pag - 1, pag + 1); nums.push("…", n); }
+    const ini = (pag - 1) * pp + 1, fim = Math.min(total, pag * pp);
+    return `<nav class="paginas" data-pag="${id}" aria-label="Páginas">
+      <span class="pag-info">${fmtInt(ini)}–${fmtInt(fim)} de ${fmtInt(total)}</span>
+      ${n > 1 ? `<div class="pag-nums"><button type="button" class="pag-seta" data-ir="${pag - 1}" ${pag <= 1 ? "disabled" : ""} aria-label="Página anterior">${ico("seta", "gira")}</button>
+        ${nums.map((x) => (x === "…" ? `<span class="pag-reti">…</span>` : `<button type="button" data-ir="${x}" ${x === pag ? 'aria-current="page"' : ""} aria-label="Página ${x}">${x}</button>`)).join("")}
+        <button type="button" class="pag-seta" data-ir="${pag + 1}" ${pag >= n ? "disabled" : ""} aria-label="Próxima página">${ico("seta")}</button></div>` : ""}
+      <div class="pag-por" role="group" aria-label="Itens por página"><span>Por página</span>${POR_PAG.map((v) => `<button type="button" data-por="${v}" aria-pressed="${v === pp}">${v}</button>`).join("")}</div>
+    </nav>`;
+  }
+  document.addEventListener("click", (e) => {
+    const nav = e.target.closest("[data-pag]"); if (!nav) return;
+    const pg = PAGINADORES.get(nav.dataset.pag); const b = e.target.closest("[data-ir],[data-por]"); if (!pg || !b || b.disabled) return;
+    if (b.dataset.por) { P.porPag = +b.dataset.por; salvarP(); pg.ir(1); } else pg.ir(+b.dataset.ir);
+  });
 
   // ================================================= filtros em pílulas
   // Um botão por filtro; as opções abrem num popover (computador) ou numa
@@ -2116,9 +2173,10 @@
       </div>
       <div class="barra-res"><p id="if-info" aria-live="polite"></p><span class="nota" title="O Informativo de Jurisprudência é publicado pelo STJ e reúne as teses selecionadas pela novidade e pela repercussão no meio jurídico.">Curadoria oficial do STJ</span></div>
       <div id="if-lista" class="notas"></div>
-      <button class="btn btn-claro btn-mais" id="if-mais" hidden>Mostrar mais</button>`;
+      <div id="if-pag"></div>`;
     ligarAbasDestaques(main);
-    let lista = [], lim = 30, termos = [], ca = {}, co = {}, grupoDe = null;
+    let lista = [], termos = [], ca = {}, co = {}, grupoDe = null;
+    const pgIf = paginador("if", () => render(), "#if-lista");
     const noPeriodo = (x) => {
       if (f.e === "todas") return true;
       if (/^u\d+$/.test(f.e)) return x.ed >= eds[Math.min(eds.length, +f.e.slice(1)) - 1];
@@ -2128,13 +2186,13 @@
       return true;
     };
     const render = () => {
-      const box = $("#if-lista"); const vis = lista.slice(0, lim);
-      if (!lista.length) { box.innerHTML = vazio("destaques", "Nenhuma nota encontrada", "Amplie o período, troque a matéria ou revise os termos da busca."); $("#if-mais").hidden = true; return; }
+      const box = $("#if-lista"); const vis = pgIf.fatia(lista);
+      $("#if-pag").innerHTML = pgIf.html(lista.length);
+      if (!lista.length) { box.innerHTML = vazio("destaques", "Nenhuma nota encontrada", "Amplie o período, troque a matéria ou revise os termos da busca."); return; }
       const grupos = [];
       for (const x of vis) { const g = grupoDe ? grupoDe(x) : null; const k = g ? g.k : "_"; if (!grupos.length || grupos[grupos.length - 1].k !== k) grupos.push({ ...(g || { k }), itens: [] }); grupos[grupos.length - 1].itens.push(x); }
       box.innerHTML = grupos.map((g) => `<section class="grupo-notas">${g.tit ? `<header class="grupo-cab"${g.h != null ? ` style="--h:${g.h}"` : ""}><h2>${g.tit}</h2><span>${g.sub || ""}</span>${g.link ? `<a class="link-acao" href="${g.link}" target="_blank" rel="noopener">Edição oficial ${ico("externo")}</a>` : ""}</header>` : ""}
         <ol class="lista-notas">${g.itens.map((x) => cardInformativo(x, termos)).join("")}</ol></section>`).join("");
-      const b = $("#if-mais"); b.hidden = lim >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - lim)})`;
     };
     const aplicar = async () => {
       f.q = $("#if-q").value;
@@ -2165,7 +2223,7 @@
       const nEd = new Set(lista.map((x) => x.ed)).size;
       $("#if-info").innerHTML = `<b>${fmtInt(lista.length)}</b> nota(s) em ${nEd} edição(ões) ${explicacaoHTML(c)}${!c.vazio && f.e !== "todas" && antigos.length ? ` <button type="button" class="link-acao" id="if-todas">Buscar em todas as edições, desde ${antigos[0]}</button>` : ""}`;
       $("#if-todas")?.addEventListener("click", () => { f.e = "todas"; pilInf.desenhar(); aplicar(); });
-      lim = 30; render();
+      pgIf.pag = 1; render();
     };
     const rotPer = (v) => (v.startsWith("e:") ? `Informativo ${v.slice(2)}` : v.startsWith("d:") ? (() => { const [, de, ate] = v.split(":"); return `${de ? fmtData(de) : "início"} a ${ate ? fmtData(ate) : "hoje"}`; })() : "Período");
     const pilInf = pilulas($("#if-pil"), [
@@ -2182,7 +2240,6 @@
         "Por edição e por julgamento, as notas aparecem agrupadas; por matéria, reunidas sob cada ramo do direito."),
     ], aplicar);
     $("#if-q").addEventListener("input", debounce(aplicar, 200));
-    $("#if-mais").addEventListener("click", () => { lim += 30; render(); });
     ligarAjuda($("#if-f"), $("#if-q"), aplicar);
     aplicar();
   }
@@ -2199,16 +2256,15 @@
       </div>
       <div class="barra-res"><p id="ds-info"></p><a class="link-acao" href="#sobre">Como selecionamos ${ico("seta")}</a></div>
       <ol class="lista" id="ds-lista"></ol>
-      <button class="btn btn-claro btn-mais" id="ds-mais" hidden>Mostrar mais</button>`;
+      <div id="ds-pag"></div>`;
     const ul = $("#ds-lista"); ligarCards(ul);
-    let lista = [], mostrados = 0, termos = [], contA = {};
+    let lista = [], termos = [], contA = {};
+    const pgDs = paginador("ds", () => render(false), "#ds-lista");
     const render = (reset) => {
-      if (reset) { ul.innerHTML = ""; mostrados = 0; }
-      const lote = lista.slice(mostrados, mostrados + 20);
-      ul.insertAdjacentHTML("beforeend", lote.map((r) => cardAcordao(r, { termos })).join(""));
-      mostrados += lote.length;
+      if (reset) pgDs.pag = 1;
+      ul.innerHTML = pgDs.fatia(lista).map((r) => cardAcordao(r, { termos })).join("");
       if (!lista.length) ul.innerHTML = vazio("destaques", "Nenhum destaque com esses filtros", "Tente outra matéria, amplie o período ou revise os termos.");
-      const b = $("#ds-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
+      $("#ds-pag").innerHTML = pgDs.html(lista.length);
     };
     const aplicar = () => {
       f.q = $("#ds-q").value;
@@ -2236,7 +2292,6 @@
     ], aplicar);
     ligarAbasDestaques(main);
     $("#ds-q").addEventListener("input", debounce(aplicar, 250));
-    $("#ds-mais").addEventListener("click", () => render(false));
     ligarAjuda($("#ds-f"), $("#ds-q"), aplicar);
     aplicar();
   }
@@ -2260,13 +2315,15 @@
           <button type="button" class="btn btn-fant btn-peq" id="ac-link">${ico("link")} Copiar link</button></div>
         <div id="ac-extra"></div>
         <ol class="lista" id="ac-lista"></ol>
-        <button class="btn btn-claro btn-mais" id="ac-mais" hidden>Mostrar mais</button>`;
-      const periodos = [{ v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, { v: "u24", t: "Últimos 2 anos" }, { v: "u36", t: `Todo o acervo (desde ${meses.length ? fmtMesL(meses[meses.length - 1].m) : "—"})`, curto: "Todo o acervo" },
+        <div id="ac-pag"></div>`;
+      const anosAc0 = [...new Set(meses.map((m) => m.m.slice(0, 4)))];
+      const periodos = [{ v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, { v: "u24", t: "Últimos 2 anos" },
+        ...anosAc0.map((a) => ({ g: "anos", v: `a:${a}`, t: a, curto: `Ano de ${a}` })),
         ...meses.map((m) => ({ g: m.m.slice(0, 4), v: m.m, t: MESES_L[+m.m.slice(5) - 1].replace(/^./, (c) => c.toUpperCase()), curto: fmtMesL(m.m) }))];
       const anosAc = [...new Set(meses.map((m) => m.m.slice(0, 4)))];
       AC.pil = pilulas($("#ac-pil"), [
         { rot: "Período", tipo: "um", padrao: "u1", obrigatorio: true, semLimpar: true, rotAtual: () => "Último mês", get: () => AC.f.p, set: (v) => (AC.f.p = v), opcoes: () => periodos,
-          grupos: [["", ""], ...anosAc.map((a) => [a, `Mês de publicação · ${a}`])], nota: "Períodos longos carregam mais dados e podem levar alguns segundos. A busca por número de processo sempre percorre todo o acervo." },
+          grupos: [["", ""], ["anos", "Um ano inteiro"], ...anosAc.map((a) => [a, `Mês de publicação · ${a}`])], nota: `O acervo vai de ${meses.length ? fmtMesL(meses[meses.length - 1].m) : "—"} a ${meses.length ? fmtMesL(meses[0].m) : "—"}. Para pesquisar por termos em anos anteriores, escolha o ano: assim a busca continua rápida. A busca por número de processo sempre percorre todo o acervo.` },
         { rot: "Matéria", tipo: "materia", get: () => AC.f.a, set: (v) => (AC.f.a = v) },
         { rot: "Órgão", tipo: "um", get: () => AC.f.o, set: (v) => (AC.f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...Object.entries(D.orgaos).map(([k, v]) => ({ v: k, t: v }))] },
         { rot: "Classe", titulo: "Classe processual", tipo: "texto", ph: "REsp, AgInt, EREsp", lista: "ac-classes", get: () => AC.f.c, set: (v) => (AC.f.c = v),
@@ -2284,7 +2341,6 @@
       ], () => buscar());
       $("#ac-q").addEventListener("input", debounce(() => buscar(), 300));
       $("#ac-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
-      $("#ac-mais").addEventListener("click", () => renderLista(false));
       ligarCards($("#ac-lista"));
       ligarAjuda($("#ac-f"), $("#ac-q"), () => buscar());
     } else AC.pil?.desenhar();
@@ -2304,7 +2360,7 @@
     const clNum = mNum?.[1] || "";
     const soNum = mNum && !/^(tema|s[uú]mula|sumula|art|arts|lei|decreto|lc|cpc|cc|cf|resolu)/i.test(clNum) && digitos(mNum[2]).length >= (clNum ? 3 : 5) ? digitos(mNum[2]) : "";
     if (soNum) { f.n = soNum; f.q = ""; }
-    let meses = /^\d{4}-\d{2}$/.test(f.p) ? [f.p] : todos.slice(0, +(/^u(\d+)$/.exec(f.p)?.[1] || 1));
+    let meses = /^\d{4}-\d{2}$/.test(f.p) ? [f.p] : /^a:\d{4}$/.test(f.p) ? todos.filter((m) => m.startsWith(f.p.slice(2))) : todos.slice(0, Math.min(36, +(/^u(\d+)$/.exec(f.p)?.[1] || 1)));
     const orgs = f.o ? [f.o] : Object.keys(D.orgaos);
     let pares = [], ids = null;
     if (f.n) {
@@ -2368,7 +2424,7 @@
           <ol class="lista">${sess.map((x) => cardPauta(x)).join("")}${pubs.map((x) => cardDjen(x)).join("")}</ol>`;
       }
     }
-    const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.innerHTML ? " e no DJEN" : ""}` : meses.length === 1 ? fmtMesL(meses[0]) : `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}`;
+    const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.innerHTML ? " e no DJEN" : ""}` : /^a:\d{4}$/.test(f.p) ? `ano de ${f.p.slice(2)}` : meses.length === 1 ? fmtMesL(meses[0]) : `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}`;
     if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: ainda sem ementa no acervo. Veja abaixo a publicação no DJEN.`;
     else $("#ac-info").innerHTML = `<b>${fmtInt(AC.lista.length)}</b> resultado(s) · ${rot}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     renderLista(true);
@@ -2380,15 +2436,14 @@
       $("#ac-rels").innerHTML = [...rels].sort().map((r) => `<option value="${esc(titulo(r))}">`).join("");
     }
   }
+  const pgAc = paginador("ac", () => renderLista(false), "#ac-lista");
   function renderLista(reset) {
     const ul = $("#ac-lista");
-    if (reset) { ul.innerHTML = ""; AC.mostrados = 0; }
-    const lote = AC.lista.slice(AC.mostrados, AC.mostrados + 20);
-    ul.insertAdjacentHTML("beforeend", lote.map((r) => cardAcordao(r, { termos: AC.termos })).join(""));
-    AC.mostrados += lote.length;
+    if (reset) pgAc.pag = 1;
+    ul.innerHTML = pgAc.fatia(AC.lista).map((r) => cardAcordao(r, { termos: AC.termos })).join("");
+    $("#ac-pag").innerHTML = pgAc.html(AC.lista.length);
     if (!AC.lista.length && $("#ac-extra")?.innerHTML) ul.innerHTML = "";
     else if (!AC.lista.length) ul.innerHTML = vazio("pesquisa", "Nenhum acórdão encontrado", "Amplie o período, escolha “Exibir: tudo” para incluir as decisões de rotina ou revise os termos. Toque em “?” para ver como combinar palavras.");
-    const b = $("#ac-mais"); b.hidden = AC.mostrados >= AC.lista.length; b.textContent = `Mostrar mais (${fmtInt(AC.lista.length - AC.mostrados)})`;
   }
 
   // ======================================================= RESUMO DA SEMANA
@@ -2553,9 +2608,10 @@
       </div>
       <div class="barra-res"><p id="jt-info" aria-live="polite"></p><span class="dir"><button type="button" class="btn btn-fant btn-peq" id="jt-abrir-todas" hidden>Abrir todas</button></span></div>
       <div id="jt-lista"></div>
-      <button class="btn btn-claro btn-mais" id="jt-mais" hidden>Mostrar mais</button>`;
+      <div id="jt-pag"></div>`;
     ligarAbasSumulas(main);
-    let linhas = [], plano = false, lim = 40, termos = [], ca = {}, abertas = new Set(), cons = null, ordemAt = "rec";
+    let linhas = [], plano = false, termos = [], ca = {}, abertas = new Set(), cons = null, ordemAt = "rec";
+    const pgJt = paginador("jt", () => render(), "#jt-lista");
     const noPer = (x) => {
       if (!f.e) return true;
       if (f.e.startsWith("e:")) return x.ed === +f.e.slice(2);
@@ -2584,8 +2640,8 @@
     };
     const render = () => {
       const box = $("#jt-lista"); const tot = plano ? linhas.length : linhas.length;
-      if (!tot) { box.innerHTML = vazio("sumulas", "Nenhuma tese encontrada", "Revise os termos, a matéria ou o período."); $("#jt-mais").hidden = true; $("#jt-abrir-todas").hidden = true; return; }
-      const vis = linhas.slice(0, lim);
+      if (!tot) { box.innerHTML = vazio("sumulas", "Nenhuma tese encontrada", "Revise os termos, a matéria ou o período."); $("#jt-pag").innerHTML = ""; $("#jt-abrir-todas").hidden = true; return; }
+      const vis = pgJt.fatia(linhas);
       if (plano) box.innerHTML = `<ol class="jt-teses plano">${vis.map((x) => linhaTeseJT(x, termos, true)).join("")}</ol>`;
       else {
         let html = "", cabAnt = "";
@@ -2596,7 +2652,7 @@
         }
         box.innerHTML = html;
       }
-      const b = $("#jt-mais"); b.hidden = lim >= linhas.length; b.textContent = `Mostrar mais (${fmtInt(linhas.length - lim)})`;
+      $("#jt-pag").innerHTML = pgJt.html(linhas.length);
       const bt = $("#jt-abrir-todas"); bt.hidden = plano || vis.length < 2; bt.textContent = vis.every((g) => abertas.has(g.e?.ed)) ? "Fechar todas" : "Abrir as visíveis";
     };
     const aplicar = () => {
@@ -2626,7 +2682,7 @@
       abertas = new Set(!plano && !cons.vazio ? linhas.slice(0, 3).map((g) => g.e.ed) : f.e.startsWith("e:") ? [+f.e.slice(2)] : []);
       const nT = plano ? linhas.length : linhas.reduce((n, g) => n + g.teses.length, 0);
       $("#jt-info").innerHTML = `<b>${fmtInt(plano ? new Set(linhas.map((x) => x.ed)).size : linhas.length)}</b> edição(ões) · ${fmtInt(nT)} tese(s)${filtrada ? " correspondentes" : ""} ${explicacaoHTML(cons)}`;
-      lim = plano ? 30 : 40; render(); pilJT?.desenhar();
+      pgJt.pag = 1; render(); pilJT?.desenhar();
     };
     const rotPer = (v) => (v.startsWith("e:") ? `Edição ${v.slice(2)}` : v.startsWith("d:") ? (() => { const [, de, ate] = v.split(":"); return `${de ? fmtData(de) : "início"} a ${ate ? fmtData(ate) : "hoje"}`; })() : "Período");
     let pilJT = null;
@@ -2640,9 +2696,8 @@
       defOrdem(() => f.s || ($("#jt-q").value.trim() ? "rel" : "rec"), (v) => (f.s = v), [{ v: "rec", t: "Edição mais recente" }, { v: "tit", t: "Assunto (A–Z)" }, { v: "mat", t: "Matéria" }, { v: "prec", t: "Teses com mais precedentes" }, { v: "rel", t: "Mais aderentes à busca" }]),
     ], aplicar);
     $("#jt-q").addEventListener("input", debounce(aplicar, 220));
-    $("#jt-mais").addEventListener("click", () => { lim += plano ? 30 : 40; render(); });
     $("#jt-abrir-todas").addEventListener("click", () => {
-      const vis = linhas.slice(0, lim); const fechar = vis.every((g) => abertas.has(g.e.ed));
+      const vis = pgJt.fatia(linhas); const fechar = vis.every((g) => abertas.has(g.e.ed));
       vis.forEach((g) => (fechar ? abertas.delete(g.e.ed) : abertas.add(g.e.ed))); render();
     });
     $("#jt-lista").addEventListener("click", (e) => {
@@ -2651,7 +2706,7 @@
         const ed = +ab.dataset.jtAbrir; abertas.has(ed) ? abertas.delete(ed) : abertas.add(ed);
         const g = linhas.find((z) => z.e?.ed === ed); const sec = ab.closest(".jt-ed");
         sec.outerHTML = linhaEd(g);
-        const bt = $("#jt-abrir-todas"); bt.textContent = linhas.slice(0, lim).every((z) => abertas.has(z.e?.ed)) ? "Fechar todas" : "Abrir as visíveis";
+        const bt = $("#jt-abrir-todas"); bt.textContent = pgJt.fatia(linhas).every((z) => abertas.has(z.e?.ed)) ? "Fechar todas" : "Abrir as visíveis";
         return;
       }
       const vt = e.target.closest("[data-jt-todas]");
@@ -2691,19 +2746,18 @@
       </div>
       <div class="barra-res"><p id="sm-info"></p><span class="nota">Fonte: página oficial de súmulas do STJ</span></div>
       <ol class="lista" id="sm-lista"></ol>
-      <button class="btn btn-claro btn-mais" id="sm-mais" hidden>Mostrar mais</button>`;
-    let lista = [], mostrados = 0, termos = [], ca = {}, cs = {};
+      <div id="sm-pag"></div>`;
+    let lista = [], termos = [], ca = {}, cs = {};
+    const pgSm = paginador("sm", () => render(false), "#sm-lista");
     const PER = [["", "Qualquer data"], ["5", "Últimos 5 anos"], ["10", "Últimos 10 anos"], ["2020", "2020 em diante"], ["2010", "2010 a 2019"], ["2000", "2000 a 2009"], ["1990", "1990 a 1999"]];
     const anoAtual = +hojeISO().slice(0, 4);
     const noPer = (x, v) => { if (!v) return true; const a = +x._d.slice(0, 4); if (!a) return false; return v.length === 1 || v === "10" ? a > anoAtual - +v : v === "2020" ? a >= 2020 : a >= +v && a <= +v + 9; };
     const render = (reset) => {
       const ul = $("#sm-lista");
-      if (reset) { ul.innerHTML = ""; mostrados = 0; }
-      const lote = lista.slice(mostrados, mostrados + 30);
-      ul.insertAdjacentHTML("beforeend", lote.map((x) => cardSumula(x, termos)).join(""));
-      mostrados += lote.length;
+      if (reset) pgSm.pag = 1;
+      ul.innerHTML = pgSm.fatia(lista).map((x) => cardSumula(x, termos)).join("");
+      $("#sm-pag").innerHTML = pgSm.html(lista.length);
       if (!lista.length) ul.innerHTML = vazio("sumulas", "Nenhuma súmula encontrada", "Revise os termos ou os filtros. Para ver as canceladas, use o filtro Situação.");
-      const b = $("#sm-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
     };
     const aplicar = () => {
       f.q = $("#sm-q").value;
@@ -2734,7 +2788,6 @@
       defOrdem(() => f.s, (v) => (f.s = v), [{ v: "rec", t: "Mais recentes" }, { v: "num", t: "Número (menor primeiro)" }, { v: "julg", t: "Aprovação mais recente" }, { v: "ant", t: "Aprovação mais antiga" }, { v: "rel", t: "Mais aderentes à busca" }]),
     ], aplicar);
     $("#sm-q").addEventListener("input", debounce(aplicar, 200));
-    $("#sm-mais").addEventListener("click", () => render(false));
     $("#sm-lista").addEventListener("click", (e) => {
       const b = e.target.closest("[data-copiar-sum]"); if (!b) return;
       const x = l.find((y) => y.n === +b.closest("[data-sum]").dataset.sum); if (!x) return;
@@ -2761,20 +2814,19 @@
       </div>
       <div class="barra-res"><p id="rp-info"></p><button type="button" class="btn btn-fant btn-peq" id="rp-link">${ico("link")} Copiar link</button></div>
       <ol class="lista" id="rp-lista"></ol>
-      <button class="btn btn-claro btn-mais" id="rp-mais" hidden>Mostrar mais</button>`;
-    let lista = [], mostrados = 0, termos = [], ca = {}, cont = {};
+      <div id="rp-pag"></div>`;
+    let lista = [], termos = [], ca = {}, cont = {};
+    const pgRp = paginador("rp", () => render(false), "#rp-lista");
     const render = (reset) => {
       const ul = $("#rp-lista");
-      if (reset) { ul.innerHTML = ""; mostrados = 0; }
-      const lote = lista.slice(mostrados, mostrados + 25);
-      ul.insertAdjacentHTML("beforeend", lote.map((x) => {
+      if (reset) pgRp.pag = 1;
+      $("#rp-pag").innerHTML = pgRp.html(lista.length);
+      ul.innerHTML = (pgRp.fatia(lista).map((x) => {
         const pts = emPauta.get(`${x.tp}-${x.n}`);
         const ex = `${pts ? `<span class="selo alta">Em pauta ${fmtData(pts[0].d)}</span>` : ""}${/suspens/i.test(x.info || "") && x._g === "andamento" ? `<span class="selo rel">Suspensão</span>` : ""}`;
         return linhaTema(x, ex, termos);
       }).join(""));
-      mostrados += lote.length;
       if (!lista.length) ul.innerHTML = vazio("repetitivos", "Nenhum registro encontrado", "Revise os filtros ou os termos da pesquisa.");
-      const b = $("#rp-mais"); b.hidden = mostrados >= lista.length; b.textContent = `Mostrar mais (${fmtInt(lista.length - mostrados)})`;
     };
     const aplicar = () => {
       f.q = $("#rp-q").value;
@@ -2808,7 +2860,6 @@
       defOrdem(() => f.s, (v) => (f.s = v), [{ v: "mov", t: "Última movimentação" }, { v: "afet", t: "Afetação mais recente" }, { v: "julg", t: "Julgamento mais recente" }, { v: "num", t: "Número (maior primeiro)" }, { v: "numc", t: "Número (menor primeiro)" }]),
     ], aplicar);
     $("#rp-q").addEventListener("input", debounce(aplicar, 200));
-    $("#rp-mais").addEventListener("click", () => render(false));
     $("#rp-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
     ligarAjuda($("#rp-f"), $("#rp-q"), aplicar);
     aplicar();
@@ -2836,10 +2887,11 @@
       <div class="fd-filtros filtros-lista" id="pt-pil"></div>
       <div class="barra-res"><p id="pt-info"></p><span class="nota" title="Por privacidade, o site não exibe os nomes das partes; processos em segredo de justiça aparecem sem advogados.">Pautas de ${fmtData(`${arq.slice(0, 4)}-${arq.slice(4, 6)}-${arq.slice(6, 8)}`)} · sem nomes de partes</span></div>
       <div id="pt-lista"></div>
-      <button class="btn btn-claro btn-mais" id="pt-mais" hidden>Mostrar mais</button>`;
-    let lista = [], lim = 150, termoOAB = "", qN = "";
+      <div id="pt-pag"></div>`;
+    let lista = [], termoOAB = "", qN = "";
+    const pgPt = paginador("pt", () => render(), "#pt-lista");
     const render = () => {
-      const vis = lista.slice(0, lim);
+      const vis = pgPt.fatia(lista);
       const porDia = new Map(); vis.forEach((x) => { if (!porDia.has(x.d)) porDia.set(x.d, []); porDia.get(x.d).push(x); });
       $("#pt-lista").innerHTML = vis.length ? [...porDia].map(([d, l]) => `
         <section class="dia"><div class="dia-cab"><h3>${fmtDiaL(d)}</h3><span>${fmtInt(lista.filter((x) => x.d === d).length)} processo(s)</span></div>
@@ -2850,7 +2902,7 @@
               <td>${x.temas?.length ? x.temas.map(([tp, n]) => `<a class="selo alta" href="#repetitivos?abrir=${encodeURIComponent(tp)}-${n}">${esc(tp)} ${n}</a>`).join(" ") : ""}${/^(EREsp|EAREsp)/.test(x.cl) ? ' <span class="selo pri">Divergência</span>' : ""}${x.seg ? ' <span class="selo canc">Segredo de justiça</span>' : ""}${advM.length ? `<div class="sub">${advM.map((a) => `${esc(titulo(a[1]))} (${esc(a[0])})`).join("; ")}</div>` : ""}</td>
               <td class="links"><a href="${URLS.processo(x.reg)}" target="_blank" rel="noopener">Processo</a></td></tr>`;
           }).join("")}</tbody></table></div></section>`).join("") : vazio("pautas", "Nenhum processo encontrado", "Revise os filtros. Para localizar seus processos, pesquise pela OAB ou pelo número.");
-      $("#pt-mais").hidden = lista.length <= lim;
+      $("#pt-pag").innerHTML = pgPt.html(lista.length);
     };
     const aplicar = () => {
       f.q = $("#pt-q").value.trim();
@@ -2865,7 +2917,7 @@
       const seg = { rel: (a, b) => (b.s || 0) - (a.s || 0), org: (a, b) => (D.orgaos[a.o] || "").localeCompare(D.orgaos[b.o] || "", "pt-BR"), rela: (a, b) => norm(a.rel).localeCompare(norm(b.rel)) }[f.s];
       lista.sort((a, b) => a.d.localeCompare(b.d) || (seg ? seg(a, b) : 0) || a._i - b._i);
       $("#pt-info").innerHTML = `<b>${fmtInt(lista.length)}</b> processo(s) em pauta${f.rel && !f.q ? " · só relevantes" : f.q ? " · busca em todas as pautas" : ""}`;
-      lim = 150; render();
+      pgPt.pag = 1; render();
     };
     let contD = {}, totalD = 0;
     pilulas($("#pt-pil"), [
@@ -2876,7 +2928,6 @@
         "As pautas ficam sempre agrupadas por dia de sessão; a ordem escolhida vale dentro de cada dia."),
     ], aplicar);
     $("#pt-q").addEventListener("input", debounce(aplicar, 250));
-    $("#pt-mais").addEventListener("click", () => { lim += 150; render(); });
     aplicar();
   }
   async function vDjen(corpo, p) {
@@ -2892,20 +2943,20 @@
       <p class="aviso" style="margin-top:12px">${ico("alerta")}<span>Acórdãos publicados no Diário da Justiça nos últimos dias disponíveis na base diária do STJ, que chega com cerca de duas semanas de atraso. A base não traz ementa nem órgão julgador; a Turma é estimada pelo relator.</span></p>
       <div class="barra-res"><p id="dj-info"></p></div>
       <div class="card tabela-wrap"><table class="tabela"><thead><tr><th>Publicação</th><th>Processo</th><th>Recurso</th><th>Relator(a)</th><th>Resultado</th><th></th></tr></thead><tbody id="dj-tb"></tbody></table></div>
-      <button class="btn btn-claro btn-mais" id="dj-mais" hidden>Mostrar mais</button>`;
-    let lista = [], lim = 100;
+      <div id="dj-pag"></div>`;
+    let lista = [];
+    const pgDj = paginador("dj", () => render(), "#dj-tb");
     const render = () => {
-      $("#dj-tb").innerHTML = lista.slice(0, lim).map((x) => `<tr><td>${fmtData(x.d)}</td><td class="num">${esc(x.p)}</td><td>${esc(x.r || "—")}</td><td>${esc(relatorFmt(x.rel))}${x.tr ? `<div class="sub">${esc(D.orgaos[x.tr])} (aprox.)</div>` : ""}</td><td>${esc(x.t || "—")}</td><td class="links"><a href="${URLS.inteiroTeor(x.reg, x.d)}" target="_blank" rel="noopener">Inteiro teor</a></td></tr>`).join("") || `<tr><td colspan="6" class="sub">Nenhum resultado.</td></tr>`;
-      $("#dj-mais").hidden = lista.length <= lim;
+      $("#dj-tb").innerHTML = pgDj.fatia(lista).map((x) => `<tr><td>${fmtData(x.d)}</td><td class="num">${esc(x.p)}</td><td>${esc(x.r || "—")}</td><td>${esc(relatorFmt(x.rel))}${x.tr ? `<div class="sub">${esc(D.orgaos[x.tr])} (aprox.)</div>` : ""}</td><td>${esc(x.t || "—")}</td><td class="links"><a href="${URLS.inteiroTeor(x.reg, x.d)}" target="_blank" rel="noopener">Inteiro teor</a></td></tr>`).join("") || `<tr><td colspan="6" class="sub">Nenhum resultado.</td></tr>`;
+      $("#dj-pag").innerHTML = pgDj.html(lista.length);
     };
     const aplicar = () => {
       const q = norm($("#dj-q").value).split(/\s+/).filter(Boolean), d = $("#dj-d").value, t = $("#dj-t").value, r = norm($("#dj-r").value.trim());
       lista = rad.filter((x) => (!d || x.d === d) && (!t || x.tr === t) && (!r || norm(x.rel).includes(r)) && q.every((w) => x._p.includes(w)));
-      $("#dj-info").innerHTML = `<b>${fmtInt(lista.length)}</b> acórdão(s)`; lim = 100; render();
+      $("#dj-info").innerHTML = `<b>${fmtInt(lista.length)}</b> acórdão(s)`; pgDj.pag = 1; render();
     };
     ["#dj-q", "#dj-r"].forEach((s) => $(s).addEventListener("input", debounce(aplicar, 200)));
     ["#dj-d", "#dj-t"].forEach((s) => $(s).addEventListener("change", aplicar));
-    $("#dj-mais").addEventListener("click", () => { lim += 100; render(); });
     aplicar();
   }
 
@@ -3057,7 +3108,7 @@
       <p>O Radar STJ organiza a jurisprudência do Superior Tribunal de Justiça a partir do <a href="https://dadosabertos.web.stj.jus.br/" target="_blank" rel="noopener">Portal de Dados Abertos do STJ</a>. Uma rotina automática consulta o portal duas vezes por dia e publica o que houver de novo.</p>
       <h3 style="font-family:var(--ui)">Fontes</h3>
       <ul>
-        <li><b>Acórdãos (espelhos):</b> ementa, tese, relator, datas e referências legislativas da Corte Especial, das Seções e das Turmas. O STJ divulga um arquivo por mês e órgão, poucos dias após o fim do mês. O site mantém os últimos 3 anos (36 meses).</li>
+        <li><b>Acórdãos (espelhos):</b> ementa, tese, relator, datas e referências legislativas da Corte Especial, das Seções e das Turmas. O STJ divulga um arquivo por mês e órgão, poucos dias após o fim do mês. O acervo começa em janeiro de 2020 e está sendo ampliado aos poucos, com o objetivo de reunir pelo menos dez anos. Os anos anteriores a maio de 2022 vêm do arquivo histórico que o STJ publica com todos os espelhos até aquela data. Na Pesquisa, a busca por termos percorre até dois anos por vez (ou um ano inteiro escolhido no filtro Período), para continuar rápida; a busca por número percorre todo o acervo.</li>
         <li><b>Precedentes qualificados:</b> temas repetitivos, controvérsias, IAC, SIRDR e PUIL, com os processos vinculados. A atualização é diária.</li>
         <li><b>Pautas futuras:</b> processos incluídos nas próximas sessões. A atualização é diária. Por privacidade, o site não exibe os nomes das partes.</li>
         <li><b>Publicações no DJEN:</b> metadados diários dos acórdãos publicados, com cerca de duas semanas de defasagem.</li>

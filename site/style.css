@@ -943,3 +943,25 @@ svg.gira { transform: rotate(180deg); }
 .topo-ajuda { display: inline-grid; place-items: center; vertical-align: middle; width: 26px; height: 26px; margin-left: 6px; border-radius: 50%; border: 1px solid var(--linha-2); background: var(--sup); color: var(--tx-2); font: 700 13px var(--ui); cursor: pointer; position: relative; top: -2px; transition: background-color 140ms ease, color 140ms ease, transform 140ms var(--ease-out); }
 .topo-ajuda:hover { background: var(--pri); color: var(--pri-tx); border-color: var(--pri); }
 .topo-ajuda:active { transform: scale(0.94); }
+
+/* Paginação numerada */
+.paginas { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; margin: 20px 0 8px; padding: 12px 14px; background: var(--sup); border: 1px solid var(--linha); border-radius: 14px; }
+.pag-info { font-size: 13px; color: var(--tx-3); font-variant-numeric: tabular-nums; min-width: 110px; }
+.pag-nums { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.pag-nums button { min-width: 36px; height: 36px; padding: 0 8px; border-radius: 9px; border: 1px solid transparent; background: none; color: var(--tx-2); font: 600 14px var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; display: inline-grid; place-items: center; transition: background-color 120ms ease, color 120ms ease; }
+.pag-nums button:hover:not(:disabled):not([aria-current]) { background: var(--sup-2); border-color: var(--linha); }
+.pag-nums button[aria-current="page"] { background: var(--pri); color: var(--pri-tx); }
+.pag-nums button:disabled { opacity: .35; cursor: default; }
+.pag-nums .pag-seta svg { width: 15px; height: 15px; }
+.pag-reti { min-width: 22px; text-align: center; color: var(--tx-3); }
+.pag-por { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--tx-3); }
+.pag-por span { margin-right: 4px; }
+.pag-por button { height: 30px; min-width: 38px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--linha); background: var(--sup); color: var(--tx-2); font: 600 13px var(--ui); cursor: pointer; }
+.pag-por button[aria-pressed="true"] { background: var(--tx); border-color: var(--tx); color: var(--sup); }
+@media (max-width: 860px) {
+  .paginas { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 10px; }
+  .pag-info { text-align: center; }
+  .pag-nums button { min-width: 34px; height: 38px; }
+  .pag-por { justify-content: center; }
+}
+@media (max-width: 860px) { .pag-nums { flex-wrap: nowrap; gap: 2px; } .pag-nums button { min-width: 32px; padding: 0 4px; } .pag-reti { min-width: 14px; } }
