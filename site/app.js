@@ -1806,6 +1806,7 @@
     fecharGaveta(); fecharPopF();
     if (D.saiFeed) { D.saiFeed(); D.saiFeed = null; }
     const { v, p } = lerHash();
+    if (v !== "pesquisa") AC.token++; // interrompe uma busca longa em andamento ao sair da Pesquisa
     const def = VIEWS.find((x) => x.id === v);
     $$("[data-v]").forEach((a) => a.classList.toggle("ativa", a.dataset.v === v));
     $("#topo-titulo").innerHTML = `${esc(def.tit)}${AJUDA_VIEW[def.id] ? ` <button type="button" class="topo-ajuda" data-topo-ajuda="${def.id}" title="O que é o ${esc(def.tit)}" aria-label="O que é o ${esc(def.tit)}">?</button>` : ""}`;
@@ -1822,6 +1823,7 @@
     try { await def.fn(main, p, mesma); }
     catch (e) {
       console.error(e);
+      if (viewAtual !== v) return; // erro de uma tela que o usuário já deixou
       main.innerHTML = `<div class="card vazio"><div class="vazio-ico">${ico("alerta")}</div><h3>Não foi possível carregar os dados</h3><p>${esc(e.message)}</p><button class="btn btn-claro" onclick="location.reload()">Tentar de novo</button></div>`;
     }
   }
