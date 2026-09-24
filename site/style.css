@@ -965,3 +965,52 @@ svg.gira { transform: rotate(180deg); }
   .pag-por { justify-content: center; }
 }
 @media (max-width: 860px) { .pag-nums { flex-wrap: nowrap; gap: 2px; } .pag-nums button { min-width: 32px; padding: 0 4px; } .pag-reti { min-width: 14px; } }
+
+/* Constância e conquistas (Atualize-se) */
+.hab-chip { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px 0 4px; border-radius: 99px; border: 1px solid var(--linha); background: var(--sup); color: var(--tx-2); font: 500 12.5px var(--ui); cursor: pointer; transition: border-color 140ms ease, transform 140ms var(--ease-out); }
+.hab-chip:hover { border-color: var(--pri); }
+.hab-chip:active { transform: scale(0.96); }
+.hab-chip b { color: var(--tx); font-variant-numeric: tabular-nums; }
+.hab-seq { display: inline-flex; align-items: center; gap: 2px; color: hsl(28 85% 45%); font-weight: 700; }
+.hab-seq svg { width: 14px; height: 14px; }
+.hab-anel .trilho { fill: none; stroke: var(--sup-3); stroke-width: 3.5; }
+.hab-anel .feito { fill: none; stroke: var(--pri); stroke-width: 3.5; stroke-linecap: round; transition: stroke-dashoffset 500ms var(--ease-out); }
+.hab-anel.ok .feito { stroke: hsl(150 60% 38%); }
+.hab-chip.festa { animation: hab-festa 900ms var(--ease-out); }
+@keyframes hab-festa { 0% { box-shadow: 0 0 0 0 hsl(150 60% 45% / .55); transform: scale(1); } 30% { transform: scale(1.08); } 100% { box-shadow: 0 0 0 14px hsl(150 60% 45% / 0); transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .hab-chip.festa { animation: none; } .hab-anel .feito { transition: none; } }
+.hab-topo { display: flex; align-items: center; gap: 16px; margin: 4px 0 14px; }
+.hab-grande { margin: 0; font-size: 17px; }
+.hab-grande b { font-size: 26px; font-family: var(--serif); }
+.hab-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 8px; }
+.hab-nums div { background: var(--sup-2); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; }
+.hab-nums b { font: 700 22px var(--serif); }
+.hab-nums span { font-size: 12px; color: var(--tx-3); }
+.hab-metas { margin: 0 0 6px; }
+.hab-metas span { margin-left: 8px; }
+.hab-grade { display: flex; gap: 4px; margin: 6px 0; }
+.hab-col { display: grid; gap: 4px; }
+.hab-grade i { width: 16px; height: 16px; border-radius: 4px; background: var(--sup-3); }
+.hab-grade i.n1 { background: hsl(222 70% 55% / .3); }
+.hab-grade i.n2 { background: hsl(222 70% 55% / .6); }
+.hab-grade i.n3 { background: hsl(150 60% 40%); }
+.hab-grade i.fut { background: transparent; border: 1px dashed var(--linha); }
+.conq-lista { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 8px; }
+.conq { display: flex; gap: 12px; padding: 12px; border: 1px solid var(--linha); border-radius: 12px; }
+.conq > div { flex: 1; min-width: 0; }
+.conq b { font-size: 14px; }
+.conq p { margin: 2px 0 6px; font-size: 13px; color: var(--tx-2); }
+.conq small { font-size: 11.5px; color: var(--tx-3); font-variant-numeric: tabular-nums; }
+.conq-ico { flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--sup-3); color: var(--tx-3); }
+.conq-ico svg { width: 20px; height: 20px; }
+.conq.ganha .conq-ico { background: hsl(42 90% 55% / .18); color: hsl(38 80% 38%); }
+.conq-niv { margin-left: 8px; font-size: 11.5px; font-weight: 700; color: hsl(38 80% 38%); text-transform: uppercase; letter-spacing: .05em; }
+.conq-barra { height: 6px; border-radius: 3px; background: var(--sup-3); overflow: hidden; }
+.conq-barra i { display: block; height: 100%; background: var(--pri); border-radius: 3px; }
+.conq.ganha .conq-barra i { background: hsl(38 85% 48%); }
+.hab-resumo { display: flex; align-items: center; gap: 12px; width: 100%; margin: 6px 0 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--linha); background: var(--sup-2); text-align: left; cursor: pointer; font: 500 14px var(--ui); color: var(--tx-2); }
+.hab-resumo b { color: var(--tx); }
+.hab-resumo small { display: block; font-size: 12.5px; color: var(--tx-3); margin-top: 2px; }
+@media (max-width: 860px) { .hab-chip .hab-txt { display: none; } .hab-chip { padding: 0 8px 0 3px; } }
+.hab-anel { flex: none; }
+.pag-por.hab-metas { justify-content: flex-start; }

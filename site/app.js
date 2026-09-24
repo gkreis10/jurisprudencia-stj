@@ -1092,8 +1092,111 @@
   }
   const nFiltros = (f) => f.ar.length + f.tp.length + (f.per ? 1 : 0) + (f.tese ? 1 : 0) + f.org.length + (f.rel ? 1 : 0);
   function lidos() { return (P.lidos = P.lidos || {}); }
-  function marcarLido(k) { const l = lidos(); if (!l[k]) { l[k] = hojeISO(); const ks = Object.keys(l); if (ks.length > 4000) ks.slice(0, ks.length - 4000).forEach((x) => delete l[x]); salvarP(); } }
+  function marcarLido(k) { const l = lidos(); if (l[k]) return false; l[k] = hojeISO(); const ks = Object.keys(l); if (ks.length > 4000) ks.slice(0, ks.length - 4000).forEach((x) => delete l[x]); salvarP(); return true; }
   const lidosHoje = () => { const h = hojeISO(); return Object.values(lidos()).filter((d) => d === h).length; };
+  // ------------------------------------------------ constância e conquistas
+  // Meta diária de leitura, sequência em dias úteis e conquistas por marcos. Tudo fica neste navegador.
+  const METAS = [5, 10, 20];
+  function hab() {
+    if (!P.hab) {
+      const dias = {}; Object.values(lidos()).forEach((d) => (dias[d] = (dias[d] || 0) + 1));
+      P.hab = { meta: 10, dias, total: Object.values(dias).reduce((a, b) => a + b, 0), tipos: {}, areas: {}, zerou: {}, conq: {} };
+    }
+    return P.hab;
+  }
+  const diaUtil = (iso) => { const w = new Date(iso + "T12:00:00Z").getUTCDay(); return w > 0 && w < 6; };
+  function sequencia() {
+    const H = hab(), hoje = hojeISO();
+    let n = 0, d = hoje;
+    for (let i = 0; i < 800; i++, d = somaDias(d, -1)) {
+      const ok = (H.dias[d] || 0) >= H.meta;
+      if (!diaUtil(d)) { if (ok && d === hoje) n++; continue; }
+      if (ok) n++;
+      else if (d === hoje) continue; // hoje ainda não terminou
+      else break;
+    }
+    return n;
+  }
+  function melhorSequencia() {
+    const H = hab(); const dias = Object.keys(H.dias).sort(); if (!dias.length) return 0;
+    let melhor = 0, atual = 0;
+    for (let d = dias[0]; d <= hojeISO(); d = somaDias(d, 1)) {
+      if (!diaUtil(d)) continue;
+      if ((H.dias[d] || 0) >= H.meta) { atual++; melhor = Math.max(melhor, atual); } else if (d !== hojeISO()) atual = 0;
+    }
+    return Math.max(melhor, sequencia());
+  }
+  const CONQUISTAS = [
+    { id: "seq", rot: "Constância", ico: "raio", niveis: [3, 5, 10, 20, 40], valor: () => melhorSequencia(), desc: (n) => `${n} dias úteis seguidos com a meta cumprida` },
+    { id: "total", rot: "Leitor assíduo", ico: "arquivo", niveis: [25, 100, 300, 700, 1500], valor: () => hab().total, desc: (n) => `${fmtInt(n)} novidades lidas` },
+    { id: "rep", rot: "Repetitivos em dia", ico: "repetitivos", niveis: [10, 40, 100, 250, 500], valor: () => ["tese", "afetacao", "publicado", "pauta"].reduce((a, k) => a + (hab().tipos[k] || 0), 0), desc: (n) => `${fmtInt(n)} teses firmadas, temas afetados e pautas de repetitivos` },
+    { id: "info", rot: "Curadoria do STJ", ico: "destaques", niveis: [20, 80, 200, 500], valor: () => hab().tipos.informativo || 0, desc: (n) => `${fmtInt(n)} notas do Informativo` },
+    { id: "fila", rot: "Fila em dia", ico: "semana", niveis: [1, 5, 15, 40, 100], valor: () => Object.keys(hab().zerou).length, desc: (n) => `chegou ao fim da fila em ${n} dia${n > 1 ? "s" : ""}` },
+    { id: "mat", rot: "Especialista", ico: "sumulas", niveis: [30, 100, 250, 600], valor: () => Math.max(0, ...Object.values(hab().areas)), desc: (n) => `${fmtInt(n)} leituras em ${esc(AREAS[Object.entries(hab().areas).sort((a, b) => b[1] - a[1])[0]?.[0]] || "uma matéria")}` },
+  ];
+  const nivelDe = (c, v = c.valor()) => c.niveis.filter((x) => v >= x).length;
+  function registrarLeitura(it) {
+    const H = hab(), hoje = hojeISO();
+    const antes = CONQUISTAS.map((c) => nivelDe(c)), metaAntes = (H.dias[hoje] || 0) >= H.meta;
+    H.dias[hoje] = (H.dias[hoje] || 0) + 1; H.total++;
+    if (it?.tipo) H.tipos[it.tipo] = (H.tipos[it.tipo] || 0) + 1;
+    (it?.ar || []).slice(0, 1).forEach((a) => (H.areas[a] = (H.areas[a] || 0) + 1));
+    const ks = Object.keys(H.dias).sort(); if (ks.length > 400) ks.slice(0, ks.length - 400).forEach((d) => delete H.dias[d]);
+    salvarP();
+    const avisos = [];
+    if (!metaAntes && H.dias[hoje] >= H.meta) { const sq = sequencia(); avisos.push(`Meta de hoje cumprida${sq > 1 ? ` · ${sq} dias úteis seguidos` : ""}`); comemorar(); }
+    CONQUISTAS.forEach((c, i) => { const n = nivelDe(c); if (n > antes[i]) { H.conq[`${c.id}${n}`] = hoje; avisos.push(`Conquista: ${c.rot}, nível ${n} (${c.desc(c.niveis[n - 1])})`); comemorar(); } });
+    if (avisos.length) { salvarP(); avisos.forEach((a, i) => setTimeout(() => toast(a), i * 1600)); }
+  }
+  function registrarFilaZerada() { const H = hab(), hoje = hojeISO(); if (H.zerou[hoje]) return; const antes = nivelDe(CONQUISTAS[4]); H.zerou[hoje] = 1; const n = nivelDe(CONQUISTAS[4]); if (n > antes) { H.conq[`fila${n}`] = hoje; toast(`Conquista: Fila em dia, nível ${n}`); comemorar(); } salvarP(); }
+  function comemorar() { const c = $("#fd-hab"); if (!c) return; c.classList.remove("festa"); void c.offsetWidth; c.classList.add("festa"); }
+  function anelHab(tam = 30) {
+    const H = hab(), feito = H.dias[hojeISO()] || 0, fr = Math.min(1, feito / H.meta), r = tam / 2 - Math.max(3.5, tam / 11) / 2 - 1, c = 2 * Math.PI * r;
+    return `<svg class="hab-anel${fr >= 1 ? " ok" : ""}" viewBox="0 0 ${tam} ${tam}" width="${tam}" height="${tam}" style="width:${tam}px;height:${tam}px" aria-hidden="true"><circle cx="${tam / 2}" cy="${tam / 2}" r="${r}" class="trilho" style="stroke-width:${Math.max(3.5, tam / 11)}"/><circle cx="${tam / 2}" cy="${tam / 2}" r="${r}" class="feito" style="stroke-width:${Math.max(3.5, tam / 11)}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - fr)}" transform="rotate(-90 ${tam / 2} ${tam / 2})"/></svg>`;
+  }
+  function chipHab() {
+    const H = hab(), feito = H.dias[hojeISO()] || 0, sq = sequencia();
+    return `${anelHab()}<span class="hab-txt"><b>${Math.min(feito, 999)}/${H.meta}</b> hoje</span>${sq ? `<span class="hab-seq" title="Dias úteis seguidos com a meta cumprida">${ico("raio")}${sq}</span>` : ""}`;
+  }
+  function abrirHab() {
+    const H = hab(), hoje = hojeISO(), feito = H.dias[hoje] || 0, sq = sequencia(), melhor = melhorSequencia();
+    // Últimas 12 semanas, só dias úteis (colunas = semanas).
+    const seg = somaDias(hoje, -((new Date(hoje + "T12:00:00Z").getUTCDay() + 6) % 7));
+    let grade = "";
+    for (let w = 11; w >= 0; w--) {
+      grade += `<div class="hab-col">`;
+      for (let d = 0; d < 5; d++) {
+        const dia = somaDias(seg, -7 * w + d), n = H.dias[dia] || 0, niv = dia > hoje ? "fut" : n >= H.meta ? "n3" : n >= H.meta / 2 ? "n2" : n > 0 ? "n1" : "n0";
+        grade += `<i class="${niv}" title="${fmtData(dia)}: ${n} lida${n === 1 ? "" : "s"}"></i>`;
+      }
+      grade += `</div>`;
+    }
+    const cards = CONQUISTAS.map((c) => {
+      const v = c.valor(), n = nivelDe(c, v), prox = c.niveis[n], ant = n ? c.niveis[n - 1] : 0;
+      const fr = prox ? Math.min(1, (v - ant) / (prox - ant)) : 1;
+      return `<li class="conq${n ? " ganha" : ""}"><span class="conq-ico">${ico(c.ico)}</span><div><b>${esc(c.rot)}</b>${n ? `<span class="conq-niv">nível ${n} de ${c.niveis.length}</span>` : ""}
+        <p>${prox ? `Próximo: ${c.desc(prox)}` : `Nível máximo: ${c.desc(c.niveis[c.niveis.length - 1])}`}</p>
+        <div class="conq-barra"><i style="width:${Math.round(fr * 100)}%"></i></div><small>${fmtInt(v)}${prox ? ` de ${fmtInt(prox)}` : ""}</small></div></li>`;
+    }).join("");
+    abrirGaveta("Atualize-se", "Sua constância", `
+      <div class="hab-topo">${anelHab(76)}<div><p class="hab-grande"><b>${feito}</b> de ${H.meta} novidades hoje</p>
+        <p class="nota">${feito >= H.meta ? "Meta cumprida. O que vier agora é bônus." : `Faltam ${H.meta - feito} para a meta de hoje.`}</p></div></div>
+      <div class="hab-nums"><div><b>${sq}</b><span>${sq === 1 ? "dia útil" : "dias úteis seguidos"}</span></div><div><b>${melhor}</b><span>melhor sequência</span></div><div><b>${fmtInt(H.total)}</b><span>novidades lidas</span></div></div>
+      <h3>Meta diária</h3>
+      <div class="pag-por hab-metas">${METAS.map((m) => `<button type="button" data-hab-meta="${m}" aria-pressed="${m === H.meta}">${m}</button>`).join("")}<span>novidades por dia</span></div>
+      <h3>Últimas 12 semanas</h3>
+      <div class="hab-grade">${grade}</div>
+      <p class="nota">Cada quadrado é um dia útil; mais escuro, mais perto da meta. Fins de semana não contam contra a sequência.</p>
+      <h3>Conquistas</h3>
+      <ul class="conq-lista">${cards}</ul>
+      <p class="nota">O progresso fica guardado neste navegador.</p>`);
+  }
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#fd-hab, [data-hab-abrir]")) return abrirHab();
+    const m = e.target.closest("[data-hab-meta]");
+    if (m) { hab().meta = +m.dataset.habMeta; salvarP(); abrirHab(); const c = $("#fd-hab"); if (c) c.innerHTML = chipHab(); }
+  });
+
   async function contarNaoLidos() {
     try { const it = await itensFeed(); const f = feedF(); return it.filter((x) => !lidos()[x.k] && passaFeed(x, f)).length; } catch { return 0; }
   }
@@ -1228,6 +1331,7 @@
         <li>Role a tela ou use as setas do teclado (↑ ↓) para passar de um cartão a outro. O cartão lido fica marcado, e a barra no topo mostra o seu progresso.</li>
         <li>“Só não lidos” esconde o que você já viu. Os filtros restringem por matéria, tipo, período, tese, órgão e relator.</li>
         <li>Nos cartões, é possível abrir o julgado completo, copiar a tese com a referência e <b>salvar</b> para acompanhar no Meu radar. Um toque duplo no cartão também salva.</li>
+        <li>O círculo no alto mostra a <b>meta do dia</b> (5, 10 ou 20 novidades) e a sequência de dias úteis em que ela foi cumprida. Toque nele para ver o histórico das últimas semanas e as <b>conquistas</b>, que sobem de nível com a leitura. O progresso fica guardado neste navegador.</li>
       </ul>
       <p class="nota">A seleção é automática, para orientar a leitura; confira sempre o inteiro teor antes de citar.</p>`),
   };
@@ -1243,7 +1347,7 @@
     main.innerHTML = `
       <div class="feed-barra">
         <div class="fd-filtros rolagem" id="fd-filtros"></div>
-        <div class="fd-progl"><div class="feed-prog"><i id="fd-prog"></i></div><span class="feed-cont" id="fd-cont"></span></div>
+        <div class="fd-progl"><div class="feed-prog"><i id="fd-prog"></i></div><span class="feed-cont" id="fd-cont"></span><button type="button" class="hab-chip" id="fd-hab" title="Sua constância: meta do dia, sequência e conquistas" aria-label="Sua constância">${chipHab()}</button></div>
       </div>
       <div class="feed" id="fd" tabindex="0" aria-label="Novidades da jurisprudência. Use as setas para navegar."></div>
       <div class="fd-veu" id="fd-veu" hidden></div>
@@ -1349,10 +1453,15 @@
     // -------------------------------------------------------------- fila
     const fimHTML = () => {
       const top = Object.entries(sessao.areas).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([a, n]) => `${esc(AREAS[a] || a)} ${n}`).join(" · ");
+      if (vis.length && soNovos && !nFiltros(f)) registrarFilaZerada();
+      const H = hab(), feitoH = H.dias[hojeISO()] || 0, sqH = sequencia();
+      const prox = CONQUISTAS.map((c) => { const v = c.valor(), n = nivelDe(c, v), alvo = c.niveis[n]; return alvo ? { c, falta: alvo - v, fr: v / alvo, alvo } : null; }).filter(Boolean).sort((a, b) => b.fr - a.fr)[0];
+      const blocoHab = `<button type="button" class="hab-resumo" data-hab-abrir>${anelHab(44)}<span><b>${feitoH >= H.meta ? "Meta de hoje cumprida" : `${feitoH} de ${H.meta} hoje`}</b>${sqH ? ` · ${sqH > 1 ? `${sqH} dias úteis seguidos` : "1 dia útil"}` : ""}${prox ? `<small>Perto da próxima conquista: ${esc(prox.c.rot)} (faltam ${fmtInt(prox.falta)})</small>` : ""}</span></button>`;
       return `<article class="reel reel-fim" data-i="${vis.length}"><div class="reel-in">
         <div class="vazio-ico" style="margin:0 0 14px">${ico("destaques")}</div>
         <p class="reel-kicker">Fim da fila</p>
         <div class="reel-texto"><p>${vis.length ? "Você está em dia com estas novidades." : "Nada novo nos filtros escolhidos."}</p></div>
+        ${blocoHab}
         <p class="reel-apoio">${sessao.lidos.size ? `Nesta leitura: <b>${sessao.lidos.size}</b> novidade${sessao.lidos.size > 1 ? "s" : ""}${top ? ` — ${top}` : ""}. ` : ""}Os repetitivos e as pautas mudam todos os dias; os acórdãos com ementa chegam em lotes mensais.</p>
         <footer class="reel-acoes">${nFiltros(f) ? `<button type="button" class="btn btn-pri btn-peq" id="fd-sem-filtro">Ver sem filtros</button>` : `<a class="btn btn-pri btn-peq" href="#destaques">Ver todos os destaques</a>`}<a class="btn btn-claro btn-peq" href="#radar">Meu radar e salvos</a>${soNovos ? `<button type="button" class="btn btn-fant btn-peq" id="fd-rever">Rever os já lidos</button>` : ""}</footer>
       </div></article>`;
@@ -1406,7 +1515,7 @@
       clearTimeout(timer);
       const it = vis[atual];
       if (it) timer = setTimeout(() => {
-        marcarLido(it.k);
+        if (marcarLido(it.k)) { registrarLeitura(it); const c = $("#fd-hab"); if (c) c.innerHTML = chipHab(); }
         if (!sessao.lidos.has(it.k)) { sessao.lidos.add(it.k); it.ar.forEach((a) => (sessao.areas[a] = (sessao.areas[a] || 0) + 1)); }
         $(".novo", el)?.remove(); atualizarProg();
       }, 1500);
@@ -3108,7 +3217,7 @@
       <p>O Radar STJ organiza a jurisprudência do Superior Tribunal de Justiça a partir do <a href="https://dadosabertos.web.stj.jus.br/" target="_blank" rel="noopener">Portal de Dados Abertos do STJ</a>. Uma rotina automática consulta o portal duas vezes por dia e publica o que houver de novo.</p>
       <h3 style="font-family:var(--ui)">Fontes</h3>
       <ul>
-        <li><b>Acórdãos (espelhos):</b> ementa, tese, relator, datas e referências legislativas da Corte Especial, das Seções e das Turmas. O STJ divulga um arquivo por mês e órgão, poucos dias após o fim do mês. O acervo começa em janeiro de 2020 e está sendo ampliado aos poucos, com o objetivo de reunir pelo menos dez anos. Os anos anteriores a maio de 2022 vêm do arquivo histórico que o STJ publica com todos os espelhos até aquela data. Na Pesquisa, a busca por termos percorre até dois anos por vez (ou um ano inteiro escolhido no filtro Período), para continuar rápida; a busca por número percorre todo o acervo.</li>
+        <li><b>Acórdãos (espelhos):</b> ementa, tese, relator, datas e referências legislativas da Corte Especial, das Seções e das Turmas. O STJ divulga um arquivo por mês e órgão, poucos dias após o fim do mês. O acervo reúne cerca de dez anos de acórdãos, desde janeiro de 2016. Os anos anteriores a maio de 2022 vêm do arquivo histórico que o STJ publica com todos os espelhos até aquela data. Na Pesquisa, a busca por termos percorre até dois anos por vez (ou um ano inteiro escolhido no filtro Período), para continuar rápida; a busca por número percorre todo o acervo.</li>
         <li><b>Precedentes qualificados:</b> temas repetitivos, controvérsias, IAC, SIRDR e PUIL, com os processos vinculados. A atualização é diária.</li>
         <li><b>Pautas futuras:</b> processos incluídos nas próximas sessões. A atualização é diária. Por privacidade, o site não exibe os nomes das partes.</li>
         <li><b>Publicações no DJEN:</b> metadados diários dos acórdãos publicados, com cerca de duas semanas de defasagem.</li>
