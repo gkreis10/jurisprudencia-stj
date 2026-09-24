@@ -160,8 +160,11 @@
   };
 
   // Valor de filtro de matéria: "civil" (geral) ou "civil/contratos" (específica).
-  const casaMat = (v, ar = [], sa = []) => !v || (v.includes("/") ? (sa || []).includes(v) : (ar || []).includes(v));
-  const rotMat = (v, curto = false) => { if (!v) return ""; const [a, s] = v.split("/"); return s ? (curto ? SUBAREAS[a]?.[s] || s : `${AREAS[a] || a} · ${SUBAREAS[a]?.[s] || s}`) : AREAS[a] || a; };
+  // Matérias escolhidas no filtro: uma ou várias, separadas por vírgula ("civil,consumidor/plano"); vale qualquer uma.
+  const listaMat = (v) => String(v || "").split(",").filter(Boolean);
+  const casaMat1 = (v, ar, sa) => (v.includes("/") ? (sa || []).includes(v) : (ar || []).includes(v));
+  const casaMat = (v, ar = [], sa = []) => !v || listaMat(v).some((x) => casaMat1(x, ar, sa));
+  const rotMat = (v, curto = false) => { if (!v) return ""; if (v.includes(",")) return listaMat(v).map((x) => rotMat(x, true)).join(", "); const [a, s] = v.split("/"); return s ? (curto ? SUBAREAS[a]?.[s] || s : `${AREAS[a] || a} · ${SUBAREAS[a]?.[s] || s}`) : AREAS[a] || a; };
   function contarMat(itens, arDe, saDe) {
     const c = {};
     for (const x of itens) { for (const a of arDe(x) || []) c[a] = (c[a] || 0) + 1; for (const s of saDe(x) || []) c[s] = (c[s] || 0) + 1; }
@@ -565,7 +568,7 @@
     return htmlEsc.split(/(<[^>]+>)/).map((seg) => (seg.startsWith("<") ? seg : seg.replace(re, "<mark>$1</mark>"))).join("");
   }
   const AJUDA_BUSCA = `
-    <div class="ajuda-busca" hidden>
+    <div class="ajuda-busca">
       <p><b>Como pesquisar.</b> As palavras são buscadas inteiras (<code>oral</code> não encontra “corporal”), no singular e no plural, e com os sinônimos jurídicos mais comuns: <code>dano moral</code> também encontra “dano extrapatrimonial”.</p>
       <table>
         <tr><td><code>prova oral</code></td><td>as duas palavras, em qualquer lugar (E implícito)</td></tr>
@@ -651,7 +654,10 @@
   async function getJSONgz(url) {
     if (typeof DecompressionStream !== "undefined") {
       try {
-        const r = await fetch(`${url}.gz`, { cache: "no-cache" });
+        // Meses antigos quase não mudam: aproveita o cache do navegador; os recentes são sempre conferidos.
+        const mesArq = /acordaos\/(\d{4}-\d{2})\//.exec(url)?.[1] || "";
+        const antigo = mesArq && D.man?.meses?.[3] && mesArq < D.man.meses[3].m;
+        const r = await fetch(`${url}.gz`, { cache: antigo ? "default" : "no-cache" });
         if (r.ok) {
           const buf = new Uint8Array(await r.arrayBuffer());
           const txt = buf[0] === 0x1f && buf[1] === 0x8b ? await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text() : new TextDecoder().decode(buf);
@@ -1315,7 +1321,84 @@
     </div></article>`;
   }
 
+  // Ajuda de cada tela: um único "?" ao lado do título. Nas telas com campo de busca,
+  // inclui o guia de pesquisa; os exemplos preenchem o campo da própria tela.
+  const COMO_BUSCAR = () => `<h3>Como pesquisar</h3>${AJUDA_BUSCA}`;
+  const ajuda = (titulo, html) => abrirGaveta("Como funciona", titulo, html);
+  document.addEventListener("click", (e) => {
+    const c = e.target.closest("#gaveta [data-ex]"); if (!c) return;
+    const campo = $("#view .campo-busca input"); if (!campo) return;
+    campo.value = c.dataset.ex; campo.dispatchEvent(new Event("input", { bubbles: true })); fecharGaveta(); campo.focus();
+  });
   const AJUDA_VIEW = {
+    painel: () => ajuda("O que é a Visão geral", `
+      <p class="texto-serif">A Visão geral é o ponto de partida do dia: mostra, numa só tela, o que mudou no STJ.</p>
+      <ul class="lista-ajuda">
+        <li>O botão do alto leva ao <b>Atualize-se</b>, com as novidades ainda não lidas.</li>
+        <li>O campo de busca aceita assunto, “tema 1234” ou número de processo e leva à Pesquisa.</li>
+        <li>As abas resumem os <b>repetitivos</b> movimentados nos últimos 30 dias, as <b>pautas</b> com temas ou julgamentos na Corte Especial e nas Seções, os <b>destaques</b> do mês e as novidades do <b>Meu radar</b>.</li>
+      </ul>`),
+    semana: () => ajuda("O que é o Resumo da semana", `
+      <p class="texto-serif">${EXPLICA.semana[1]}</p>
+      <ul class="lista-ajuda">
+        <li>Escolha a semana no filtro de data; os blocos do alto mostram quantos itens há de cada tipo e também servem de filtro.</li>
+        <li>É possível agrupar por tipo, matéria ou dia e restringir a uma ou mais matérias.</li>
+      </ul>`),
+    destaques: (p) => p?.get("aba") === "auto"
+      ? ajuda("O que é a Seleção automática", `
+        <p class="texto-serif">Triagem feita pelo site sobre todos os acórdãos dos últimos três meses: ficam os julgados de relevância média ou alta, pela pontuação descrita em Sobre (órgão julgador, tese registrada, afetação, superação de entendimento, entre outros critérios).</p>
+        <p>Para o Informativo oficial, que é a curadoria do próprio Tribunal, use a outra aba. Para períodos anteriores, use a Pesquisa.</p>${COMO_BUSCAR()}`)
+      : ajuda("O que é o Informativo do STJ", `
+        <p class="texto-serif">${EXPLICA.info[1]}</p>
+        <ul class="lista-ajuda">
+          <li>As notas vêm agrupadas por edição; toque na edição para abrir as notas. Por padrão, a lista traz todas as edições; o filtro Período restringe a uma edição, a um intervalo de datas ou às mais recentes.</li>
+          <li>Em cada nota é possível ler o inteiro teor, copiar o destaque com a referência e salvar para acompanhar.</li>
+        </ul>${COMO_BUSCAR()}`),
+    pesquisa: () => ajuda("Como usar a Pesquisa", `
+      <p class="texto-serif">Busca nas ementas, teses e referências legislativas de todo o acervo de acórdãos da Corte Especial, das Seções e das Turmas, desde 2010.</p>
+      <ul class="lista-ajuda">
+        <li>O campo aceita termos ou o número do processo (com ou sem classe e pontos). Pelo número, a busca percorre todo o acervo e as publicações recentes do DJEN.</li>
+        <li>Por padrão, a busca abrange todo o acervo e percorre os arquivos mês a mês, do mais recente ao mais antigo, mostrando os resultados à medida que avança. Para respostas imediatas, restrinja o Período (por exemplo, últimos 12 meses).</li>
+        <li>As decisões de rotina (Súmula 7, embargos rejeitados, falta de prequestionamento etc.) ficam ocultas; o filtro Exibir as mostra.</li>
+        <li>Matéria aceita mais de uma escolha; os demais filtros restringem por órgão, classe, relator e processo.</li>
+      </ul>${COMO_BUSCAR()}`),
+    repetitivos: () => ajuda("O que são os Precedentes qualificados", `
+      <p class="texto-serif">Temas repetitivos, controvérsias, incidentes de assunção de competência (IAC), SIRDR e PUIL do STJ, com a questão submetida, a tese firmada, a situação e os processos vinculados.</p>
+      <ul class="lista-ajuda">
+        <li>A cor da situação indica: verde, tese firmada ou tema julgado; âmbar, afetado ou em andamento; cinza, cancelado.</li>
+        <li>Os filtros mostram os temas com suspensão de processos e os que estão em pauta; em cada tema há a linha do tempo e o link para a página oficial.</li>
+      </ul>${COMO_BUSCAR()}`),
+    sumulas: (p) => p?.get("aba") === "teses"
+      ? ajuda("O que é a Jurisprudência em Teses", `<p class="texto-serif">${EXPLICA.teses[1]}</p>
+        <p>As edições aparecem em ordem; toque na edição para ver as teses e os precedentes. Cada tese pode ser copiada com a referência completa ou salva.</p>${COMO_BUSCAR()}`)
+      : ajuda("Como usar as Súmulas", `
+        <p class="texto-serif">Todos os enunciados do STJ, com o órgão que os aprovou, as datas de julgamento e publicação e a situação atual.</p>
+        <ul class="lista-ajuda">
+          <li>Por padrão aparecem as vigentes, inclusive as de redação alterada ou revisada; o filtro Situação mostra as canceladas.</li>
+          <li>Digite o número para ir direto ao enunciado. O botão de cópia traz o texto com a referência.</li>
+        </ul>${COMO_BUSCAR()}`),
+    pautas: () => ajuda("O que são as Pautas e publicações", `
+      <p class="texto-serif">Processos incluídos nas próximas sessões de julgamento do STJ e, na outra aba, os acórdãos publicados no DJEN que ainda não chegaram ao arquivo mensal de ementas.</p>
+      <ul class="lista-ajuda">
+        <li>As pautas são atualizadas diariamente e indicam os processos vinculados a temas repetitivos.</li>
+        <li>Para ser avisado quando um processo seu entrar em pauta, adicione o número ou a sua OAB no Meu radar.</li>
+        <li>Por privacidade, o site não exibe os nomes das partes.</li>
+      </ul>`),
+    composicao: () => ajuda("Sobre a Composição", `
+      <p class="texto-serif">Composição atual do STJ por órgão: Plenário, Corte Especial, Seções, Turmas, conselhos e comissões, conforme o documento oficial publicado pelo Tribunal.</p>
+      <ul class="lista-ajuda">
+        <li>A rotina do site confere o documento duas vezes ao dia e atualiza a página quando o STJ publica nova versão.</li>
+        <li>Toque em um nome para ver o perfil: cargos, órgãos em que atua, contato do gabinete, resumo do currículo oficial e os acórdãos relatados no acervo.</li>
+        <li>As fotos, quando disponíveis, vêm do acervo livre do Wikimedia Commons, com o crédito indicado.</li>
+      </ul>`),
+    verificar: () => ajuda("O que faz a Verificação de petição", `
+      <p class="texto-serif">Confere as citações de um texto jurídico: localiza os temas, precedentes e súmulas citados e informa a situação atual de cada um.</p>
+      <ul class="lista-ajuda">
+        <li>Aponta temas cancelados, revisados ou ainda sem tese e processos citados que são casos-piloto de repetitivos ou estão em pauta.</li>
+        <li>Sugere precedentes qualificados com assunto parecido, por semelhança de palavras.</li>
+        <li>O arquivo é lido no próprio navegador e não é enviado a nenhum servidor.</li>
+      </ul>`),
+    sobre: () => ajuda("Sobre esta página", `<p class="texto-serif">Aqui estão as fontes de cada seção, a frequência de atualização, o método de cálculo da relevância e o significado das cores usadas no site.</p>`),
     radar: () => abrirGaveta("Como funciona", "O que o Meu radar faz", `
       <p class="texto-serif">O Meu radar acompanha, por você, os assuntos, processos e advogados que interessam ao seu trabalho. Ele relê os dados do STJ a cada atualização do site (duas vezes ao dia) e aponta o que surgiu desde a sua última visita.</p>
       <h3>Assunto (ex.: “prescrição intercorrente”)</h3>
@@ -1359,7 +1442,7 @@
       </ul>
       <p class="nota">A seleção é automática, para orientar a leitura; confira sempre o inteiro teor antes de citar.</p>`),
   };
-  document.addEventListener("click", (e) => { const b = e.target.closest("[data-topo-ajuda]"); if (b) AJUDA_VIEW[b.dataset.topoAjuda]?.(); });
+  document.addEventListener("click", (e) => { const b = e.target.closest("[data-topo-ajuda]"); if (b) AJUDA_VIEW[b.dataset.topoAjuda]?.(lerHash().p); });
   async function vAtualize(main) {
     document.body.classList.add("modo-feed");
     const todos = await itensFeed();
@@ -1809,7 +1892,7 @@
     if (v !== "pesquisa") AC.token++; // interrompe uma busca longa em andamento ao sair da Pesquisa
     const def = VIEWS.find((x) => x.id === v);
     $$("[data-v]").forEach((a) => a.classList.toggle("ativa", a.dataset.v === v));
-    $("#topo-titulo").innerHTML = `${esc(def.tit)}${AJUDA_VIEW[def.id] ? ` <button type="button" class="topo-ajuda" data-topo-ajuda="${def.id}" title="O que é o ${esc(def.tit)}" aria-label="O que é o ${esc(def.tit)}">?</button>` : ""}`;
+    $("#topo-titulo").innerHTML = `${esc(def.tit)}${AJUDA_VIEW[def.id] ? ` <button type="button" class="topo-ajuda" data-topo-ajuda="${def.id}" title="Como funciona esta página" aria-label="Como funciona esta página">?</button>` : ""}`;
     $("#topo-sobre").textContent = def.sobre;
     document.title = `${def.tit} · Radar STJ`;
     const main = $("#view");
@@ -2256,7 +2339,7 @@
   // ================================================= paginação
   // Páginas numeradas ("1 2 3 4 5 … 37") e escolha de itens por página (10, 25, 50), iguais em todas as listas.
   const POR_PAG = [10, 25, 50];
-  const porPag = () => (POR_PAG.includes(P.porPag) ? P.porPag : 25);
+  const porPag = () => (POR_PAG.includes(P.porPag) ? P.porPag : 10);
   const PAGINADORES = new Map();
   function paginador(id, desenhar, alvo) {
     const pg = {
@@ -2318,7 +2401,7 @@
       if (d.tipo === "toggle" || !ativo(d)) return d.rotAtual ? d.rotAtual() : d.rot;
       if (d.tipo === "multi") { const v = d.get(); const o = d.opcoes().find((x) => x.v === v[0]); return v.length === 1 ? (o?.t || d.rot) : `${d.rot} · ${v.length}`; }
       if (d.tipo === "texto") return `${d.rot}: ${d.get()}`;
-      if (d.tipo === "materia") return rotMat(d.get());
+      if (d.tipo === "materia") { const l = listaMat(d.get()); return l.length > 1 ? `Matéria · ${l.length}` : rotMat(d.get()); }
       const o = d.opcoes().find((x) => String(x.v) === String(d.get())); return o ? (o.curto || o.t) : d.rotValor ? d.rotValor(d.get()) : d.rot;
     };
     function desenhar() {
@@ -2334,7 +2417,7 @@
         return `<button type="button" class="chip${o.h != null ? " area" : ""}" data-op="${esc(String(o.v))}" aria-pressed="${m}"${o.h != null ? ` style="--h:${o.h}"` : ""}>${o.h != null ? "<i></i>" : o.ponto ? `<span class="ponto ${o.ponto}"></span>` : ""}${esc(o.t)}${o.n != null ? ` <span class="n">${fmtInt(o.n)}</span>` : ""}</button>`;
       };
       const corpo = d.tipo === "materia"
-        ? htmlMaterias({ cont: d.cont ? d.cont() : null, sel: (x) => String(v || "") === x, aberta: POPF.aberta, todas: d.todas || "Todas as matérias" })
+        ? htmlMaterias({ cont: d.cont ? d.cont() : null, sel: (x) => listaMat(v).includes(x), aberta: POPF.aberta, todas: d.todas || "Todas as matérias" })
         : d.tipo === "texto"
         ? `<form class="adicionar" data-pil-form><input type="search" value="${esc(v || "")}" placeholder="${esc(d.ph || "")}"${d.lista ? ` list="${d.lista}"` : ""} autocomplete="off"><button class="btn btn-pri" type="submit">Aplicar</button></form>${ops.length ? `<div class="chips" style="margin-top:12px">${ops.slice(0, 24).map(chip).join("")}</div>` : ""}`
         : d.grupos
@@ -2346,11 +2429,11 @@
         ? `<form class="pop-datas" data-pil-datas><label>${esc(d.rotData || "Escolher uma data")}<input type="date" name="a" value="${/^\d{4}-\d{2}-\d{2}$/.test(vd) ? vd : ""}" min="${d.min || ""}" max="${d.max || ""}" required></label><button class="btn btn-pri btn-peq" type="submit">Ir</button></form>`
         : d.datas === "intervalo"
         ? `<form class="pop-datas" data-pil-datas><label>De<input type="date" name="de" value="${vd.startsWith("d:") ? vd.split(":")[1] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label><label>Até<input type="date" name="ate" value="${vd.startsWith("d:") ? vd.split(":")[2] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label>${d.edicao ? `<label class="curto">ou edição nº<input type="number" name="ed" inputmode="numeric" min="${d.edicao.min}" max="${d.edicao.max}" placeholder="${d.edicao.max}" value="${vd.startsWith("e:") ? vd.slice(2) : ""}"></label>` : ""}<button class="btn btn-pri btn-peq" type="submit">Aplicar</button></form>` : "";
-      return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${datas}${datas && ops.length ? `<p class="pop-grupo">${esc(d.rotAtalhos || "Atalhos")}</p>` : ""}${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}`;
+      return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${datas}${datas && ops.length ? `<p class="pop-grupo">${esc(d.rotAtalhos || "Atalhos")}</p>` : ""}${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}${d.tipo === "materia" ? `<div class="pop-rodape"><p class="nota">Marque quantas matérias e assuntos quiser; a lista reúne todos os marcados.</p><button type="button" class="btn btn-pri btn-peq" data-fechar-pop>Concluir</button></div>` : ""}`;
     }
     function abrir(i, botao) {
       const d = defs[i];
-      if (POPF.raiz !== raiz || POPF.i !== i) POPF.aberta = d.tipo === "materia" ? String(d.get() || "").split("/")[0] : "";
+      if (POPF.raiz !== raiz || POPF.i !== i) POPF.aberta = d.tipo === "materia" ? (listaMat(d.get())[0] || "").split("/")[0] : "";
       POPF.raiz = raiz; POPF.i = i;
       POPF.el.innerHTML = conteudo(d);
       const folha = matchMedia("(max-width: 860px)").matches;
@@ -2367,9 +2450,11 @@
         const b = e.target.closest("[data-op]"); if (!b) return;
         const o = (d.opcoes?.() || []).find((x) => String(x.v) === b.dataset.op); const val = o ? o.v : b.dataset.op;
         if (d.tipo === "multi") { const cur = d.get(); d.set(val === "" ? [] : cur.includes(val) ? cur.filter((x) => x !== val) : [...cur, val]); }
+        else if (d.tipo === "materia") { const cur = listaMat(d.get()); d.set(val === "" ? "" : (cur.includes(val) ? cur.filter((x) => x !== val) : [...cur, val]).join(",")); }
         else d.set(String(d.get() ?? "") === String(val) && !d.obrigatorio ? vazioDe(d) : val);
         desenhar(); aoMudar();
-        if (d.tipo === "multi" && val !== "") abrir(i, raiz.querySelector(`[data-pil="${i}"]`)); else fecharPopF();
+        // Matéria e filtros múltiplos: o painel fica aberto para marcar outras opções.
+        if ((d.tipo === "multi" || d.tipo === "materia") && val !== "") { const pa = POPF.aberta; abrir(i, raiz.querySelector(`[data-pil="${i}"]`)); if (d.tipo === "materia" && pa !== POPF.aberta) { POPF.aberta = pa; POPF.el.innerHTML = conteudo(d); } } else fecharPopF();
       };
       const fd = $("[data-pil-datas]", POPF.el);
       if (fd) fd.onsubmit = (e) => {
@@ -2404,8 +2489,7 @@
 
   // ============================================================ DESTAQUES
   function campoBusca(id, ph, valor = "") {
-    return `<div class="campo-busca">${ico("pesquisa")}<input id="${id}" type="search" placeholder='${esc(ph)}' value="${esc(valor)}" autocomplete="off" spellcheck="false">
-      <button type="button" class="btn-ajuda" data-ajuda aria-expanded="false" title="Como pesquisar">?</button></div>`;
+    return `<div class="campo-busca">${ico("pesquisa")}<input id="${id}" type="search" placeholder='${esc(ph)}' value="${esc(valor)}" autocomplete="off" spellcheck="false"></div>`;
   }
   const abasDestaques = (aba) => `<div class="segmentos" role="tablist" style="margin-bottom:14px">
       <button type="button" role="tab" data-ds-aba="" aria-selected="${aba !== "auto"}">Informativo do STJ</button>
@@ -2505,12 +2589,10 @@
       if (f.e.startsWith("d:")) { const [, de, ate] = f.e.split(":"); return antigos.filter((a) => (!de || a >= de.slice(0, 4)) && (!ate || a <= ate.slice(0, 4))); }
       return [];
     };
-    const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "u4", o: p.get("o") || "", rl: p.get("rl") || "", s: p.get("s") || "rec" };
+    const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "todas", o: p.get("o") || "", rl: p.get("rl") || "", s: p.get("s") || "rec" };
     main.innerHTML = `${abasDestaques("")}
-      ${caixaExplica("info", ...EXPLICA.info)}
       <div id="if-f" class="bloco-filtros">
         ${campoBusca("if-q", 'Tema ou tese. Ex.: "adjudicação compulsória" ou prescri$', f.q)}
-        ${AJUDA_BUSCA}
         <div class="fd-filtros filtros-lista" id="if-pil"></div>
         <datalist id="if-rels">${[...new Set(l.map((x) => x.rel).filter(Boolean))].sort().map((r) => `<option value="${esc(r)}">`).join("")}</datalist>
       </div>
@@ -2566,7 +2648,7 @@
     };
     const aplicar = async () => {
       f.q = $("#if-q").value;
-      gravarHash("destaques", { ...f, e: f.e === "u4" ? "" : f.e, s: f.s === "rec" ? "" : f.s });
+      gravarHash("destaques", { ...f, e: f.e === "todas" ? "" : f.e, s: f.s === "rec" ? "" : f.s });
       const tk = ++tokenInf;
       const faltam = precisa().filter((a) => !carregados.has(a));
       if (faltam.length) {
@@ -2601,9 +2683,9 @@
     const rotPer = (v) => (v.startsWith("e:") ? `Informativo ${v.slice(2)}` : v.startsWith("d:") ? (() => { const [, de, ate] = v.split(":"); return `${de ? fmtData(de) : "início"} a ${ate ? fmtData(ate) : "hoje"}`; })() : "Período");
     const pilInf = pilulas($("#if-pil"), [
       { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => ca },
-      { rot: "Período", titulo: "Período ou edição", edicao: { min: eds[eds.length - 1], max: eds[0] }, tipo: "um", padrao: "u4", obrigatorio: true, semLimpar: true, rotAtual: () => "Últimas 4 edições", rotValor: rotPer, get: () => f.e, set: (v) => (f.e = v),
+      { rot: "Período", titulo: "Período ou edição", edicao: { min: eds[eds.length - 1], max: eds[0] }, tipo: "um", padrao: "todas", obrigatorio: true, semLimpar: true, rotAtual: () => "Todas as edições", rotValor: rotPer, get: () => f.e, set: (v) => (f.e = v),
         datas: "intervalo", min: dmin, max: dmax, rotAtalhos: "Atalhos", vertical: true, grupos: [["", ""], ["e", "Edição específica"]],
-        opcoes: () => [{ v: "u1", t: `Última edição (nº ${eds[0]}, ${fmtDiaMes(dataEd.get(eds[0]))})`, curto: `Informativo ${eds[0]}` }, { v: "u4", t: "Últimas 4 edições" }, { v: "m3", t: "Últimos 3 meses" }, { v: "m12", t: "Últimos 12 meses" }, { v: "todas", t: `Todas as edições (desde a nº ${eds[eds.length - 1]}${dmin !== "9999" ? `, de ${dmin.slice(0, 4)}` : ""})`, curto: "Todas as edições" },
+        opcoes: () => [{ v: "todas", t: `Todas as edições (desde a nº ${eds[eds.length - 1]}${dmin !== "9999" ? `, de ${dmin.slice(0, 4)}` : ""})`, curto: "Todas as edições" }, { v: "u1", t: `Última edição (nº ${eds[0]}, ${fmtDiaMes(dataEd.get(eds[0]))})`, curto: `Informativo ${eds[0]}` }, { v: "u4", t: "Últimas 4 edições" }, { v: "m3", t: "Últimos 3 meses" }, { v: "m12", t: "Últimos 12 meses" },
           ...eds.slice(0, 12).map((e) => ({ g: "e", v: `e:${e}`, t: `Informativo ${e} · ${fmtData(dataEd.get(e))}`, curto: `Informativo ${e}` }))],
         nota: "Informe as datas de publicação, digite o número de qualquer edição ou escolha uma das mais recentes. Edições antigas são carregadas na hora e podem levar alguns segundos." },
       { rot: "Órgão", tipo: "um", vertical: true, grupos: [["", ""], ["o", "Órgão julgador"]], get: () => f.o, set: (v) => (f.o = v),
@@ -2625,11 +2707,10 @@
     if (p.get("aba") !== "auto") return vInformativos(main, p);
     const ds = await destaques();
     const meses = [...new Set(ds.map((r) => r.dj.slice(0, 7)))].sort().reverse();
-    const f = { a: p.get("a") || "", m: p.get("m") || (meses[0] || ""), o: p.get("o") || "", n: p.get("n") || "", q: p.get("q") || "", t: p.get("t") === "1", s: p.get("s") || "rel" };
+    const f = { a: p.get("a") || "", m: p.get("m") || "todos", o: p.get("o") || "", n: p.get("n") || "", q: p.get("q") || "", t: p.get("t") === "1", s: p.get("s") || "rel" };
     main.innerHTML = `${abasDestaques("auto")}
       <div id="ds-f">
         ${campoBusca("ds-q", 'Filtrar por termos. Ex.: "bem de família" ou impenhorab$', f.q)}
-        ${AJUDA_BUSCA}
         <div class="fd-filtros filtros-lista" id="ds-pil"></div>
       </div>
       <div class="barra-res"><p id="ds-info"></p><a class="link-acao" href="#sobre">Como selecionamos ${ico("seta")}</a></div>
@@ -2646,7 +2727,7 @@
     };
     const aplicar = () => {
       f.q = $("#ds-q").value;
-      gravarHash("destaques", { aba: "auto", ...f, m: f.m === meses[0] ? "" : f.m, s: f.s === "rel" ? "" : f.s });
+      gravarHash("destaques", { aba: "auto", ...f, m: f.m === "todos" ? "" : f.m, s: f.s === "rel" ? "" : f.s });
       const nq = /^[\d.\-\/\s]+$/.test(f.q.trim()) && digitos(f.q).length >= 5 ? digitos(f.q) : "";
       const c = Busca.compilar(nq ? "" : f.q); termos = c.termos;
       const base = ds.filter((r) => (nq ? (digitos(r.n) === nq || r.reg === nq) : true) && (nq || f.m === "todos" || r.dj.startsWith(f.m)) && (!f.o || (f.o === "sup" ? !r.o.endsWith("turma") : r.o.endsWith("turma"))) && (!f.n || r.s >= 10)
@@ -2659,8 +2740,9 @@
     };
     pilulas($("#ds-pil"), [
       { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => contA },
-      { rot: "Mês", tipo: "um", obrigatorio: true, semLimpar: true, padrao: meses[0], rotAtual: () => fmtMesL(f.m), get: () => f.m, set: (v) => (f.m = v),
-        opcoes: () => [...meses.map((m) => ({ v: m, t: fmtMesL(m) })), { v: "todos", t: "Últimos 3 meses" }] },
+      { rot: "Período", tipo: "um", obrigatorio: true, semLimpar: true, padrao: "todos", rotAtual: () => "Todo o período", get: () => f.m, set: (v) => (f.m = v),
+        opcoes: () => [{ v: "todos", t: "Todo o período (últimos 3 meses)", curto: "Todo o período" }, ...meses.map((m) => ({ v: m, t: fmtMesL(m) }))],
+        nota: "A seleção automática cobre os três meses mais recentes do acervo. Para períodos anteriores, use a Pesquisa." },
       { rot: "Órgão", tipo: "um", get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, { v: "sup", t: "Corte Especial e Seções" }, { v: "turmas", t: "Turmas" }],
         nota: "A Corte Especial e as Seções uniformizam a jurisprudência do Tribunal; as Turmas julgam a maior parte dos recursos." },
       { rot: "Relevância", tipo: "um", get: () => f.n, set: (v) => (f.n = v), opcoes: () => [{ v: "", t: "Relevantes e alta", ponto: "rel" }, { v: "alta", t: "Só alta relevância", curto: "Alta relevância", ponto: "alta" }],
@@ -2677,7 +2759,7 @@
   // ============================================================= PESQUISA
   async function vPesquisa(main, p, mesma) {
     const F = AC.f = {
-      p: p.get("p") || "u1", o: p.get("o") || "", a: p.get("a") || "", c: p.get("c") || "", rl: p.get("rl") || "", n: p.get("n") || "",
+      p: p.get("p") || "todo", o: p.get("o") || "", a: p.get("a") || "", c: p.get("c") || "", rl: p.get("rl") || "", n: p.get("n") || "",
       s: p.get("s") || "auto", r: p.get("r") !== "0", x: p.get("x") === "1", t: p.get("t") === "1",
     };
     if (!mesma || !$("#ac-q")) {
@@ -2685,7 +2767,6 @@
       main.innerHTML = `
         <div id="ac-f">
           ${campoBusca("ac-q", 'Termos ou número do processo. Ex.: "prova oral" e nulidade · REsp 2.231.419')}
-          ${AJUDA_BUSCA}
           <div class="fd-filtros filtros-lista" id="ac-pil"></div>
           <datalist id="ac-classes"></datalist><datalist id="ac-rels"></datalist>
         </div>
@@ -2696,16 +2777,14 @@
         <div id="ac-pag"></div>`;
       const anosAc = [...new Set(meses.map((m) => m.m.slice(0, 4)))];
       const primeiro = meses.length ? meses[meses.length - 1].m : "";
-      const periodos = [{ v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, { v: "u24", t: "Últimos 2 anos" },
-        { v: "todo", t: `Todo o acervo (desde ${primeiro ? fmtMesL(primeiro) : "—"})`, curto: "Todo o acervo" },
-        ...anosAc.slice(1).map((a) => ({ g: "desde", v: `desde:${a}`, t: `Desde ${a}`, curto: `Desde ${a}` })),
-        ...anosAc.map((a) => ({ g: "anos", v: `a:${a}`, t: a, curto: `Ano de ${a}` })),
-        ...meses.filter((m) => m.m >= `${+hojeISO().slice(0, 4) - 2}-01`).map((m) => ({ g: m.m.slice(0, 4), v: m.m, t: MESES_L[+m.m.slice(5) - 1].replace(/^./, (c) => c.toUpperCase()), curto: fmtMesL(m.m) }))];
+      const periodos = [{ v: "todo", t: `Todo o acervo (desde ${primeiro ? fmtMesL(primeiro) : "—"})`, curto: "Todo o acervo" },
+        { v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, { v: "u24", t: "Últimos 2 anos" },
+        ...anosAc.slice(1).map((a) => ({ g: "desde", v: `desde:${a}`, t: `Desde ${a}`, curto: `Desde ${a}` }))];
       const rotPerAc = (v) => { if (/^d:/.test(v)) { const [, de, ate] = v.split(":"); return `${de ? fmtData(de) : "início"} a ${ate ? fmtData(ate) : "hoje"}`; } return "Período"; };
       AC.pil = pilulas($("#ac-pil"), [
-        { rot: "Período", titulo: "Período de publicação", tipo: "um", padrao: "u1", obrigatorio: true, semLimpar: true, rotAtual: () => "Último mês", rotValor: rotPerAc, get: () => AC.f.p, set: (v) => (AC.f.p = v), opcoes: () => periodos,
+        { rot: "Período", titulo: "Período de publicação", tipo: "um", padrao: "todo", obrigatorio: true, semLimpar: true, rotAtual: () => "Todo o acervo", rotValor: rotPerAc, get: () => AC.f.p, set: (v) => (AC.f.p = v), opcoes: () => periodos,
           datas: "intervalo", min: primeiro ? `${primeiro}-01` : "", max: hojeISO(), rotAtalhos: "Atalhos",
-          grupos: [["", ""], ["desde", "Desde o ano"], ["anos", "Um ano inteiro"], ...anosAc.filter((a) => +a >= +hojeISO().slice(0, 4) - 2).map((a) => [a, `Mês de publicação · ${a}`])],
+          grupos: [["", ""], ["desde", "Desde o ano"]],
           nota: `O acervo vai de ${primeiro ? fmtMesL(primeiro) : "—"} a ${meses.length ? fmtMesL(meses[0].m) : "—"}. Em períodos longos, a busca percorre os arquivos mês a mês e mostra os resultados à medida que avança; pode levar alguns minutos e é possível parar a qualquer momento. A busca por número de processo sempre percorre todo o acervo.` },
         { rot: "Matéria", tipo: "materia", get: () => AC.f.a, set: (v) => (AC.f.a = v) },
         { rot: "Órgão", tipo: "um", get: () => AC.f.o, set: (v) => (AC.f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...Object.entries(D.orgaos).map(([k, v]) => ({ v: k, t: v }))] },
@@ -2745,7 +2824,7 @@
   async function buscar() {
     const tk = ++AC.token;
     const f = { ...AC.f, q: $("#ac-q").value, c: (AC.f.c || "").trim(), rl: (AC.f.rl || "").trim(), n: digitos(AC.f.n) };
-    gravarHash("pesquisa", { ...f, p: f.p === "u1" ? "" : f.p, s: f.s === "auto" ? "" : f.s, r: f.r ? "" : "0", x: f.x, t: f.t });
+    gravarHash("pesquisa", { ...f, p: f.p === "todo" ? "" : f.p, s: f.s === "auto" ? "" : f.s, r: f.r ? "" : "0", x: f.x, t: f.t });
     const todos = D.man.meses.map((m) => m.m);
     // Número de processo digitado na busca, com ou sem classe e pontos ("REsp 2.231.419/SP",
     // "AgInt no AREsp 123456", "2231419"): procura em todo o acervo e nas publicações recentes do DJEN.
@@ -2801,12 +2880,13 @@
       for (const r of lista) {
         if (!passa(r)) continue;
         total++;
-        if (ordem !== "rel") { if (res.length < MAX_RES) res.push(r); }
-        else { res.push(r); if (res.length > MAX_RES * 1.5) { res.sort(ord); res.length = MAX_RES; } }
+        res.push(r);
+        if (res.length > MAX_RES * 1.5) { res.sort(ord); res.length = MAX_RES; }
       }
     };
     const prog = $("#ac-prog");
     const longo = !ids && meses.length > 24;
+    let cortado = false;
     AC.parar = 0;
     if (!longo) {
       const pend = pares.filter(([m, o]) => !D.shards.has(`${m}/${o}`)).length;
@@ -2828,7 +2908,7 @@
       let ultimoRender = 0;
       const trab = async () => {
         while (i < pares.length && tk === AC.token && AC.parar !== tk) {
-          if (ordem !== "rel" && res.length >= MAX_RES) break;
+          if (ordem !== "rel" && res.length >= MAX_RES) { cortado = true; break; }
           const [m, o] = pares[i++]; mesAt = m;
           let l = [];
           try { l = D.shards.has(`${m}/${o}`) ? await shard(m, o) : await getJSONgz(`data/acordaos/${m}/${o}.json`); } catch { /* arquivo indisponível */ }
@@ -2843,7 +2923,7 @@
       if (tk !== AC.token) return;
     }
     prog.hidden = true;
-    res.sort(ord);
+    res.sort(ord); if (res.length > MAX_RES) res.length = MAX_RES;
     AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos;
     // Processo ainda sem ementa no acervo: publicações recentes no DJEN e sessões marcadas.
     const extra = $("#ac-extra"); extra.innerHTML = "";
@@ -2861,9 +2941,9 @@
     }
     const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.innerHTML ? " e no DJEN" : ""}` : rotPeriodo(f.p, meses);
     const parcial = AC.parar === tk ? " · busca interrompida" : "";
-    const corte = total > res.length ? ` · exibindo os ${fmtInt(res.length)} ${ordem === "rel" ? "mais aderentes" : "mais recentes"}` : "";
+    const corte = total > res.length || cortado ? ` · exibindo os ${fmtInt(res.length)} ${ordem === "rel" ? "mais aderentes" : "mais recentes"}` : "";
     if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: ainda sem ementa no acervo. Veja abaixo a publicação no DJEN.`;
-    else $("#ac-info").innerHTML = `<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
+    else $("#ac-info").innerHTML = `${cortado ? "Mais de " : ""}<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     renderLista(true);
     if (!AC.dl) {
       AC.dl = true;
@@ -2929,7 +3009,6 @@
           ${ini < esta ? `<a class="btn btn-claro btn-peq" href="#semana?s=${somaDias(ini, 7)}" aria-label="Semana seguinte">${ico("seta")}</a><a class="btn btn-claro btn-peq" href="#semana">Esta semana</a>` : ""}
         </div>
       </div>
-      ${caixaExplica("semana", ...EXPLICA.semana)}
       <div class="sem-resumo" id="sem-resumo"></div>
       <div class="sem-ferr"><div class="fd-filtros filtros-lista" id="sem-pil"></div>
         <div class="sem-acoes" id="sem-acoes">
@@ -3037,10 +3116,8 @@
     const dmin = eds.reduce((m, e) => (e.disp && e.disp < m ? e.disp : m), "9999"), dmax = eds.reduce((m, e) => (e.disp > m ? e.disp : m), "");
     const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "", s: p.get("s") || "" };
     main.innerHTML = `${abasSumulas("teses")}
-      ${caixaExplica("teses", ...EXPLICA.teses)}
       <div id="jt-f" class="bloco-filtros">
         ${campoBusca("jt-q", 'Tese ou assunto. Ex.: "bem de família" ou "dano moral"', f.q)}
-        ${AJUDA_BUSCA}
         <div class="fd-filtros filtros-lista" id="jt-pil"></div>
       </div>
       <div class="barra-res"><p id="jt-info" aria-live="polite"></p><span class="dir"><button type="button" class="btn btn-fant btn-peq" id="jt-abrir-todas" hidden>Abrir todas</button></span></div>
@@ -3178,7 +3255,6 @@
     main.innerHTML = `${abasSumulas("")}
       <div id="sm-f">
         ${campoBusca("sm-q", 'Número ou termos do enunciado. Ex.: 7 ou "dano moral"', f.q)}
-        ${AJUDA_BUSCA}
         <div class="fd-filtros filtros-lista" id="sm-pil"></div>
       </div>
       <div class="barra-res"><p id="sm-info"></p><span class="nota">Fonte: página oficial de súmulas do STJ</span></div>
@@ -3246,7 +3322,6 @@
     main.innerHTML = `
       <div id="rp-f">
         ${campoBusca("rp-q", 'Questão, tese ou assunto. Ex.: "prescrição intercorrente" ou o número do tema', f.q)}
-        ${AJUDA_BUSCA}
         <div class="fd-filtros filtros-lista" id="rp-pil"></div>
       </div>
       <div class="barra-res"><p id="rp-info"></p><button type="button" class="btn btn-fant btn-peq" id="rp-link">${ico("link")} Copiar link</button></div>

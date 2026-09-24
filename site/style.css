@@ -1082,3 +1082,6 @@ svg.gira { transform: rotate(180deg); }
 .pan-bloco > header .nota { flex-basis: 100%; margin: 0; }
 .pan-nada { margin: 0; padding: 12px 14px; border: 1px dashed var(--linha-2); border-radius: var(--raio-s); }
 .pan-ampliar { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--raio-s); background: var(--rel-bg); color: var(--tx); font-size: 14px; }
+.pop-rodape { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.pop-rodape .nota { margin: 0; }
+.gaveta .ajuda-busca td:first-child { white-space: normal; width: 42%; }
