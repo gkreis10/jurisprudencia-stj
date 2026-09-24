@@ -43,7 +43,7 @@ jobs:
           restore-keys: dados-stj-
 
       - name: Atualizar dados
-        run: python scripts/atualizar.py --desde 2020-01 --dias-radar 15
+        run: python scripts/atualizar.py --desde 2016-01 --dias-radar 15
 
       - name: Guardar dados
         if: always()
