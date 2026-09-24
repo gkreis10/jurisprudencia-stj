@@ -2654,10 +2654,12 @@
       if (faltam.length) {
         let k = 0;
         for (const a of faltam) {
-          $("#if-info").innerHTML = `Carregando edições antigas do Informativo (${a})… ${Math.round((k++ / faltam.length) * 100)}%`;
+          const el = $("#if-info"); if (!el) return; // o usuário saiu da tela
+          el.innerHTML = `Carregando edições antigas do Informativo (${a})… ${Math.round((k++ / faltam.length) * 100)}%`;
           try { const la = await infoAno(a); if (!carregados.has(a)) { carregados.add(a); l.push(...la); } } catch { carregados.add(a); }
           if (tk !== tokenInf) return;
         }
+        if (!$("#if-info")) return;
       }
       const c = Busca.compilar(f.q); termos = c.termos;
       const rN = norm(f.rl);
