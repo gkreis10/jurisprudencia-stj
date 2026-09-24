@@ -1656,6 +1656,15 @@ def main():
         erros.append(f"teses: {e}")
         log("ERRO teses:", e)
 
+    composicao = {}
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from composicao import atualizar_composicao
+        composicao = atualizar_composicao()
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"composicao: {e}")
+        log("ERRO composição:", e)
+
     radar = {}
     try:
         radar = atualizar_radar(args.dias_radar, meses_disp)
@@ -1692,6 +1701,7 @@ def main():
         "sumulas": sumulas or manifesto_ant.get("sumulas", {}),
         "informativos": informativos or manifesto_ant.get("informativos", {}),
         "teses": teses or manifesto_ant.get("teses", {}),
+        "composicao": composicao or manifesto_ant.get("composicao", {}),
         "esquema": ESQUEMA,
         "erros": erros,
     }
