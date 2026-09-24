@@ -191,7 +191,7 @@ def mes_menos(ano_mes: str, n: int) -> str:
 # --------------------------------------------------------------------------
 # Enriquecimento: área do direito e relevância
 # --------------------------------------------------------------------------
-ESQUEMA = 6  # aumente quando mudar o enriquecimento; os arquivos são refeitos sem novo download
+ESQUEMA = 7  # aumente quando mudar o enriquecimento; os arquivos são refeitos sem novo download
 
 
 def sem_acento(s: str) -> str:
@@ -315,110 +315,201 @@ def areas_do_tema(t: dict) -> list[str]:
 # Submatérias: cada matéria geral tem subtemas. Só entram quando a matéria-mãe
 # foi identificada. A classificação usa a verbetação (sem o nome da classe
 # processual) ou, nos temas, os assuntos e a questão submetida.
+# Submatérias por matéria, na ordem de exibição: (chave, rótulo, grupo, expressão sobre o texto sem acentos).
+# A ordem de exibição segue a estrutura das leis de regência (no Civil, a do Código Civil).
 SUBAREAS = {
     "civil": [
-        ("resp-civil", "Responsabilidade civil", r"responsabilidade civil|dano moral|danos morais|danos? materia|indenizacao por danos?|dever de indenizar|ato ilicito|lucros cessantes|dano estetico|perda de uma chance"),
-        ("contratos", "Contratos", r"\bcontrat|compra e venda|locacao|fianca|comodato|prestacao de servicos?|empreitada|doacao|distrato"),
-        ("seguros", "Seguros", r"\bseguros?\b|securitari|dpvat|seguradora"),
-        ("posse-prop", "Posse, propriedade e condomínio", r"usucapiao|\bposse\b|possessori|reivindicat|propriedade|condominio|registro de imoveis|incorporacao imobiliaria|direito real|servidao|hipoteca|multipropriedade"),
-        ("obrigacoes", "Obrigações e prescrição", r"prescricao|decadencia|obrigac|juros de mora|correcao monetaria|pagamento indevido|enriquecimento sem causa"),
-        ("personalidade", "Direitos da personalidade e autorais", r"direitos? autora|\becad\b|direito de imagem|direitos da personalidade|nome civil|honra|liberdade de imprensa|esquecimento"),
+        ("pessoas", "Pessoas, capacidade e pessoa jurídica", "Parte geral", r"capacidade civil|incapaz|emancipacao|morte presumida|ausente|pessoa juridica sem fins|associac(ao|oes) civil|fundacao privada|domicilio civil"),
+        ("personalidade", "Direitos da personalidade, imagem e honra", "Parte geral", r"direitos? da personalidade|direito (a|de) imagem|uso (indevido )?da imagem|nome civil|retificacao de (nome|registro civil)|\bhonra\b|privacidade|intimidade|esquecimento|liberdade de (imprensa|expressao)|materia jornalistica|redes sociais|provedor|marco civil"),
+        ("bens", "Bens", "Parte geral", r"bens? (publicos? dominicais|moveis|imoveis por|acessorios|fungiveis)|pertenca|frutos e rendimentos|benfeitorias"),
+        ("negocio-juridico", "Negócio jurídico, vícios e nulidades", "Parte geral", r"negocio juridico|nulidade (do|de|da) (negocio|contrato|ato|clausula|escritura|doacao)|anulabilidade|anulacao (do|de) (negocio|contrato|escritura)|vicios? de consentimento|coacao|estado de perigo|simulacao|fraude contra credores|pauliana|reserva mental"),
+        ("prescricao-civ", "Prescrição e decadência", "Parte geral", r"prescricao|prescricional|decadencia|decadencial"),
+        ("obrigacoes", "Obrigações, pagamento e inadimplemento", "Obrigações", r"obrigac|adimplemento|inadimplemento|juros (de mora|moratorios|remuneratorios)|correcao monetaria|clausula penal|multa (contratual|compensatoria|moratoria)|perdas e danos|quitacao|novacao|cessao de credito|assuncao de divida|solidariedade passiva|\barras\b|termo inicial dos juros"),
+        ("enriquecimento", "Enriquecimento sem causa e pagamento indevido", "Obrigações", r"enriquecimento (sem causa|ilicito|indevido)|pagamento indevido|repeticao (do|de) indebito|restituicao em dobro|gestao de negocios"),
+        ("contratos", "Contratos em geral e revisão contratual", "Contratos", r"\bcontrat|revisao contratual|onerosidade excessiva|resolucao (do|de) contrato|rescisao contratual|boa-fe objetiva|funcao social do contrato|exceptio|evicao|vicios? redibitori"),
+        ("compra-venda", "Compra e venda, promessa e doação", "Contratos", r"compra e venda|promessa de compra|compromisso de compra|adjudicacao compulsoria|doacao|permuta|direito de preferencia|retrovenda|outorga (uxoria|conjugal)"),
+        ("locacao", "Locação", "Contratos", r"locacao|locatari|locador|alugue(l|is)|despejo|renovatoria|8\.245|inquilinato"),
+        ("servicos-emp", "Prestação de serviços, empreitada, mandato e corretagem", "Contratos", r"prestacao de servicos?|empreitada|corretagem|corretor|mandato|mandatario|honorarios contratuais|comodato|contrato de deposito|construcao civil"),
+        ("transporte", "Transporte", "Contratos", r"contrato de transporte|transporte (de pessoas|de passageiros|de carga|de mercadorias|rodoviario|maritimo|ferroviario)|transportador|conhecimento de transporte"),
+        ("seguros", "Seguros", "Contratos", r"\bseguros?\b|securitari|dpvat|seguradora|segurado\b|sinistro|indenizacao securitaria"),
+        ("fianca", "Fiança e garantias pessoais", "Contratos", r"fianca|fiador|carta de fianca|garantia fidejussoria"),
+        ("dano-moral", "Dano moral", "Responsabilidade civil", r"dano moral|danos morais|extrapatrimonia|in re ipsa|abalo moral|quantum indenizatorio"),
+        ("resp-civil", "Responsabilidade civil e indenização", "Responsabilidade civil", r"responsabilidade civil|danos? materia|indenizac|dever de indenizar|ato ilicito|lucros cessantes|dano estetico|perda de uma chance|responsabilidade objetiva|nexo (de )?causal|pensionamento|pensao mensal vitalicia"),
+        ("acidentes", "Acidentes de trânsito", "Responsabilidade civil", r"acidente de transito|colisao|atropelamento|acidente automobilistico|veiculo automotor"),
+        ("resp-profissional", "Erro médico e responsabilidade de profissionais", "Responsabilidade civil", r"erro medico|responsabilidade (civil )?(do|de|dos) (medicos?|hospita|profissiona|advogad|dentista)|hospital|clinica|cirurgi|obrigacao de meio"),
+        ("posse", "Posse e ações possessórias", "Direito das coisas", r"\bposse\b|possessori|reintegracao de posse|manutencao de posse|interdito proibitorio|esbulho|turbacao|direito de retencao"),
+        ("usucapiao", "Usucapião", "Direito das coisas", r"usucapiao|prescricao aquisitiva"),
+        ("propriedade", "Propriedade e direito de vizinhança", "Direito das coisas", r"propriedade|reivindicat|imissao na posse|direitos? de vizinhanca|uso anormal|passagem forcada|aluviao|acessao|demarcacao"),
+        ("condominio", "Condomínio", "Direito das coisas", r"condomin|cotas? condominia|taxas? condominia|sindico|convencao de condominio|multipropriedade|assembleia condominial"),
+        ("direitos-reais", "Direitos reais sobre coisa alheia e garantias reais", "Direito das coisas", r"direitos? rea(l|is)|usufruto|servidao|direito de superficie|direito real de habitacao|hipoteca|penhor|anticrese|\blaje\b"),
+        ("registros", "Registros públicos e atividade notarial", "Direito das coisas", r"registro de imoveis|registros? publicos?|6\.015|cartorio|tabeliao|tabelionato|notari|registrador|matricula (do|de) imove|averbacao|incorporacao imobiliaria|loteamento|escritura publica"),
+        ("autoral", "Direitos autorais", "Propriedade intelectual", r"direitos? autora|\becad\b|obras? (intelectua|musica|literari|audiovisua)|9\.610|execucao publica|plagio"),
     ],
     "familia": [
-        ("alimentos", "Alimentos", r"alimentos|alimentar|pensao alimenticia|prisao civil"),
-        ("uniao-divorcio", "Casamento, união estável e divórcio", r"divorcio|uniao estavel|casamento|regime de bens|partilha de bens|separacao"),
-        ("sucessoes", "Sucessões", r"sucess|heranca|herdeir|inventario|testament|arrolamento|legitima"),
-        ("filiacao", "Filiação, guarda e adoção", r"paternidade|maternidade|filiacao|\bguarda\b|adocao|alienacao parental|poder familiar|convivencia|visitas|socioafetiv"),
-        ("infancia", "Criança e adolescente", r"crianca e do adolescente|\beca\b|medida socioeducativa|ato infracional|menor de idade"),
-        ("curatela", "Curatela e interdição", r"curatela|interdicao|tomada de decisao apoiada"),
+        ("casamento", "Casamento e regime de bens", "Família", r"casamento|regime de bens|pacto antenupcial|comunhao (parcial|universal)|separacao (total|obrigatoria|convencional|legal) de bens|meacao"),
+        ("uniao-estavel", "União estável", "Família", r"uniao estavel|companheir|concubin|uniao homoafetiva|uniao paralela"),
+        ("divorcio", "Divórcio, separação e partilha", "Família", r"divorcio|separacao judicial|partilha de bens|dissolucao (da sociedade conjugal|da uniao|do casamento)|sobrepartilha"),
+        ("alimentos", "Alimentos", "Família", r"alimentos|alimentar|pensao alimenticia|prisao civil|revisional de alimentos|exoneracao de alimentos|alimentando|alimentante"),
+        ("filiacao", "Filiação e paternidade", "Família", r"paternidade|maternidade|filiacao|investigacao de paternidade|exame de dna|socioafetiv|multiparentalidade|registro de nascimento|reproducao assistida"),
+        ("guarda", "Guarda, convivência e poder familiar", "Família", r"\bguarda\b|convivencia familiar|regime de visitas|direito de visita|alienacao parental|poder familiar|destituicao"),
+        ("adocao", "Adoção", "Família", r"adocao|adotan|adotad|cadastro nacional de adocao|habilitacao para adocao"),
+        ("infancia", "Criança e adolescente", "Família", r"crianca e do adolescente|\beca\b|medida socioeducativa|ato infracional|acolhimento institucional|menor de idade"),
+        ("curatela", "Curatela, tutela e interdição", "Família", r"curatela|curador|interdicao|tomada de decisao apoiada|\btutor\b|tutela de menor"),
+        ("sucessao-legitima", "Sucessão legítima e direitos dos herdeiros", "Sucessões", r"sucessao legitima|vocacao hereditaria|herdeir|heranca|concorrencia sucessoria|conjuge sobrevivente|companheir[oa] sobrevivente|colacao|sonegados|direito real de habitacao|renuncia a heranca|cessao de direitos hereditarios|sucess"),
+        ("testamento", "Testamentos e legados", "Sucessões", r"testament|legado|legatari|codicilo|fideicomisso|disposicao de ultima vontade|legitima dos herdeiros"),
+        ("inventario", "Inventário e arrolamento", "Sucessões", r"inventario|arrolamento|inventariante|espolio|partilha (em|no) inventario"),
     ],
     "consumidor": [
-        ("planos-saude", "Planos de saúde", r"planos? de saude|operadora|\bans\b|rol de procedimentos|cobertura"),
-        ("cadastros", "Cadastros e negativação", r"cadastro|inadimplentes|negativac|inscricao indevida|\bspc\b|serasa|protesto|credit scoring"),
-        ("fornecedor", "Responsabilidade do fornecedor", r"fato do produto|vicio do produto|fato do servico|vicio do servico|responsabilidade (civil )?(objetiva|do fornecedor)|defeito|recall"),
-        ("servicos", "Serviços e transporte", r"energia eletrica|telefonia|agua e esgoto|servicos? essencia|transporte aereo|companhia aerea|\bvoo\b|bagagem|internet"),
-        ("imoveis-cons", "Imóveis e consórcios", r"compra e venda de imovel|incorporadora|construtora|atraso na entrega|consorcio|cooperativa habitacional"),
-        ("praticas", "Práticas e cláusulas abusivas", r"abusiv|publicidade|venda casada|oferta|arrependimento|superendividamento"),
+        ("planos-saude", "Planos de saúde", "Contratos de consumo", r"planos? de saude|operadora|\bans\b|rol de procedimentos|cobertura|home care|reajuste por faixa etaria|coparticipacao|seguro saude"),
+        ("bancos-cons", "Bancos e crédito ao consumidor", "Contratos de consumo", r"instituic(ao|oes) financeira|correntista|conta corrente|emprestimo consignado|descontos? indevidos?|cartao de credito|cheque especial|financiamento de veiculo"),
+        ("imoveis-cons", "Imóveis, incorporação e consórcios", "Contratos de consumo", r"compra e venda de imove|incorporadora|construtora|atraso na entrega|consorcio|cooperativa habitacional|distrato imobiliario|lote"),
+        ("educacao-cons", "Ensino e mensalidades", "Contratos de consumo", r"instituic(ao|oes) de ensino|mensalidade|faculdade particular|curso superior|escola particular|diploma"),
+        ("aereo", "Transporte aéreo e turismo", "Serviços", r"transporte aereo|companhia aerea|\bvoo\b|voos|bagagem|overbooking|pacote turistico|agencia de viagens|hotel"),
+        ("essenciais", "Energia, água, telefonia e internet", "Serviços", r"energia eletrica|telefonia|agua e esgoto|servicos? essencia|concessionaria de (energia|agua|servico)|internet|tv por assinatura|fornecimento de energia|corte (de|do) fornecimento"),
+        ("veiculos", "Veículos", "Serviços", r"veiculo|montadora|concessionaria de veiculos|automovel|recall"),
+        ("fornecedor", "Vício e fato do produto ou serviço", "Responsabilidade do fornecedor", r"fato do produto|vicio do produto|fato do servico|vicio do servico|responsabilidade (civil )?(objetiva|do fornecedor|solidaria)|defeito|cadeia de fornecimento|garantia legal"),
+        ("cadastros", "Cadastros, negativação e protesto", "Responsabilidade do fornecedor", r"cadastro|inadimplentes|negativac|inscricao indevida|\bspc\b|serasa|protesto|credit scoring|score"),
+        ("praticas", "Práticas e cláusulas abusivas", "Práticas comerciais", r"abusiv|venda casada|arrependimento|cobranca indevida|repeticao em dobro|clausula (de )?(eleicao|limitativa)"),
+        ("publicidade", "Oferta, publicidade e comércio eletrônico", "Práticas comerciais", r"publicidade|oferta|comercio eletronico|compra (pela|na|por) internet|marketplace|plataforma digital|propaganda"),
+        ("superendividamento", "Superendividamento", "Práticas comerciais", r"superendividamento|minimo existencial|14\.181"),
+        ("defesa-cons", "Defesa do consumidor em juízo", "Defesa em juízo", r"inversao do onus|hipossuficien|foro do (domicilio do )?consumidor|acao coletiva de consumo|procon|relacao de consumo|consumidor por equiparacao|bystander"),
     ],
     "bancario": [
-        ("contratos-banc", "Contratos e juros bancários", r"contratos? bancari|juros|capitalizacao|tarifa|cedula de credito|mutuo|emprestimo|consignado|prestacao de contas"),
-        ("fiduciaria", "Alienação fiduciária", r"alienacao fiduciaria|busca e apreensao|garantia fiduciaria"),
-        ("cartao", "Cartão de crédito", r"cartao de credito|rotativo"),
-        ("sfh", "Sistema Financeiro da Habitação", r"sistema financeiro da habitacao|\bsfh\b|\bfcvs\b"),
-        ("fraudes", "Fraudes e segurança bancária", r"fraude|golpe|\bpix\b|seguranca bancaria|fortuito interno|saque indevido"),
+        ("juros", "Juros, capitalização e encargos", "Contratos bancários", r"juros|capitalizacao|anatocismo|taxa media|comissao de permanencia|encargos (moratorios|contratuais)|tarifa|\bcet\b"),
+        ("contratos-banc", "Contratos bancários e cédulas de crédito", "Contratos bancários", r"contratos? bancari|cedula de credito|mutuo|emprestimo|financiamento|consignado|conta corrente|prestacao de contas|cheque especial|renegociacao"),
+        ("cartao", "Cartão de crédito", "Contratos bancários", r"cartao de credito|rotativo|cartao consignado|\brmc\b"),
+        ("fiduciaria", "Alienação fiduciária e busca e apreensão", "Garantias", r"alienacao fiduciaria|busca e apreensao|garantia fiduciaria|cessao fiduciaria|purgacao da mora|9\.514|decreto-lei 911"),
+        ("garantias-banc", "Aval e outras garantias bancárias", "Garantias", r"\baval\b|avalista|garantidor|devedor solidario|penhor"),
+        ("sfh", "Sistema Financeiro da Habitação", "Crédito imobiliário", r"sistema financeiro da habitacao|\bsfh\b|\bfcvs\b|mutuario|crédito imobiliario|credito imobiliario"),
+        ("fraudes", "Fraudes e segurança bancária", "Responsabilidade", r"fraude|golpe|\bpix\b|seguranca bancaria|fortuito interno|saque indevido|transacoes? nao reconhecid|sumula 479"),
+        ("sigilo", "Sigilo bancário e dados", "Responsabilidade", r"sigilo bancario|quebra de sigilo|dados bancarios|\blgpd\b|protecao de dados"),
     ],
     "empresarial": [
-        ("recuperacao", "Recuperação judicial e falência", r"recuperacao (judicial|extrajudicial)|falenc|concordata|administrador judicial|plano de recuperacao"),
-        ("societario", "Direito societário", r"societari|sociedade|socios?\b|dissolucao|desconsideracao da personalidade|quotas|acionista|apuracao de haveres"),
-        ("titulos", "Títulos de crédito", r"titulos? de credito|duplicata|nota promissoria|cheque|letra de cambio|endosso|\baval\b"),
-        ("propriedade-ind", "Propriedade industrial", r"\bmarcas?\b|patente|propriedade industrial|\binpi\b|concorrencia desleal|trade dress|nome empresarial"),
-        ("contratos-emp", "Contratos empresariais", r"arrendamento mercantil|leasing|franquia|representacao comercial|distribuicao|factoring"),
+        ("sociedades", "Sociedades e sócios", "Direito societário", r"societari|sociedade (limitada|anonima|empresaria|simples)|\bsocios?\b|acionista|quotas|assembleia geral|administrador da sociedade|acordo de socios"),
+        ("dissolucao", "Dissolução e apuração de haveres", "Direito societário", r"dissolucao (parcial|total|da sociedade)|apuracao de haveres|retirada de socio|exclusao de socio|direito de recesso"),
+        ("desconsideracao", "Desconsideração da personalidade jurídica", "Direito societário", r"desconsideracao da personalidade|desconsideracao inversa|incidente de desconsideracao|grupo economico|confusao patrimonial|desvio de finalidade"),
+        ("recuperacao", "Recuperação judicial", "Crise da empresa", r"recuperacao (judicial|extrajudicial)|plano de recuperacao|stay period|credito extraconcursal|classes? de credores|recuperanda"),
+        ("falencia", "Falência", "Crise da empresa", r"falenc|falid|massa falida|concordata|administrador judicial|habilitacao de credito|classificacao de creditos|11\.101"),
+        ("titulos", "Títulos de crédito", "Títulos e contratos", r"titulos? de credito|duplicata|nota promissoria|cheque|letra de cambio|endosso|\baval\b|protesto de titulo"),
+        ("contratos-emp", "Contratos empresariais", "Títulos e contratos", r"arrendamento mercantil|leasing|franquia|representacao comercial|contrato de distribuicao|factoring|fomento mercantil|contrato empresarial|agencia e distribuicao"),
+        ("marcas", "Marcas, concorrência desleal e nome empresarial", "Propriedade industrial", r"\bmarcas?\b|trade dress|conjunto-imagem|nome empresarial|concorrencia desleal|nome de dominio"),
+        ("patentes", "Patentes e desenho industrial", "Propriedade industrial", r"patente|propriedade industrial|\binpi\b|desenho industrial|modelo de utilidade|9\.279"),
+        ("arbitragem", "Arbitragem", "Solução de conflitos", r"arbitragem|arbitral|clausula compromissoria|compromisso arbitral|9\.307"),
+        ("mercado", "Mercado de capitais e concorrência", "Mercado", r"mercado de capitais|\bcvm\b|valores mobiliarios|\bcade\b|antitruste|ordem economica|bolsa de valores"),
     ],
     "proc-civil": [
-        ("recursos", "Recursos", r"embargos de divergencia|embargos de declaracao|agravo de instrumento|apelacao|recurso especial repetitivo|admissibilidade|preparo|tempestividade|sustentacao oral"),
-        ("execucao", "Execução e cumprimento de sentença", r"execucao|cumprimento de sentenca|penhora|impenhorab|bem de familia|fraude (a|contra) execucao|astreintes|prescricao intercorrente|expropria|liquidacao"),
-        ("competencia", "Competência", r"competencia|conflito de competencia|\bforo\b|conexao|prevencao"),
-        ("honorarios", "Honorários, custas e gratuidade", r"honorarios|sucumbencia|custas|gratuidade|justica gratuita|assistencia judiciaria"),
-        ("tutela", "Tutelas provisórias", r"tutela (provisoria|de urgencia|antecipada|cautelar|de evidencia)|liminar|medida cautelar"),
-        ("coletivo", "Processo coletivo", r"acao civil publica|acao coletiva|direitos (difusos|coletivos|individuais homogeneos)|ministerio publico"),
-        ("coisa-julgada", "Ação rescisória e coisa julgada", r"acao rescisoria|coisa julgada|querela nullitatis|preclusao"),
-        ("provas-pc", "Provas, citação e nulidades", r"\bprovas?\b|pericia|cerceamento de defesa|nulidade|citacao|intimacao"),
-        ("ms", "Mandado de segurança e ações especiais", r"mandado de seguranca|habeas data|acao monitoria|embargos de terceiro|possessoria|arbitragem"),
+        ("partes", "Partes, legitimidade e intervenção de terceiros", "Parte geral", r"legitimidade|ilegitimidade|litisconsorcio|intervencao de terceiros|denunciacao da lide|chamamento ao processo|assistencia simples|amicus curiae|substituicao processual|interesse de agir|capacidade processual"),
+        ("competencia", "Competência", "Parte geral", r"competencia|conflito de competencia|\bforo\b|conexao|continencia|prevencao|clausula de eleicao"),
+        ("honorarios", "Honorários advocatícios", "Parte geral", r"honorarios|sucumbencia|verba honoraria|art\. 85"),
+        ("gratuidade", "Gratuidade da justiça, custas e depósitos", "Parte geral", r"custas|gratuidade|justica gratuita|assistencia judiciaria|depositos? (judicia|recursa)|despesas processuais|caucao"),
+        ("atos-proc", "Prazos, citação, intimação e nulidades", "Parte geral", r"citacao|intimacao|nulidade|revelia|prazos? processua|contagem (do|de) prazo|comunicacao dos atos|processo eletronico"),
+        ("tutela", "Tutelas provisórias", "Parte geral", r"tutela (provisoria|de urgencia|antecipada|cautelar|de evidencia)|liminar|medida cautelar|efeito suspensivo"),
+        ("provas-pc", "Provas e ônus da prova", "Conhecimento", r"\bprovas?\b|pericia|onus da prova|cerceamento de defesa|depoimento|testemunh|prova emprestada|julgamento antecipado"),
+        ("sentenca", "Sentença, coisa julgada e ação rescisória", "Conhecimento", r"julgamento (extra|ultra|citra) petita|sentenca (extra|ultra|citra) petita|nulidade da sentenca|coisa julgada|acao rescisoria|querela nullitatis|preclusao|fundamentacao deficiente|ausencia de fundamentacao|art\. 489"),
+        ("especiais", "Procedimentos especiais", "Conhecimento", r"acao monitoria|monitori|embargos de terceiro|possessoria|acao de exigir contas|prestacao de contas|consignacao em pagamento|divisao e demarcacao|acao popular|habilitacao|restauracao de autos"),
+        ("ms", "Mandado de segurança", "Conhecimento", r"mandado de seguranca|direito liquido e certo|autoridade coatora|habeas data|12\.016"),
+        ("coletivo", "Processo coletivo e ação civil pública", "Conhecimento", r"acao civil publica|acao coletiva|direitos (difusos|coletivos|individuais homogeneos)|tutela coletiva|7\.347|legitimidade do ministerio publico"),
+        ("cumprimento", "Cumprimento de sentença e liquidação", "Execução", r"cumprimento (de|da) sentenca|liquidacao|impugnacao ao cumprimento|multa do art\. 523|astreintes|multa cominatoria|obrigacao de fazer"),
+        ("execucao-tit", "Execução de título extrajudicial", "Execução", r"execucao de titulo|titulos? executivos?|embargos a execucao|excecao de pre-executividade|prescricao intercorrente|execucao por quantia"),
+        ("penhora", "Penhora, bem de família e expropriação", "Execução", r"penhora|impenhorab|bem de familia|arresto|bloqueio (de valores|judicial|de ativos)|sisbajud|bacenjud|expropria|leilao|arrematacao|adjudicacao|fraude (a|contra) execucao|medidas atipicas"),
+        ("recurso-especial", "Recurso especial e admissibilidade", "Recursos", r"recurso especial|admissibilidade|prequestionamento|sumula (n\. )?(7|5|83|211)|reexame|dissidio jurisprudencial|cotejo analitico"),
+        ("agravos-embargos", "Agravos e embargos de declaração", "Recursos", r"agravo (interno|de instrumento|regimental|em recurso especial)|embargos de declaracao|omissao|contradicao|obscuridade|taxatividade mitigada|art\. 1\.015"),
+        ("apelacao", "Apelação e julgamento nos tribunais", "Recursos", r"apelacao|julgamento ampliado|art\. 942|tecnica de ampliacao|sustentacao oral|reformatio in pejus|efeito devolutivo"),
+        ("precedentes-pc", "Precedentes, IRDR e embargos de divergência", "Recursos", r"recursos? especia(l|is) repetitiv|\birdr\b|incidente de resolucao|\biac\b|precedente qualificado|embargos de divergencia|distinguishing|superacao de precedente|reclamacao"),
+        ("preparo", "Preparo, tempestividade e deserção", "Recursos", r"tempestividade|intempestiv|preparo|desercao|feriado local|prazo recursal"),
     ],
     "tributario": [
-        ("icms", "ICMS", r"\bicms\b|difal"),
-        ("ir", "Imposto de renda", r"imposto (sobre a )?renda|\birpf\b|\birpj\b|\bcsll\b"),
-        ("pis-cofins", "PIS e Cofins", r"\bpis\b|cofins|pasep"),
-        ("contrib-prev", "Contribuições previdenciárias", r"contribuic\w* previdenciari|cota patronal|\brat\b|\bsat\b|terceiros|salario-educacao|\bincra\b|\bsesc\b|\bsenai\b|seguridade social"),
-        ("municipais", "ISS, IPTU e ITBI", r"\biss\b|issqn|\biptu\b|\bitbi\b"),
-        ("ipi-aduana", "IPI e comércio exterior", r"\bipi\b|importacao|exportacao|drawback|aduaneir|reintegra"),
-        ("exec-fiscal", "Execução fiscal", r"execucao fiscal|redirecionamento|dissolucao irregular|certidao de divida ativa|\bcda\b|embargos a execucao fiscal"),
-        ("credito-trib", "Crédito, prescrição e compensação", r"credito tributario|prescricao|decadencia|compensacao|repeticao de indebito|restituicao|denuncia espontanea|parcelamento|refis|lancamento|responsabilidade tributaria"),
-        ("outros-trib", "IPVA, ITCMD, IOF e taxas", r"\bipva\b|\bitcmd\b|\biof\b|\btaxas?\b|imunidade|isencao"),
+        ("icms", "ICMS", "Tributos estaduais", r"\bicms\b|difal|substituicao tributaria progressiva|credito de icms"),
+        ("ipva-itcmd", "IPVA e ITCMD", "Tributos estaduais", r"\bipva\b|\bitcmd\b|\bitcd\b|causa mortis"),
+        ("ir", "Imposto de renda e CSLL", "Tributos federais", r"imposto (sobre a )?renda|\birpf\b|\birpj\b|\bcsll\b|lucro (real|presumido)|ganho de capital"),
+        ("pis-cofins", "PIS e Cofins", "Tributos federais", r"\bpis\b|cofins|pasep|insumos?|nao cumulatividade"),
+        ("contrib-prev", "Contribuições previdenciárias e de terceiros", "Tributos federais", r"contribuic\w* previdenciari|cota patronal|\brat\b|\bsat\b|terceiros|salario-educacao|\bincra\b|\bsesc\b|\bsenai\b|\bsebrae\b|seguridade social|folha de salarios"),
+        ("ipi-aduana", "IPI, IOF e comércio exterior", "Tributos federais", r"\bipi\b|\biof\b|importacao|exportacao|drawback|aduaneir|reintegra|imposto de importacao"),
+        ("simples", "Simples Nacional", "Tributos federais", r"simples nacional|microempresa|empresa de pequeno porte|\bmei\b"),
+        ("municipais", "ISS, IPTU e ITBI", "Tributos municipais", r"\biss\b|issqn|\biptu\b|\bitbi\b|taxa de coleta de lixo"),
+        ("taxas", "Taxas e contribuições especiais", "Tributos municipais", r"\btaxas?\b|contribuicao de melhoria|\bcide\b|contribuicao de iluminacao|\bcosip\b"),
+        ("imunidade", "Imunidades e isenções", "Normas gerais", r"imunidade|isencao|beneficio fiscal|incentivo fiscal|nao incidencia|aliquota zero"),
+        ("credito-trib", "Lançamento, prescrição e decadência", "Normas gerais", r"credito tributario|lancamento|prescricao|decadencia|denuncia espontanea|parcelamento|refis|suspensao da exigibilidade"),
+        ("responsabilidade-trib", "Responsabilidade tributária e redirecionamento", "Normas gerais", r"responsabilidade tributaria|redirecionamento|dissolucao irregular|sucessao empresarial|substituicao tributaria|solidariedade tributaria|art\. 135"),
+        ("compensacao", "Compensação e repetição de indébito", "Normas gerais", r"compensacao|repeticao de indebito|restituicao|creditamento|precatorio"),
+        ("exec-fiscal", "Execução fiscal", "Processo tributário", r"execucao fiscal|certidao de divida ativa|\bcda\b|embargos a execucao fiscal|6\.830|garantia do juizo"),
+        ("processo-trib", "Processo administrativo fiscal e certidões", "Processo tributário", r"processo administrativo fiscal|\bcarf\b|certidao (negativa|positiva)|\bcnd\b|arrolamento de bens|mandado de seguranca preventivo"),
     ],
     "administrativo": [
-        ("servidores", "Servidores públicos", r"servidor|servidores|concurso publico|cargo publico|militar|remuneracao|vencimentos|processo administrativo disciplinar|\bpad\b"),
-        ("improbidade", "Improbidade administrativa", r"improbidade"),
-        ("licitacoes", "Licitações e contratos", r"licitac|contratos? administrativ|concessao|permissao de servico|parceria publico"),
-        ("desapropriacao", "Desapropriação e bens públicos", r"desapropria|bens? publico|terreno de marinha|faixa de dominio|servidao administrativa|tombamento"),
-        ("resp-estado", "Responsabilidade do Estado", r"responsabilidade (civil|objetiva) do estado|responsabilidade civil do ente|ente publico"),
-        ("regulacao", "Regulação, trânsito e conselhos", r"agencia reguladora|anatel|aneel|anvisa|telefonia|energia|saneamento|agua e esgoto|transito|conselhos? (profissiona|de fiscalizacao)|farmac|\bfgts\b"),
-        ("saude-pub", "Saúde pública e medicamentos", r"medicamento|\bsus\b|tratamento medico|internacao"),
+        ("servidores", "Servidores: remuneração e vantagens", "Agentes públicos", r"servidor|servidores|remuneracao|vencimentos|gratificac|adicional|reajuste|cargo publico|acumulacao de cargos|teto remuneratorio|licenca"),
+        ("concursos", "Concursos públicos", "Agentes públicos", r"concurso publico|edital|candidato|nomeacao|cadastro de reserva|teste de aptidao|heteroidentificacao|banca examinadora"),
+        ("militares", "Militares", "Agentes públicos", r"militar|militares|forcas armadas|policia militar|bombeiro|reforma militar"),
+        ("pad", "Processo administrativo e disciplinar", "Agentes públicos", r"processo administrativo disciplinar|\bpad\b|demissao|sindicancia|poder disciplinar|penalidade administrativa|processo administrativo"),
+        ("improbidade", "Improbidade administrativa", "Controle", r"improbidade|8\.429|14\.230|enriquecimento ilicito do agente"),
+        ("controle", "Atos administrativos, poder de polícia e controle", "Controle", r"poder de policia|tribunal de contas|\btcu\b|atos? administrativ|anulacao do ato|autotutela|discricionari|sancao administrativa"),
+        ("licitacoes", "Licitações", "Contratações públicas", r"licitac|pregao|14\.133|8\.666|dispensa de licitacao|inexigibilidade"),
+        ("contratos-adm", "Contratos administrativos e concessões", "Contratações públicas", r"contratos? administrativ|concessao|permissao de servico|parceria publico|equilibrio economico|reequilibrio|concessionaria de servico"),
+        ("desapropriacao", "Desapropriação e bens públicos", "Bens e intervenção", r"desapropria|bens? publico|terreno de marinha|faixa de dominio|servidao administrativa|tombamento|indenizacao expropriatoria|juros compensatorios"),
+        ("resp-estado", "Responsabilidade civil do Estado", "Responsabilidade", r"responsabilidade (civil|objetiva) do estado|responsabilidade civil do ente|ente publico|37, ?§ ?6|omissao estatal"),
+        ("regulacao", "Agências reguladoras e serviços públicos", "Regulação", r"agencia reguladora|anatel|aneel|anvisa|\bans\b|antt|anac|saneamento|servicos? publicos?"),
+        ("transito", "Trânsito e multas", "Regulação", r"transito|\bcnh\b|detran|infracao de transito|habilitacao para dirigir|apreensao de veiculo|multa de transito|lei seca"),
+        ("conselhos", "Conselhos profissionais", "Regulação", r"conselhos? (profissiona|de fiscalizacao|regional|federal)|\bcrm\b|\bcrea\b|\bcrf\b|anuidade|exercicio profissional"),
+        ("saude-pub", "Saúde pública e medicamentos", "Direitos sociais", r"medicamento|\bsus\b|tratamento medico|internacao|fornecimento de (remedio|medicamento)"),
+        ("ensino-pub", "Ensino público e financiamento estudantil", "Direitos sociais", r"ensino|educacao|universidade|instituicao federal de ensino|\bfies\b|\benem\b|vaga em creche"),
+        ("fgts", "FGTS", "Direitos sociais", r"\bfgts\b|fundo de garantia"),
     ],
     "previdenciario": [
-        ("beneficios", "Aposentadorias e benefícios", r"aposentadoria|auxilio|beneficio|pensao por morte|salario-maternidade|\bbpc\b|\bloas\b|amparo assistencial"),
-        ("rural", "Trabalhador rural", r"rural|segurado especial|boia-fria"),
-        ("privada", "Previdência privada", r"previdencia (privada|complementar)|entidade (fechada|aberta)"),
-        ("acidentaria", "Acidente de trabalho", r"acidente (do|de) trabalho|acidentari|auxilio-acidente"),
-        ("custeio", "Custeio e revisão", r"salario de contribuicao|salario de beneficio|debito previdenciario|revisao|decadencia"),
+        ("aposentadorias", "Aposentadorias e tempo especial", "Benefícios", r"aposentadoria|tempo de contribuicao|tempo especial|atividade especial|conversao de tempo|agentes nocivos|\bppp\b"),
+        ("incapacidade", "Benefícios por incapacidade", "Benefícios", r"auxilio-doenca|auxilio por incapacidade|aposentadoria por invalidez|incapacidade|pericia medica|reabilitacao"),
+        ("pensao-morte", "Pensão por morte e qualidade de segurado", "Benefícios", r"pensao por morte|dependente|qualidade de segurado|periodo de graca"),
+        ("assistencial", "Benefício assistencial (BPC/LOAS)", "Benefícios", r"\bbpc\b|\bloas\b|amparo assistencial|beneficio assistencial|miserabilidade|renda per capita"),
+        ("outros-benef", "Salário-maternidade, auxílio-reclusão e outros", "Benefícios", r"salario-maternidade|auxilio-reclusao|salario-familia|auxilio-acidente"),
+        ("rural", "Trabalhador rural", "Segurados", r"rural|segurado especial|boia-fria|inicio de prova material"),
+        ("acidentaria", "Acidente de trabalho", "Segurados", r"acidente (do|de) trabalho|acidentari|doenca ocupacional"),
+        ("revisao", "Revisão e cálculo de benefícios", "Cálculo e revisão", r"revisao|renda mensal|salario de beneficio|fator previdenciario|vida toda|decadencia|desaposentacao|reafirmacao da der|teto"),
+        ("devolucao", "Devolução de valores e desconto", "Cálculo e revisão", r"devolucao de valores|valores recebidos|boa-fe|desconto (em|no) beneficio|tutela antecipada revogada"),
+        ("custeio", "Custeio e contribuições do segurado", "Custeio", r"salario de contribuicao|debito previdenciario|contribuicao do segurado|indenizacao de contribuicoes|contribuinte individual"),
+        ("privada", "Previdência privada", "Previdência complementar", r"previdencia (privada|complementar)|entidade (fechada|aberta)|resgate de reserva|plano de beneficios|patrocinador"),
     ],
     "ambiental": [
-        ("dano-amb", "Dano ambiental", r"dano ambiental|reparacao|recuperacao ambiental|poluicao"),
-        ("areas-prot", "Áreas protegidas", r"preservacao permanente|\bapp\b|reserva legal|codigo florestal|unidade de conservacao"),
-        ("sancoes-amb", "Infrações e licenciamento", r"multa|infracao|auto de infracao|licenciamento"),
+        ("dano-amb", "Dano ambiental e reparação", "Responsabilidade", r"dano ambiental|reparacao|recuperacao ambiental|poluicao|degradacao"),
+        ("resp-amb", "Responsabilidade ambiental", "Responsabilidade", r"responsabilidade (civil )?ambiental|propter rem|poluidor|risco integral|solidari"),
+        ("areas-prot", "Áreas protegidas e Código Florestal", "Proteção", r"preservacao permanente|\bapp\b|reserva legal|codigo florestal|unidade de conservacao|12\.651|mata atlantica"),
+        ("urbanistico", "Urbanismo e parcelamento do solo", "Proteção", r"urbanistic|parcelamento do solo|loteamento irregular|plano diretor|zoneamento|ocupacao irregular"),
+        ("recursos-nat", "Recursos hídricos, mineração e resíduos", "Proteção", r"recursos hidricos|mineracao|minerar|lavra|garimpo|residuos|aterro"),
+        ("fauna", "Fauna e pesca", "Proteção", r"fauna|animais silvestres|\bpesca\b|\bcaca\b"),
+        ("sancoes-amb", "Infrações e licenciamento", "Administrativo ambiental", r"multa|infracao|auto de infracao|licenciamento|licenca ambiental|ibama"),
     ],
     "penal": [
-        ("dosimetria", "Dosimetria e regime", r"dosimetria|pena-base|aplicacao da pena|agravante|atenuante|reincidencia|maus antecedentes|regime (inicial|prisional|semiaberto|fechado)|substituicao da pena|minorante|majorante|continuidade delitiva"),
-        ("drogas", "Drogas", r"trafico|drogas|entorpecente|11\.343"),
-        ("patrimonio", "Crimes patrimoniais", r"furto|roubo|estelionato|receptacao|extorsao|latrocinio|apropriacao indebita|dano qualificado"),
-        ("pessoa", "Crimes contra a pessoa", r"homicidio|lesao corporal|feminicidio|violencia domestica|maria da penha|ameaca|injuria|calunia|difamacao"),
-        ("sexuais", "Crimes sexuais", r"estupro|dignidade sexual|vulneravel|pornografia|importunacao"),
-        ("exec-penal", "Execução penal", r"execucao penal|progressao|livramento condicional|remicao|falta grave|indulto|comutacao|detracao|saida temporaria"),
-        ("armas-transito", "Armas e trânsito", r"arma de fogo|municao|10\.826|desarmamento|crimes? de transito|embriaguez ao volante"),
-        ("economicos", "Crimes econômicos e contra a administração", r"lavagem|sonegacao|crimes? (tributari|contra a ordem tributaria)|peculato|corrupcao|concussao|licitac|organizacao criminosa|8\.137|apropriacao indebita tributaria|descaminho|contrabando"),
-        ("punibilidade", "Prescrição, insignificância e punibilidade", r"prescricao|extincao da punibilidade|insignificancia|bagatela|crime impossivel"),
+        ("dosimetria", "Dosimetria, regime e substituição da pena", "Parte geral", r"dosimetria|pena-base|aplicacao da pena|agravante|atenuante|reincidencia|maus antecedentes|regime (inicial|prisional|semiaberto|fechado)|substituicao da pena|minorante|majorante|continuidade delitiva|trafico privilegiado"),
+        ("punibilidade", "Prescrição, insignificância e extinção da punibilidade", "Parte geral", r"prescricao|extincao da punibilidade|insignificancia|bagatela|crime impossivel|atipicidade"),
+        ("exec-penal", "Execução penal", "Parte geral", r"execucao penal|progressao|livramento condicional|remicao|falta grave|indulto|comutacao|detracao|saida temporaria|7\.210"),
+        ("pessoa", "Crimes contra a vida e lesões", "Crimes em espécie", r"homicidio|lesao corporal|feminicidio|aborto|infanticidio|induzimento"),
+        ("violencia-dom", "Violência doméstica", "Crimes em espécie", r"violencia domestica|maria da penha|11\.340|medidas protetivas|ambito domestico"),
+        ("honra", "Crimes contra a honra e a liberdade", "Crimes em espécie", r"injuria|calunia|difamacao|ameaca|perseguicao|stalking|sequestro|carcere privado"),
+        ("patrimonio", "Crimes patrimoniais", "Crimes em espécie", r"furto|roubo|estelionato|receptacao|extorsao|latrocinio|apropriacao indebita|dano qualificado"),
+        ("sexuais", "Crimes sexuais", "Crimes em espécie", r"estupro|dignidade sexual|vulneravel|pornografia|importunacao|assedio sexual"),
+        ("drogas", "Drogas", "Legislação especial", r"trafico|drogas|entorpecente|11\.343|associacao para o trafico"),
+        ("armas-transito", "Armas e crimes de trânsito", "Legislação especial", r"arma de fogo|municao|10\.826|desarmamento|crimes? de transito|embriaguez ao volante|9\.503"),
+        ("administracao", "Crimes contra a administração pública", "Legislação especial", r"peculato|corrupcao|concussao|prevaricacao|desacato|fraude (em|a) licitac|crimes? contra a administracao|contrabando|descaminho"),
+        ("economicos", "Crimes econômicos, tributários e lavagem", "Legislação especial", r"lavagem|sonegacao|crimes? (tributari|contra a ordem tributaria)|8\.137|apropriacao indebita (tributaria|previdenciaria)|evasao de divisas|sistema financeiro nacional|7\.492"),
+        ("orcrim", "Organização criminosa", "Legislação especial", r"organizacao criminosa|12\.850|associacao criminosa|milicia"),
+        ("ambientais-penal", "Crimes ambientais", "Legislação especial", r"crimes? ambienta|9\.605"),
     ],
     "proc-penal": [
-        ("prisoes", "Prisões e cautelares", r"prisao preventiva|prisao em flagrante|prisao domiciliar|medidas? cautelar|custodia cautelar|excesso de prazo|audiencia de custodia|liberdade provisoria|\bfianca\b|monitoramento eletronico"),
-        ("provas-pp", "Provas e nulidades", r"\bprovas?\b|nulidade|busca (pessoal|domiciliar|veicular)|ingresso (em|no) domicilio|fundada suspeita|interceptacao|reconhecimento (pessoal|fotografico|de pessoas)|cadeia de custodia|confissao|ilicit"),
-        ("competencia-pp", "Competência", r"competencia|conflito de competencia|justica (federal|estadual|militar|eleitoral)"),
-        ("juri", "Tribunal do Júri", r"\bjuri\b|pronuncia|quesit|conselho de sentenca"),
-        ("recursos-pp", "Recursos, revisão e habeas corpus", r"revisao criminal|recurso em sentido estrito|apelacao criminal|embargos infringentes|habeas corpus (coletivo|preventivo)"),
-        ("acao-penal", "Ação penal e acordos", r"denuncia|queixa|acao penal|\banpp\b|acordo de nao persecucao|transacao penal|suspensao condicional do processo|colaboracao premiada|delacao|representacao"),
+        ("acao-penal", "Denúncia, ação penal e trancamento", "Investigação e ação penal", r"denuncia|queixa|acao penal|inepcia|justa causa|trancamento|inquerito policial|investigacao"),
+        ("acordos", "ANPP, transação e colaboração premiada", "Investigação e ação penal", r"\banpp\b|acordo de nao persecucao|transacao penal|suspensao condicional do processo|colaboracao premiada|delacao"),
+        ("competencia-pp", "Competência", "Investigação e ação penal", r"competencia|conflito de competencia|justica (federal|estadual|militar|eleitoral)|foro por prerrogativa"),
+        ("prisoes", "Prisões e medidas cautelares", "Medidas cautelares", r"prisao preventiva|prisao em flagrante|prisao domiciliar|medidas? cautelar|custodia cautelar|excesso de prazo|audiencia de custodia|liberdade provisoria|\bfianca\b|monitoramento eletronico"),
+        ("provas-pp", "Provas, buscas e interceptações", "Provas", r"\bprovas?\b|busca (pessoal|domiciliar|veicular)|ingresso (em|no) domicilio|fundada suspeita|interceptacao|quebra de sigilo|cadeia de custodia|confissao|ilicit|celular|dados telematicos"),
+        ("reconhecimento", "Reconhecimento de pessoas", "Provas", r"reconhecimento (pessoal|fotografico|de pessoas)|art\. 226"),
+        ("nulidades-pp", "Nulidades e direito de defesa", "Procedimento", r"nulidade|cerceamento de defesa|defesa tecnica|ampla defesa|contraditorio|citacao|intimacao|interrogatorio|emendatio|mutatio"),
+        ("juri", "Tribunal do Júri", "Procedimento", r"\bjuri\b|pronuncia|quesit|conselho de sentenca|plenario"),
+        ("hc", "Habeas corpus", "Recursos e ações", r"habeas corpus|writ|ordem de oficio|constrangimento ilegal"),
+        ("recursos-pp", "Recursos e revisão criminal", "Recursos e ações", r"revisao criminal|recurso em sentido estrito|apelacao criminal|embargos infringentes|recurso especial criminal"),
     ],
     "trabalho": [],
 }
-SUBAREAS_RE = {a: [(k, re.compile(rx)) for k, _, rx in lst] for a, lst in SUBAREAS.items()}
+# Assuntos amplos: só entram no selo quando nenhum assunto específico da mesma matéria se aplica.
+SUB_GENERICOS = {"contratos", "obrigacoes", "resp-civil", "prescricao-civ", "negocio-juridico", "praticas", "defesa-cons", "contratos-banc",
+                 "atos-proc", "provas-pc", "recurso-especial", "agravos-embargos", "servidores", "controle", "credito-trib", "revisao",
+                 "dano-amb", "provas-pp", "nulidades-pp", "acao-penal", "dosimetria", "punibilidade", "sociedades", "competencia", "competencia-pp"}
+SUBAREAS_RE = {a: [(k, re.compile(rx)) for k, _, _, rx in lst] for a, lst in SUBAREAS.items()}
 RE_CLASSE_SEG = re.compile(r"^(agravo|agravos|recurso|recursos|embargos|habeas corpus|mandado de seguranca|conflito|peticao|reclamacao|acao rescisoria|proposta de afetacao|questao de ordem|pedido|incidente|tutela provisoria|medida cautelar)\b[^.]{0,110}$")
 
 
@@ -429,14 +520,13 @@ def _texto_sub(em: str) -> str:
     return ". ".join(fora)[:700]
 
 
-def subareas(texto_norm: str, areas: list[str], limite: int = 3) -> list[str]:
+def subareas(texto_norm: str, areas: list[str], limite: int = 4) -> list[str]:
+    """Assuntos específicos de cada matéria (até três por matéria); os amplos vêm por último."""
     out: list[str] = []
     for a in areas or []:
-        for k, rx in SUBAREAS_RE.get(a, []):
-            if rx.search(texto_norm):
-                out.append(f"{a}/{k}")
-                if len([x for x in out if x.startswith(a + "/")]) >= 2:
-                    break
+        achados = [k for k, rx in SUBAREAS_RE.get(a, []) if rx.search(texto_norm)]
+        achados.sort(key=lambda k: k in SUB_GENERICOS)
+        out += [f"{a}/{k}" for k in achados[:3]]
     return out[:limite]
 
 
@@ -1466,7 +1556,7 @@ def atualizar_teses() -> dict:
 
 # Rótulos das submatérias, lidos pelo site.
 def gravar_taxonomia() -> None:
-    gravar_json(SITE_DATA / "submaterias.json", {a: [[k, rot] for k, rot, _ in lst] for a, lst in SUBAREAS.items() if lst})
+    gravar_json(SITE_DATA / "submaterias.json", {a: [[k, rot, g] for k, rot, g, _ in lst] for a, lst in SUBAREAS.items() if lst})
 
 
 # --------------------------------------------------------------------------
