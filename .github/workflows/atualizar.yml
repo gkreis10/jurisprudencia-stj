@@ -42,8 +42,11 @@ jobs:
           key: dados-stj-${{ github.run_id }}
           restore-keys: dados-stj-
 
+      - name: Instalar dependências
+        run: pip install pdfplumber
+
       - name: Atualizar dados
-        run: python scripts/atualizar.py --desde 2016-01 --dias-radar 15
+        run: python scripts/atualizar.py --desde 2010-01 --dias-radar 15
 
       - name: Guardar dados
         if: always()
