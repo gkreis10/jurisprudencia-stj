@@ -13,7 +13,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 ORIGEM, DESTINO = RAIZ / "site", RAIZ / "_site"
-MESES_EM_JSON = 12
+MESES_EM_JSON = 3
 
 
 def main() -> None:
