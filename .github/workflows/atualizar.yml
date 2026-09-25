@@ -46,7 +46,7 @@ jobs:
         run: pip install pdfplumber
 
       - name: Atualizar dados
-        run: python scripts/atualizar.py --desde 2010-01 --dias-radar 15
+        run: python scripts/atualizar.py --desde 2000-01 --dias-radar 15
 
       - name: Guardar dados
         if: always()
