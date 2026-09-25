@@ -65,6 +65,7 @@
     mais: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
     externo: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
     copiar: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>',
+    citar: '<path d="M5 7h5v5c0 3-1.6 5-4.5 6M14 7h5v5c0 3-1.6 5-4.5 6"/>',
     salvar: '<path d="M6 4h12v17l-6-4-6 4z"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
     mais1: '<path d="M12 5v14M5 12h14"/>',
@@ -788,6 +789,8 @@
     }
     return res;
   }
+  // Só dá para montar a citação completa com relator e data de julgamento.
+  const citavel = (r) => !!(r && r.cl && r.n && r.rel && r.dd && r.dj);
   function citacao(r) {
     const veic = (/^(\S+)/.exec(r.djt || "")?.[1] || "DJEN").replace(/[^A-Za-z]/g, "") || "DJEN";
     return `(STJ, ${r.cl} n. ${fmtNumProc(r.n)}, Rel. ${relatorFmt(r.rel)}, ${D.orgaos[r.o]}, julgado em ${fmtDataCit(r.dd)}, ${veic} de ${fmtDataCit(r.dj)}.)`;
@@ -825,6 +828,7 @@
         ${temCorpo ? `<button type="button" class="link-acao" data-a="ementa">Ver ementa completa</button>` : `<button type="button" class="link-acao" data-a="abrir">Ver julgado completo</button>`}
         <a class="link-acao" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>
         <span class="dir">
+          ${citavel(r) ? `<button type="button" class="btn-ico" data-a="so-cit" title="Copiar só a citação" aria-label="Copiar só a citação">${ico("citar")}</button>` : ""}
           ${r.em ? `<button type="button" class="btn-ico" data-a="cit" title="Copiar ementa e citação" aria-label="Copiar ementa e citação">${ico("copiar")}</button>` : ""}
           <button type="button" class="btn-ico btn-salvar" data-a="salvar" aria-pressed="${salvo}" title="${salvo ? "Remover dos salvos" : "Salvar"}" aria-label="Salvar">${ico("salvar")}</button>
         </span>
@@ -844,6 +848,7 @@
       }
       if (a === "abrir") abrirAcordao(r);
       if (a === "cit") copiar(`${r.em}\n${citacao(r)}`, "Ementa e citação copiadas.");
+      if (a === "so-cit") copiar(citacao(r), "Citação copiada.");
       if (a === "salvar") alternarSalvo(`a:${r.id}`, minimoAcordao(r), b);
     });
   }
@@ -866,6 +871,7 @@
         <a class="btn btn-pri btn-peq" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>
         <a class="btn btn-claro btn-peq" href="${URLS.processo(r.reg)}" target="_blank" rel="noopener">Consulta processual</a>
         <button type="button" class="btn btn-claro btn-peq" id="ga-cit">${ico("copiar")} Copiar ementa e citação</button>
+        <button type="button" class="btn btn-claro btn-peq" id="ga-socit">${ico("citar")} Copiar só a citação</button>
         <button type="button" class="btn btn-claro btn-peq btn-salvar" id="ga-salvar" aria-pressed="${salvo}">${ico("salvar")} ${salvo ? "Salvo" : "Salvar"}</button>
       </div>
       ${blocoTese(r, [])}
@@ -875,6 +881,7 @@
       ${linhaRefs(r.em)}
       ${extra ? `<h3>Dados do julgado</h3><dl class="dl">${extra}</dl>` : ""}`);
     $("#ga-cit").addEventListener("click", () => copiar(`${r.em}\n${citacao(r)}`, "Ementa e citação copiadas."));
+    $("#ga-socit").addEventListener("click", () => copiar(citacao(r), "Citação copiada."));
     $("#ga-salvar").addEventListener("click", (e) => { alternarSalvo(`a:${r.id}`, minimoAcordao(r), e.currentTarget); e.currentTarget.lastChild.textContent = P.salvos[`a:${r.id}`] ? " Salvo" : " Salvar"; });
   }
   function alternarSalvo(chave, obj, botao) {
@@ -1290,7 +1297,8 @@
           ${acoes}
           <span class="dir">
             <button type="button" class="menos" data-f="menos" title="Mostrar menos desta matéria">Menos disso</button>
-            <button type="button" class="btn-ico so-largo" data-f="copiar" title="Copiar" aria-label="Copiar">${ico("copiar")}</button>
+            ${it.inf || citavel(it.r) ? `<button type="button" class="btn-ico so-largo" data-f="citacao" title="Copiar só a citação" aria-label="Copiar só a citação">${ico("citar")}</button>` : ""}
+            <button type="button" class="btn-ico so-largo" data-f="copiar" title="Copiar tese e citação" aria-label="Copiar tese e citação">${ico("copiar")}</button>
             <button type="button" class="btn-ico" data-f="compartilhar" title="Compartilhar" aria-label="Compartilhar">${ico("link")}</button>
             <button type="button" class="btn-ico btn-salvar" data-f="salvar" aria-pressed="${salvo}" title="Salvar (ou toque duas vezes no cartão)" aria-label="Salvar">${ico("salvar")}</button>
           </span>
@@ -1679,7 +1687,8 @@
       if (fn === "tema") abrirTema(it.t.tp, it.t.n);
       if (fn === "acordao") abrirAcordao(it.r);
       if (fn === "info") abrirInformativo(it.inf);
-      if (fn === "copiar") copiar(textoIt, "Copiado.");
+      if (fn === "copiar") copiar(textoIt, "Tese e citação copiadas.");
+      if (fn === "citacao") copiar(it.inf ? refInfo(it.inf) : citacao(it.r), "Citação copiada.");
       if (fn === "menos") {
         ajustarPeso(it.ar, -3);
         toast(it.ar.length ? `Certo. ${AREAS[it.ar[0]] || "Esta matéria"} vai aparecer menos.` : "Certo, vamos mostrar menos disso.");
@@ -2516,17 +2525,20 @@
       <div class="nota-rodape"><span class="nota-proc">${esc(proc)}${x.rel ? ` · Rel. Min. ${esc(x.rel)}` : ""}</span>
         <span class="dir"><button type="button" class="link-acao" data-a-info="abrir">Nota completa</button>
           <a class="btn-ico" href="${URL_INFO(x.ed)}" target="_blank" rel="noopener" title="Informativo oficial" aria-label="Informativo oficial">${ico("externo")}</a>
-          <button type="button" class="btn-ico" data-a-info="copiar" title="Copiar destaque e referência" aria-label="Copiar">${ico("copiar")}</button>
+          <button type="button" class="btn-ico" data-a-info="ref" title="Copiar só a citação" aria-label="Copiar só a citação">${ico("citar")}</button>
+          <button type="button" class="btn-ico" data-a-info="copiar" title="Copiar destaque e citação" aria-label="Copiar destaque e citação">${ico("copiar")}</button>
           <button type="button" class="btn-ico btn-salvar" data-a-info="salvar" aria-pressed="${salvo}" title="${salvo ? "Remover dos salvos" : "Salvar"}" aria-label="Salvar">${ico("salvar")}</button></span></div></li>`;
   }
-  const citInfo = (x) => `${x.t.replace(/\n/g, " ")}\n(STJ, ${x.proc ? x.proc.split(/\.\s*\(/)[0].replace(/\.$/, "") : x.org}. Informativo de Jurisprudência n. ${x.ed}.)`;
+  const refInfo = (x) => `(STJ, ${x.proc ? x.proc.split(/\.\s*\(/)[0].replace(/\.$/, "") : x.org}. Informativo de Jurisprudência n. ${x.ed}.)`;
+  const citInfo = (x) => `${x.t.replace(/\n/g, " ")}\n${refInfo(x)}`;
   document.addEventListener("click", async (ev) => {
     const b = ev.target.closest("[data-a-info]"); if (!b) return;
     const id = b.closest("[data-info]")?.dataset.info; const l = await informativos(); const x = l.idx.get(id); if (!x) return;
     const a = b.dataset.aInfo;
     if (a === "abrir") abrirInformativo(x);
     if (a === "mais") { const t = b.closest(".ncard").querySelector(".nota-tese"); t.classList.toggle("aberta"); b.textContent = t.classList.contains("aberta") ? "Recolher" : "Continuar lendo"; }
-    if (a === "copiar") copiar(citInfo(x), "Destaque e referência copiados.");
+    if (a === "copiar") copiar(citInfo(x), "Destaque e citação copiados.");
+    if (a === "ref") copiar(refInfo(x), "Citação copiada.");
     if (a === "salvar") alternarSalvo(`i:${x.id}`, { k: "i", id: x.id }, b);
   });
   async function abrirInformativo(x) {
@@ -2540,13 +2552,15 @@
       <div class="acoes" style="margin:14px 0">
         ${noAcervo ? `<button type="button" class="btn btn-pri btn-peq" id="gi-ementa">Ementa do acórdão</button>` : ""}
         ${x.tr ? `<button type="button" class="btn btn-claro btn-peq" data-ref="t:${x.tr}">Tema ${fmtNumProc(x.tr)}</button>` : ""}
-        <button type="button" class="btn btn-claro btn-peq" id="gi-copiar">${ico("copiar")} Copiar destaque</button>
+        <button type="button" class="btn btn-claro btn-peq" id="gi-copiar">${ico("copiar")} Copiar destaque e citação</button>
+        <button type="button" class="btn btn-claro btn-peq" id="gi-ref">${ico("citar")} Copiar só a citação</button>
         <a class="btn btn-claro btn-peq" href="${URL_INFO(x.ed)}" target="_blank" rel="noopener">Informativo oficial ${ico("externo")}</a>
       </div>
       ${teor[0] && !x.an ? `<h3>Informações do inteiro teor</h3><div class="texto-serif">${teor[0].split("\n").map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
       <h3>Processo</h3><p class="texto-serif">${esc(x.proc || (/^s[úu]mula/i.test(x.tema || "") ? "Enunciado de súmula aprovado pelo STJ." : x.an ? "A nota não indica o número do processo." : "Processo em segredo de justiça."))}</p>
       ${teor[1] ? `<h3>Informações adicionais</h3><p class="texto-serif">${esc(teor[1])}</p>` : ""}`);
-    $("#gi-copiar").addEventListener("click", () => copiar(citInfo(x), "Destaque e referência copiados."));
+    $("#gi-copiar").addEventListener("click", () => copiar(citInfo(x), "Destaque e citação copiados."));
+    $("#gi-ref").addEventListener("click", () => copiar(refInfo(x), "Citação copiada."));
     $("#gi-ementa")?.addEventListener("click", () => abrirAcordao({ id: noAcervo[4], m: ix.m[noAcervo[2]], o: ix.o[noAcervo[3]], cl: x.p[0].cl, n: noAcervo[0] }));
   }
   // Explicação curta no topo da tela; some quando o usuário clica em "Entendi".
@@ -3091,11 +3105,13 @@
       <button type="button" role="tab" data-sm-aba="teses" aria-selected="${aba === "teses"}">Jurisprudência em Teses</button></div>`;
   const ligarAbasSumulas = (main) => $$("[data-sm-aba]", main).forEach((b) => b.addEventListener("click", () => { location.hash = b.dataset.smAba ? "#sumulas?aba=teses" : "#sumulas"; }));
   const titJT = (s) => frase(String(s || "").toUpperCase() === s ? s : s).replace(/\b(Ii|Iii|Iv|Vi|Vii|Viii|Ix|Xi|Xii)\b/g, (m) => m.toUpperCase());
-  const fmtAc = (a) => a.replace(/Rel\. Min\. ([^,]+)/, (m, n) => `Rel. Min. ${titulo(n)}`).replace(/, (PRIMEIRA|SEGUNDA|TERCEIRA|QUARTA|QUINTA|SEXTA) (TURMA|SEÇÃO)/, (m, a, b) => `, ${titulo(a)} ${titulo(b)}`).replace(/CORTE ESPECIAL/, "Corte Especial");
+  const fmtAc = (a) => a.replace(/Rel\. (Min\.|Ministr[oa]) ([^,]+)/, (m, t, n) => `Rel. ${t} ${titulo(n)}`).replace(/, (PRIMEIRA|SEGUNDA|TERCEIRA|QUARTA|QUINTA|SEXTA) (TURMA|SEÇÃO)/, (m, a, b) => `, ${titulo(a)} ${titulo(b)}`).replace(/CORTE ESPECIAL/, "Corte Especial");
   document.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-tese-copiar]"); if (!b) return;
     const l = await tesesJT(); const x = l.idx.get(b.closest("[data-tese]")?.dataset.tese); if (!x) return;
-    copiar(`${x.t} (STJ, Jurisprudência em Teses, Edição n. ${x.ed} – ${titJT(x.tit)}, tese ${x.n}${x.ac[0] ? `; entre outros: ${fmtAc(x.ac[0])}` : ""}.)`, "Tese e referência copiadas.");
+    const ref = `(STJ, Jurisprudência em Teses, Edição n. ${x.ed} – ${titJT(x.tit)}, tese ${x.n}${x.ac[0] ? `; entre outros: ${fmtAc(x.ac[0]).replace(/[\s,;.]+$/, "")}` : ""}.)`;
+    if (b.dataset.teseCopiar === "ref") copiar(ref, "Citação copiada.");
+    else copiar(`${x.t} ${ref}`, "Tese e citação copiadas.");
   });
   // Uma tese dentro da edição (lista numerada, compacta).
   function linhaTeseJT(x, termos = [], comEdicao = false) {
@@ -3107,7 +3123,7 @@
         <p class="jt-texto">${destacar(esc(x.t), termos)}</p>
         <div class="jt-acoes">
           ${x.ac.length ? `<details class="precedentes"><summary>${nPrec} precedente(s)</summary><ul>${x.ac.map((a) => `<li>${esc(fmtAc(a))}</li>`).join("")}</ul>${x.nac > x.ac.length ? `<p class="nota">E mais ${x.nac - x.ac.length} na edição oficial.</p>` : ""}</details>` : `<span class="nota">Sem precedentes listados</span>`}
-          <span class="dir"><button type="button" class="btn-ico" data-tese-copiar title="Copiar tese e referência" aria-label="Copiar">${ico("copiar")}</button>${botaoSalvar(`j:${x.id}`, { k: "j", id: x.id })}</span>
+          <span class="dir"><button type="button" class="btn-ico" data-tese-copiar="ref" title="Copiar só a citação" aria-label="Copiar só a citação">${ico("citar")}</button><button type="button" class="btn-ico" data-tese-copiar title="Copiar tese e citação" aria-label="Copiar tese e citação">${ico("copiar")}</button>${botaoSalvar(`j:${x.id}`, { k: "j", id: x.id })}</span>
         </div>
       </div></li>`;
   }
