@@ -1363,7 +1363,7 @@
           <li>Em cada nota é possível ler o inteiro teor, copiar o destaque com a referência e salvar para acompanhar.</li>
         </ul>${COMO_BUSCAR()}`),
     pesquisa: () => ajuda("Como usar a Pesquisa", `
-      <p class="texto-serif">Busca nas ementas, teses e referências legislativas de todo o acervo de acórdãos da Corte Especial, das Seções e das Turmas, desde 2010.</p>
+      <p class="texto-serif">Busca nas ementas, teses e referências legislativas de todo o acervo de acórdãos da Corte Especial, das Seções e das Turmas, desde 2000.</p>
       <ul class="lista-ajuda">
         <li>O campo aceita termos ou o número do processo (com ou sem classe e pontos). Pelo número, a busca percorre todo o acervo e as publicações recentes do DJEN.</li>
         <li>Por padrão, a busca abrange todo o acervo e percorre os arquivos mês a mês, do mais recente ao mais antigo, mostrando os resultados à medida que avança. Para respostas imediatas, restrinja o Período (por exemplo, últimos 12 meses).</li>
@@ -1415,7 +1415,7 @@
         <li><b>Recursos repetitivos e IAC</b>: questão submetida e tese firmada. Mostra as teses já fixadas e os temas pendentes, e avisa quando um deles entra em pauta.</li>
         <li><b>Súmulas</b> e <b>Jurisprudência em Teses</b>: os entendimentos consolidados sobre o assunto.</li>
         <li><b>Informativo de Jurisprudência</b>: as notas selecionadas pelo Tribunal.</li>
-        <li><b>Acórdãos dos últimos meses</b>: cabeçalho da ementa e tese. Para buscar no texto integral das ementas desde 2010, use o link “Pesquisar em todo o acervo”.</li>
+        <li><b>Acórdãos dos últimos meses</b>: cabeçalho da ementa e tese. Para buscar no texto integral das ementas desde 2000, use o link “Pesquisar em todo o acervo”.</li>
       </ul>
       <p>O <b>Panorama por assunto</b> reúne tudo isso numa página, na ordem em que interessa para a petição: teses vinculantes, temas pendentes, súmulas, teses do Tribunal, Informativo e julgados recentes. A aba <b>Novidades</b> mostra só o que é novo ou mudou, por prioridade.</p>
       <h3>Processo e OAB</h3>
