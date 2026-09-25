@@ -1094,3 +1094,24 @@ svg.gira { transform: rotate(180deg); }
 .cp-grade-org { align-items: stretch; }
 @media (max-width: 980px) { .cp-grade3 { grid-template-columns: 1fr; } .cp-grade3 > .cp-org { order: var(--o, 0); } }
 .selo-btn { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; } .selo-btn:hover { filter: brightness(0.95); }
+
+/* Salvos: pastas, avaliação e anotação */
+.salvos-barra { display: grid; gap: 8px; }
+.salvos-pastas .chip { font-weight: 600; }
+.chip-acao { border-style: dashed; color: var(--pri); }
+.sep-chips { width: 1px; align-self: stretch; background: var(--linha-2); margin: 2px 4px; }
+.salvo-org { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--linha-2); }
+.salvo-org .dir { margin-left: auto; }
+.tag-pasta { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 99px; background: var(--pri-bg); color: var(--pri); }
+.tag-pasta svg { width: 13px; height: 13px; }
+.salvo-nota { flex-basis: 100%; order: 5; margin: 4px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--sup-2); border-left: 3px solid var(--rel); font-size: 13.5px; color: var(--tx-2); white-space: pre-line; }
+.jt-salva .salvo-org { margin: 0 14px 12px; }
+.org-aval { flex-wrap: wrap; }
+#org-nota { width: 100%; border-radius: 10px; border: 1px solid var(--linha-2); background: var(--sup); color: var(--tx); padding: 10px 12px; font: inherit; font-size: 14px; resize: vertical; }
+.lista-pastas { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lista-pastas li { display: flex; align-items: center; gap: 10px; }
+.lista-pastas input { flex: 1; min-width: 0; height: 36px; border-radius: 9px; border: 1px solid var(--linha-2); background: var(--sup); color: var(--tx); padding: 0 10px; font: inherit; }
+.lista-pastas .nota { white-space: nowrap; margin: 0; }
+.toast { display: flex; align-items: center; gap: 14px; }
+.toast-acao { border: 0; background: transparent; color: inherit; font: 700 14px var(--ui); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0; white-space: nowrap; }
+.toast { pointer-events: auto; }

@@ -94,12 +94,17 @@
   const salvarP = () => Store.gravar(P);
 
   // ================================================================ avisos
-  function toast(msg) {
+  function toast(msg, acao) {
     const box = $("#toasts");
     const el = document.createElement("div");
     el.className = "toast"; el.textContent = msg;
+    if (acao) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "toast-acao"; b.textContent = acao.rot;
+      b.addEventListener("click", () => { el.remove(); acao.fn(); });
+      el.appendChild(b);
+    }
     box.appendChild(el);
-    setTimeout(() => { el.classList.add("sai"); setTimeout(() => el.remove(), 200); }, 2400);
+    setTimeout(() => { el.classList.add("sai"); setTimeout(() => el.remove(), 200); }, acao ? 6000 : 2400);
   }
   async function copiar(txt, msg = "Copiado.") {
     try { await navigator.clipboard.writeText(txt); }
@@ -873,6 +878,7 @@
         <button type="button" class="btn btn-claro btn-peq" id="ga-cit">${ico("copiar")} Copiar ementa e citação</button>
         <button type="button" class="btn btn-claro btn-peq" id="ga-socit">${ico("citar")} Copiar só a citação</button>
         <button type="button" class="btn btn-claro btn-peq btn-salvar" id="ga-salvar" aria-pressed="${salvo}">${ico("salvar")} ${salvo ? "Salvo" : "Salvar"}</button>
+        <button type="button" class="btn btn-claro btn-peq" id="ga-org">${ico("arquivo")} Pasta e avaliação</button>
       </div>
       ${blocoTese(r, [])}
       <h3>Ementa</h3>
@@ -882,13 +888,124 @@
       ${extra ? `<h3>Dados do julgado</h3><dl class="dl">${extra}</dl>` : ""}`);
     $("#ga-cit").addEventListener("click", () => copiar(`${r.em}\n${citacao(r)}`, "Ementa e citação copiadas."));
     $("#ga-socit").addEventListener("click", () => copiar(citacao(r), "Citação copiada."));
+    $("#ga-org").addEventListener("click", () => { const k = `a:${r.id}`; if (!P.salvos[k]) { P.salvos[k] = { ...minimoAcordao(r), salvoEm: hojeISO() }; salvarP(); avisarSalvos(); } organizarSalvo(k); });
     $("#ga-salvar").addEventListener("click", (e) => { alternarSalvo(`a:${r.id}`, minimoAcordao(r), e.currentTarget); e.currentTarget.lastChild.textContent = P.salvos[`a:${r.id}`] ? " Salvo" : " Salvar"; });
   }
   function alternarSalvo(chave, obj, botao) {
-    if (P.salvos[chave]) { delete P.salvos[chave]; toast("Removido dos salvos."); }
-    else { P.salvos[chave] = { ...obj, salvoEm: hojeISO() }; toast("Salvo. Veja em Meu radar → Salvos."); }
-    salvarP();
+    if (P.salvos[chave]) {
+      const antes = P.salvos[chave]; delete P.salvos[chave];
+      toast("Removido dos salvos.", { rot: "Desfazer", fn: () => { P.salvos[chave] = antes; salvarP(); if (botao) botao.setAttribute("aria-pressed", "true"); avisarSalvos(); } });
+    } else {
+      P.salvos[chave] = { ...obj, salvoEm: hojeISO() };
+      toast("Salvo em Meu radar → Salvos.", { rot: "Escolher pasta", fn: () => organizarSalvo(chave) });
+    }
+    salvarP(); avisarSalvos();
     if (botao) { botao.setAttribute("aria-pressed", String(!!P.salvos[chave])); }
+  }
+
+  // ======================================================= organização dos salvos
+  // Pastas (por tema, cliente ou processo), avaliação do precedente e anotação livre.
+  const pastas = () => (P.pastas = P.pastas || []);
+  const avisarSalvos = () => document.dispatchEvent(new Event("salvos-mudou"));
+  const ehPenal = (ar) => (ar || []).some((a) => a === "penal" || a === "proc-penal");
+  const rotAval = (v, penal) => (v === "fav" ? "Favorável" : v === "desf" ? "Desfavorável" : "") + (v && penal ? " à defesa" : "");
+  function tituloSalvo(x, k) {
+    const t = x.k || k[0];
+    if (t === "a") return `${x.cl} ${fmtNumProc(x.n)}`;
+    if (t === "t") return `${x.tp} ${x.n}`;
+    if (t === "j") return `Jurisprudência em Teses · ${String(x.id).replace("-", ", tese ")}`;
+    if (t === "i") return "Nota do Informativo";
+    return x.p ? String(x.p) : "Item salvo";
+  }
+  async function areasDoSalvo(x, k) {
+    if (x.ar) return x.ar;
+    const t = x.k || k[0];
+    try {
+      if (t === "t") return (await temas()).idx.get(`${x.tp}-${x.n}`)?.ar || [];
+      if (t === "i") return (await informativos()).idx.get(x.id)?.ar || [];
+      if (t === "j") return (await tesesJT()).idx.get(x.id)?.ar || [];
+    } catch { /* sem dados */ }
+    return [];
+  }
+  async function organizarSalvo(chave) {
+    const x = P.salvos[chave]; if (!x) return;
+    const penal = ehPenal(await areasDoSalvo(x, chave));
+    abrirGaveta("Organizar salvo", tituloSalvo(x, chave), "");
+    const corpo = $("#gaveta-corpo");
+    const desenhar = () => {
+      const sel = new Set(x.pastas || []);
+      corpo.innerHTML = `
+        <h3>Pastas</h3>
+        ${pastas().length ? `<div class="chips">${pastas().map((p) => `<button type="button" class="chip" data-org-pasta="${esc(p)}" aria-pressed="${sel.has(p)}">${esc(p)}</button>`).join("")}</div>` : `<p class="nota">Nenhuma pasta ainda. Crie a primeira abaixo.</p>`}
+        <form class="adicionar" id="org-nova" style="margin-top:10px"><input placeholder="Nova pasta. Ex.: Nulidade da busca domiciliar" aria-label="Nova pasta" maxlength="60"><button class="btn btn-pri" type="submit" aria-label="Criar pasta">${ico("mais1")}</button></form>
+        <p class="nota">Um mesmo precedente pode ficar em mais de uma pasta.</p>
+        <h3>Avaliação</h3>
+        <div class="segmentos org-aval" role="radiogroup">${[["", "Não avaliado"], ["fav", rotAval("fav", penal)], ["desf", rotAval("desf", penal)]].map(([v, t]) => `<button type="button" role="radio" data-org-aval="${v}" aria-selected="${(x.aval || "") === v}">${t}</button>`).join("")}</div>
+        <p class="nota">${penal ? "Indique se o precedente favorece ou prejudica a tese defensiva." : "Indique se o precedente favorece ou prejudica a tese que você sustenta."} A marcação é sua e fica só neste navegador.</p>
+        <h3>Anotação</h3>
+        <textarea id="org-nota" rows="4" placeholder="Por que este precedente importa, em que caso usar, ressalvas…">${esc(x.nota || "")}</textarea>
+        <div class="acoes" style="margin-top:14px"><button type="button" class="btn btn-pri" data-org-fim>Concluir</button></div>`;
+    };
+    desenhar();
+    const gravar = () => { salvarP(); avisarSalvos(); };
+    corpo.onclick = (e) => {
+      const bp = e.target.closest("[data-org-pasta]");
+      if (bp) { const p = bp.dataset.orgPasta, l = new Set(x.pastas || []); l.has(p) ? l.delete(p) : l.add(p); x.pastas = [...l]; gravar(); desenhar(); return; }
+      const ba = e.target.closest("[data-org-aval]");
+      if (ba) { x.aval = ba.dataset.orgAval || undefined; gravar(); desenhar(); return; }
+      if (e.target.closest("[data-org-fim]")) fecharGaveta();
+    };
+    corpo.oninput = (e) => { if (e.target.id === "org-nota") { x.nota = e.target.value.slice(0, 2000) || undefined; clearTimeout(organizarSalvo.t); organizarSalvo.t = setTimeout(gravar, 400); } };
+    corpo.onsubmit = (e) => {
+      if (e.target.id !== "org-nova") return;
+      e.preventDefault();
+      const nome = $("input", e.target).value.trim().replace(/\s+/g, " "); if (!nome) return;
+      if (!pastas().some((p) => norm(p) === norm(nome))) pastas().push(nome);
+      const real = pastas().find((p) => norm(p) === norm(nome));
+      x.pastas = [...new Set([...(x.pastas || []), real])]; gravar(); desenhar();
+    };
+  }
+  function gerenciarPastas() {
+    abrirGaveta("Salvos", "Pastas", "");
+    const corpo = $("#gaveta-corpo");
+    const uso = (p) => Object.values(P.salvos).filter((x) => (x.pastas || []).includes(p)).length;
+    const desenhar = () => {
+      corpo.innerHTML = `${pastas().length ? `<ul class="lista-pastas">${pastas().map((p, i) => `<li><input value="${esc(p)}" data-pasta-nome="${i}" aria-label="Nome da pasta" maxlength="60"><span class="nota">${uso(p)} item(ns)</span><button type="button" class="btn-ico" data-pasta-apagar="${i}" title="Excluir pasta" aria-label="Excluir pasta">${ico("x")}</button></li>`).join("")}</ul>` : `<p class="nota">Nenhuma pasta criada.</p>`}
+        <form class="adicionar" id="pasta-nova" style="margin-top:12px"><input placeholder="Nova pasta" aria-label="Nova pasta" maxlength="60"><button class="btn btn-pri" type="submit" aria-label="Criar pasta">${ico("mais1")}</button></form>
+        <p class="nota">Excluir uma pasta não apaga os itens salvos; eles só deixam de estar nela. Para renomear, edite o nome e saia do campo.</p>
+        <h3>Cópia de segurança</h3>
+        <p class="nota">Os salvos, as pastas e as anotações ficam guardados neste navegador. Exporte um arquivo para levar a outro aparelho ou guardar uma cópia.</p>
+        <div class="acoes"><button type="button" class="btn btn-claro btn-peq" data-salvos-exportar>${ico("arquivo")} Exportar salvos</button>
+          <label class="btn btn-claro btn-peq" style="cursor:pointer">${ico("mais1")} Importar arquivo<input type="file" accept=".json,application/json" data-salvos-importar hidden></label></div>`;
+    };
+    desenhar();
+    corpo.onclick = (e) => {
+      const ap = e.target.closest("[data-pasta-apagar]");
+      if (ap) { const p = pastas()[+ap.dataset.pastaApagar]; P.pastas = pastas().filter((x) => x !== p); for (const x of Object.values(P.salvos)) if (x.pastas) x.pastas = x.pastas.filter((y) => y !== p); salvarP(); avisarSalvos(); desenhar(); return; }
+      if (e.target.closest("[data-salvos-exportar]")) {
+        const blob = new Blob([JSON.stringify({ tipo: "radar-stj-salvos", versao: 1, exportadoEm: new Date().toISOString(), pastas: pastas(), salvos: P.salvos }, null, 1)], { type: "application/json" });
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `radar-stj-salvos-${hojeISO()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }
+    };
+    corpo.onchange = async (e) => {
+      const i = e.target.dataset?.pastaNome;
+      if (i != null) {
+        const velho = pastas()[+i], novo = e.target.value.trim().replace(/\s+/g, " ");
+        if (!novo || novo === velho || pastas().some((p) => p !== velho && norm(p) === norm(novo))) { desenhar(); return; }
+        P.pastas[+i] = novo; for (const x of Object.values(P.salvos)) if (x.pastas) x.pastas = x.pastas.map((y) => (y === velho ? novo : y));
+        salvarP(); avisarSalvos(); desenhar(); return;
+      }
+      if (e.target.matches("[data-salvos-importar]") && e.target.files[0]) {
+        try {
+          const o = JSON.parse(await e.target.files[0].text());
+          if (o.tipo !== "radar-stj-salvos" || typeof o.salvos !== "object") throw new Error();
+          let n = 0;
+          for (const [k, v] of Object.entries(o.salvos)) { if (!P.salvos[k]) n++; P.salvos[k] = { ...(P.salvos[k] || {}), ...v, pastas: [...new Set([...(P.salvos[k]?.pastas || []), ...(v.pastas || [])])] }; }
+          for (const p of o.pastas || []) if (!pastas().includes(p)) pastas().push(p);
+          salvarP(); avisarSalvos(); desenhar(); toast(`${n} item(ns) novo(s) importado(s).`);
+        } catch { toast("Arquivo inválido: use um arquivo exportado pelo Radar STJ."); }
+      }
+    };
   }
 
   // =============================================================== gaveta
@@ -896,6 +1013,7 @@
   function abrirGaveta(sobre, titulo, html) {
     focoAnterior = document.activeElement;
     $("#gaveta-sobre").textContent = sobre; $("#gaveta-tit").textContent = titulo; $("#gaveta-corpo").innerHTML = html;
+    $("#gaveta-corpo").onclick = null; $("#gaveta-corpo").oninput = null; $("#gaveta-corpo").onsubmit = null; $("#gaveta-corpo").onchange = null;
     const g = $("#gaveta"), v = $("#veu");
     g.hidden = false; v.hidden = false;
     requestAnimationFrame(() => { g.classList.add("vis"); v.classList.add("vis"); });
@@ -995,7 +1113,8 @@
       ${t.tese ? `<div class="tese compacta"><b>Tese firmada</b><p>${destacar(esc(t.tese), termos)}</p></div>` : t._teseAguarda ? `<p class="nota">Julgado; tese aguardando a publicação do acórdão.</p>` : ""}
       ${t.q ? `<p class="texto-serif${t.tese ? " questao" : ""}">${t.tese ? "<b>Questão:</b> " : ""}${destacar(esc(t.q), termos)}</p>` : ""}
       <div class="acoes"><button type="button" class="link-acao" data-abrir-tema>Detalhes e linha do tempo ${ico("seta")}</button>
-        <a class="link-acao" href="${URLS.tema(t.tp, t.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a></div></li>`;
+        <a class="link-acao" href="${URLS.tema(t.tp, t.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>
+        <span class="dir">${botaoSalvar(`t:${t.tp}-${t.n}`, { k: "t", tp: t.tp, n: t.n })}</span></div></li>`;
   }
 
   // ========================================================= ATUALIZE-SE
@@ -1450,6 +1569,8 @@
       </ul>
       <p class="nota">A seleção é automática, para orientar a leitura; confira sempre o inteiro teor antes de citar.</p>`),
   };
+  // Verificar petição: abre o acórdão do acervo localizado pelo número do processo.
+  document.addEventListener("click", (e) => { const b = e.target.closest("[data-vf-ac]"); if (!b) return; const [id, m, o, cl, n] = b.dataset.vfAc.split("|"); abrirAcordao({ id, m, o, cl, n }); });
   // Precedente citado em pauta ou em outra lista: abre o detalhe na gaveta, sem trocar de aba.
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-abrir-precedente]"); if (!b) return; e.preventDefault(); const [tp, n] = b.dataset.abrirPrecedente.split("|"); abrirTema(tp, +n); });
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-topo-ajuda]"); if (b) AJUDA_VIEW[b.dataset.topoAjuda]?.(lerHash().p); });
@@ -2337,24 +2458,56 @@
       const TIPOS_S = [["a", "Acórdãos"], ["d", "Aguardando ementa"], ["t", "Repetitivos"], ["j", "Jurisprudência em Teses"], ["i", "Informativo"], ["p", "Pautas"]];
       const tipoDe = (x) => x.k || x._k[0];
       const cont = {}; s.forEach((x) => (cont[tipoDe(x)] = (cont[tipoDe(x)] || 0) + 1));
-      let filtro = "";
+      const F = { tp: "", pasta: "", aval: "" };
+      const ars = new Map(); // matérias de cada salvo (para saber se é penal)
       const html = (x) => {
         const k = tipoDe(x);
-        if (k === "t") { const o = t.idx.get(`${x.tp}-${x.n}`); return o ? linhaTema(o) : ""; }
-        if (k === "i") { const o = inf.idx.get(x.id); return o ? cardInformativo(o) : ""; }
-        if (k === "d") return cardDjen(x);
-        if (k === "j") { const o = jt.idx.get(x.id); return o ? `<li class="card jt-salva"><ol class="jt-teses plano">${linhaTeseJT(o, [], true)}</ol></li>` : ""; }
-        if (k === "p") return cardPauta(x);
-        return cardAcordao({ ...x, em: "", h: x.h });
+        let li = "", ar = x.ar || [];
+        if (k === "t") { const o = t.idx.get(`${x.tp}-${x.n}`); li = o ? linhaTema(o) : ""; ar = o?.ar || []; }
+        else if (k === "i") { const o = inf.idx.get(x.id); li = o ? cardInformativo(o) : ""; ar = o?.ar || []; }
+        else if (k === "d") li = cardDjen(x);
+        else if (k === "j") { const o = jt.idx.get(x.id); li = o ? `<li class="card jt-salva"><ol class="jt-teses plano">${linhaTeseJT(o, [], true)}</ol></li>` : ""; ar = o?.ar || []; }
+        else if (k === "p") li = cardPauta(x);
+        else li = cardAcordao({ ...x, em: "", h: x.h });
+        if (!li) return "";
+        ars.set(x._k, ar);
+        const penal = ehPenal(ar);
+        const barra = `<div class="salvo-org">
+            ${(x.pastas || []).map((p) => `<span class="tag-pasta">${ico("arquivo")}${esc(p)}</span>`).join("")}
+            ${x.aval ? `<span class="selo ${x.aval === "fav" ? "ok" : "alta"}">${rotAval(x.aval, penal)}</span>` : ""}
+            ${x.nota ? `<p class="salvo-nota">${esc(x.nota)}</p>` : ""}
+            <button type="button" class="link-acao dir" data-organizar="${esc(x._k)}">${(x.pastas || []).length || x.aval || x.nota ? "Editar pasta e avaliação" : "Pasta, avaliação e anotação"}</button></div>`;
+        return li.replace(/<\/li>\s*$/, `${barra}</li>`);
       };
       const desenharS = () => {
-        const vis = s.filter((x) => !filtro || tipoDe(x) === filtro);
-        corpo.innerHTML = `<div class="chips salvos-tipos">${[["", `Todos (${s.length})`], ...TIPOS_S.filter(([k]) => cont[k]).map(([k, r]) => [k, `${r} (${cont[k]})`])].map(([k, r]) => `<button type="button" class="chip" data-sf="${k}" aria-pressed="${filtro === k}">${r}</button>`).join("")}</div>
+        const s2 = Object.entries(P.salvos).map(([k, x]) => ({ ...x, _k: k })).sort((a, b) => (b.salvoEm || "").localeCompare(a.salvoEm || ""));
+        if (!s2.length) { corpo.innerHTML = vazio("salvar", "Nenhum item salvo", "Use o marcador nos acórdãos, temas, notas do Informativo, pautas e publicações do DJEN para guardar o que você quer acompanhar."); return; }
+        const naPasta = (x) => !F.pasta || (F.pasta === "_sem" ? !(x.pastas || []).length : (x.pastas || []).includes(F.pasta));
+        const cont = {}, contP = { _sem: 0 }, contA = { fav: 0, desf: 0, "": 0 };
+        s2.forEach((x) => { if (naPasta(x) && (!F.aval || (x.aval || "") === F.aval)) cont[tipoDe(x)] = (cont[tipoDe(x)] || 0) + 1; });
+        s2.forEach((x) => { if (!(x.pastas || []).length) contP._sem++; for (const p of x.pastas || []) contP[p] = (contP[p] || 0) + 1; });
+        s2.filter(naPasta).forEach((x) => (contA[x.aval || ""] = (contA[x.aval || ""] || 0) + 1));
+        const vis = s2.filter((x) => naPasta(x) && (!F.tp || tipoDe(x) === F.tp) && (!F.aval || (x.aval || "") === F.aval));
+        const chip = (dim, v, rot, n) => `<button type="button" class="chip" data-sf="${dim}|${esc(v)}" aria-pressed="${F[dim] === v}">${esc(rot)}${n != null ? ` <span class="n">${fmtInt(n)}</span>` : ""}</button>`;
+        corpo.innerHTML = `
+          <div class="salvos-barra">
+            <div class="chips salvos-pastas">${chip("pasta", "", "Todas as pastas", s2.length)}${pastas().map((p) => chip("pasta", p, p, contP[p] || 0)).join("")}${pastas().length ? chip("pasta", "_sem", "Sem pasta", contP._sem) : ""}
+              <button type="button" class="chip chip-acao" data-pastas-gerir>${ico("mais1")} ${pastas().length ? "Gerenciar pastas" : "Criar pastas"}</button></div>
+            <div class="chips salvos-tipos">${chip("tp", "", "Todos os tipos")}${TIPOS_S.filter(([k]) => cont[k]).map(([k, r]) => chip("tp", k, r, cont[k])).join("")}
+              <span class="sep-chips"></span>${chip("aval", "", "Qualquer avaliação")}${chip("aval", "fav", "Favoráveis", contA.fav)}${chip("aval", "desf", "Desfavoráveis", contA.desf)}</div>
+          </div>
           ${cont.d ? `<p class="nota" style="margin:8px 0 0">Os acórdãos salvos a partir do DJEN passam para “Acórdãos”, com a ementa, assim que o STJ divulgar o arquivo mensal.</p>` : ""}
-          <ol class="lista" id="rd-salvos">${vis.map(html).join("")}</ol>`;
-        ligarCards($("#rd-salvos", corpo));
-        $$("[data-sf]", corpo).forEach((b) => b.addEventListener("click", () => { filtro = b.dataset.sf; desenharS(); }));
+          ${vis.length ? `<ol class="lista" id="rd-salvos">${vis.map(html).join("")}</ol>` : vazio("salvar", "Nada neste filtro", F.pasta && F.pasta !== "_sem" ? "Esta pasta está vazia. Abra um item salvo e use “Pasta, avaliação e anotação” para incluí-lo." : "Troque os filtros acima.")}`;
+        const ul = $("#rd-salvos", corpo); if (ul) ligarCards(ul);
       };
+      corpo.onclick = (e) => {
+        const f = e.target.closest("[data-sf]");
+        if (f) { const [dim, ...v] = f.dataset.sf.split("|"); F[dim] = v.join("|"); desenharS(); return; }
+        const o = e.target.closest("[data-organizar]"); if (o) { organizarSalvo(o.dataset.organizar); return; }
+        if (e.target.closest("[data-pastas-gerir]")) gerenciarPastas();
+      };
+      const aoMudar = () => { if (!document.contains(corpo) || !$("#rd-salvos, .salvos-barra", corpo)) { document.removeEventListener("salvos-mudou", aoMudar); return; } desenharS(); };
+      document.addEventListener("salvos-mudou", aoMudar);
       desenharS();
     }
     render();
@@ -3616,7 +3769,10 @@
     const res = $("#vf-res");
     if (txt.trim().length < 40) { toast("Cole um texto um pouco maior."); return; }
     res.innerHTML = esqueleto();
-    const [t, pt, pl, ix, dj] = await Promise.all([temas(), procTemas(), pautas(), indice(), djen()]);
+    const [t, pt, pl, ix, dj, nums] = await Promise.all([temas(), procTemas(), pautas(), indice(), djen(), carregar("numeros").catch(() => null)]);
+    // Índice de números: todos os acórdãos do acervo, por número do processo.
+    const porNumero = new Map();
+    if (nums) for (const x of nums.l) { if (!porNumero.has(x[0])) porNumero.set(x[0], []); porNumero.get(x[0]).push(x); }
     // Temas citados
     const citTemas = new Map();
     const reT = /\b(tema|temas|controv[ée]rsia|iac)\s+(?:repetitivo\s+|n[º°o.]*\s*|de\s+n[º°o.]*\s*)*(\d{1,2}(?:\.\d{3})|\d{1,4})(?:\s*(?:\/|do|da)\s*(stj|stf|superior tribunal de justi[çc]a|supremo))?/gi;
@@ -3653,12 +3809,14 @@
       const pauta = pl.filter((p) => digitos(p.p) === c.n);
       const ac = ix.find((r) => r.n === c.n);
       const pub = dj.find((x) => digitos(x.p) === c.n);
+      const noAcervo = (porNumero.get(c.n) || []).map((x) => ({ m: nums.m[x[2]], o: nums.o[x[3]], id: x[4] })).sort((a, b) => b.m.localeCompare(a.m));
       const notas = [];
       for (const v of vinc) { const x = t.idx.get(`${v.tp}-${v.n}`); notas.push(`${v.lc ? "Leading case" : "Processo vinculado"} ${v.tp === "Controvérsia" ? "à" : "ao"} <button type="button" class="link-acao" data-tema-direto="${esc(v.tp)}|${v.n}">${esc(v.tp)} ${v.n}</button>${x ? ` (${esc(x.sit)})` : ""}`); }
       for (const p of pauta) notas.push(`<b>Em pauta</b> em ${fmtData(p.d)} · ${esc(D.orgaos[p.o] || "")}${p.pet ? " (" + esc(p.pet) + ")" : ""}`);
-      if (ac) notas.push(`Acórdão publicado em ${fmtData(ac.dj)} · ${esc(D.orgaos[ac.o] || "")}`);
-      if (pub && !ac) notas.push(`Acórdão publicado no DJEN em ${fmtData(pub.d)}`);
-      return `<div class="cit"><span class="cit-tit">${esc(c.cl)} ${fmtNumProc(c.n)}${c.uf ? "/" + esc(c.uf) : ""}</span>${notas.length ? '<span class="selo pri">Localizado</span>' : '<span class="selo">Sem registro recente</span>'}<div class="cit-txt">${notas.join("<br>") || "Não aparece entre os precedentes qualificados, as pautas nem os acórdãos dos últimos meses na base do site. Isso não indica problema; confira no STJ se necessário."}</div></div>`;
+      if (noAcervo.length) notas.push(`<b>${noAcervo.length} acórdão(s) no acervo</b> neste processo: ${noAcervo.slice(0, 4).map((a) => `<button type="button" class="link-acao" data-vf-ac="${esc(a.id)}|${a.m}|${a.o}|${esc(c.cl)}|${c.n}">${esc(D.orgaos[a.o] || a.o)}, ${fmtMes(a.m)}</button>`).join(" · ")}${noAcervo.length > 4 ? ` · <a class="link-acao" href="#pesquisa?q=${c.n}">ver todos</a>` : ""}. A citação pode se referir a um recurso interno (agravo, embargos) julgado em outra data.`);
+      else if (ac) notas.push(`Acórdão publicado em ${fmtData(ac.dj)} · ${esc(D.orgaos[ac.o] || "")}`);
+      if (pub && !ac && !noAcervo.length) notas.push(`Acórdão publicado no DJEN em ${fmtData(pub.d)}, ainda sem ementa no acervo`);
+      return `<div class="cit"><span class="cit-tit">${esc(c.cl)} ${fmtNumProc(c.n)}${c.uf ? "/" + esc(c.uf) : ""}</span>${notas.length ? '<span class="selo pri">Localizado</span>' : '<span class="selo">Não localizado no site</span>'}<div class="cit-txt">${notas.join("<br>") || "Não consta do acervo do site (acórdãos desde 2000), das pautas nem dos precedentes qualificados. O acervo reúne os espelhos de acórdãos que o STJ divulga em dados abertos, que não abrangem decisões monocráticas nem todos os acórdãos. Isso não indica erro na citação; confira no site do STJ."}</div></div>`;
     });
     const sem = await temasSemelhantes(txt, 6);
     const jaCit = new Set(citTemas.keys());
