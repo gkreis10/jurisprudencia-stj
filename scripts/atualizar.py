@@ -27,6 +27,7 @@ import datetime as dt
 import io
 import zipfile
 import json
+import shutil
 import os
 import re
 import sys
@@ -1249,19 +1250,61 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
 # --------------------------------------------------------------------------
 # 6a. Índice de números de processo (todo o acervo), para a busca por número.
 # --------------------------------------------------------------------------
-def gerar_numeros(meses_disp: list[str]) -> int:
+def _frag(num: str) -> str:
+    """Fragmento do índice de números: os dois últimos dígitos."""
+    return num[-2:].rjust(2, "0")
+
+
+def gerar_numeros(meses_disp: list[str]) -> dict:
+    """Índice por número (e por registro) fragmentado pelos dois últimos dígitos, para que o
+    navegador baixe só o pedaço de que precisa (cerca de 1% do índice) em vez do índice inteiro."""
     meses = sorted(meses_disp)
     orgs = list(ORGAOS)
-    linhas = []
+    por_n: dict[str, list] = {}
+    por_r: dict[str, list] = {}
+    total = 0
     for mi, mes in enumerate(meses):
         for oi, slug in enumerate(orgs):
             for r in ler_json(SITE_DATA / "acordaos" / mes / f"{slug}.json", []):
                 n = re.sub(r"\D", "", str(r.get("n") or ""))
-                if n:
-                    linhas.append([n, str(r.get("reg") or ""), mi, oi, r.get("id")])
-    gravar_json(SITE_DATA / "numeros.json", {"m": meses, "o": orgs, "l": linhas})
-    log(f"Números de processo indexados: {len(linhas)}.")
-    return len(linhas)
+                if not n:
+                    continue
+                reg = re.sub(r"\D", "", str(r.get("reg") or ""))
+                por_n.setdefault(_frag(n), []).append([n, reg, mi, oi, r.get("id")])
+                if reg:
+                    por_r.setdefault(_frag(reg), []).append([reg, n])
+                total += 1
+    pasta = SITE_DATA / "numeros"
+    if pasta.exists():
+        shutil.rmtree(pasta)
+    for k in (f"{i:02d}" for i in range(100)):
+        gravar_json(pasta / f"n{k}.json", {"m": meses, "o": orgs, "l": por_n.get(k, [])})
+        gravar_json(pasta / f"r{k}.json", {"l": sorted({tuple(x) for x in por_r.get(k, [])})})
+    (SITE_DATA / "numeros.json").unlink(missing_ok=True)  # índice único antigo (32 MB)
+    log(f"Números de processo indexados: {total} (100 fragmentos).")
+    return {"v": 2, "n": total}
+
+
+# --------------------------------------------------------------------------
+# 6a'. Acórdãos mais recentes de cada órgão, para a tela inicial da Pesquisa
+#      (sem baixar os arquivos mensais completos).
+# --------------------------------------------------------------------------
+RECENTES_POR_ORGAO = 40
+
+
+def gerar_recentes(meses_disp: list[str]) -> int:
+    ultimos = sorted(meses_disp)[-2:]
+    lista = []
+    for slug in ORGAOS:
+        regs = []
+        for mes in ultimos:
+            regs += [r for r in ler_json(SITE_DATA / "acordaos" / mes / f"{slug}.json", []) if r.get("s", 0) > -2]
+        regs.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
+        lista += regs[:RECENTES_POR_ORGAO]
+    lista.sort(key=lambda r: (r.get("dj", ""), r.get("s", 0)), reverse=True)
+    gravar_json(SITE_DATA / "recentes.json", lista)
+    log(f"Recentes da Pesquisa: {len(lista)} acórdãos ({', '.join(ultimos)}).")
+    return len(lista)
 
 
 # --------------------------------------------------------------------------
@@ -2040,11 +2083,17 @@ def main():
         erros.append(f"destaques: {e}")
         log("ERRO destaques:", e)
 
+    numeros = {}
     try:
-        gerar_numeros(meses_disp)
+        numeros = gerar_numeros(meses_disp)
     except Exception as e:  # noqa: BLE001
         erros.append(f"números: {e}")
         log("ERRO números:", e)
+    try:
+        gerar_recentes(meses_disp)
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"recentes: {e}")
+        log("ERRO recentes:", e)
 
     busca = {}
     try:
@@ -2134,6 +2183,7 @@ def main():
         "teses": teses or manifesto_ant.get("teses", {}),
         "composicao": composicao or manifesto_ant.get("composicao", {}),
         "busca": busca or manifesto_ant.get("busca", {}),
+        "numeros": numeros or manifesto_ant.get("numeros", {}),
         "esquema": ESQUEMA,
         "erros": erros,
     }
