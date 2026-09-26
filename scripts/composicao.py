@@ -347,8 +347,8 @@ def foto_local(foto: dict | None) -> dict | None:
             if not guardada.exists():  # baixa uma única vez; depois vem do cache do Actions
                 time.sleep(1.0)
                 bruto = baixar(re.sub(r"\?width=\d+", "", foto["url"]) + "?width=330", 60)
-                if bruto[:3] != b"\xff\xd8\xff" or len(bruto) > 400_000:
-                    raise ValueError("resposta sem imagem JPEG")
+                if not (bruto[:3] == b"\xff\xd8\xff" or bruto[:4] == b"\x89PNG") or len(bruto) > 400_000:
+                    raise ValueError("resposta sem imagem JPEG ou PNG")
                 FOTOS_CACHE.mkdir(parents=True, exist_ok=True)
                 guardada.write_bytes(bruto)
             FOTOS_SITE.mkdir(parents=True, exist_ok=True)
