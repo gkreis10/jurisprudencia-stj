@@ -957,9 +957,16 @@
       if (bp) { const p = bp.dataset.orgPasta, l = new Set(x.pastas || []); l.has(p) ? l.delete(p) : l.add(p); x.pastas = [...l]; gravar(); desenhar(); return; }
       const ba = e.target.closest("[data-org-aval]");
       if (ba) { x.aval = ba.dataset.orgAval || undefined; gravar(); desenhar(); return; }
-      if (e.target.closest("[data-org-fim]")) fecharGaveta();
+      if (e.target.closest("[data-org-fim]")) { clearTimeout(organizarSalvo.t); gravar(); fecharGaveta(); }
     };
-    corpo.oninput = (e) => { if (e.target.id === "org-nota") { x.nota = e.target.value.slice(0, 2000) || undefined; clearTimeout(organizarSalvo.t); organizarSalvo.t = setTimeout(gravar, 400); } };
+    // Anotação apagada (ou só com espaços e quebras de linha) volta a não existir.
+    corpo.oninput = (e) => {
+      if (e.target.id !== "org-nota") return;
+      const v = e.target.value.slice(0, 2000);
+      if (v.trim()) x.nota = v; else delete x.nota;
+      clearTimeout(organizarSalvo.t); organizarSalvo.t = setTimeout(gravar, 400);
+    };
+    corpo.onchange = (e) => { if (e.target.id === "org-nota") { clearTimeout(organizarSalvo.t); gravar(); } };
     corpo.onsubmit = (e) => {
       if (e.target.id !== "org-nova") return;
       e.preventDefault();
@@ -1880,7 +1887,20 @@
   const ROT_ORG_CURTO = { "corte-especial": "Corte Especial", "primeira-secao": "1ª Seção", "segunda-secao": "2ª Seção", "terceira-secao": "3ª Seção", "primeira-turma": "1ª Turma", "segunda-turma": "2ª Turma", "terceira-turma": "3ª Turma", "quarta-turma": "4ª Turma", "quinta-turma": "5ª Turma", "sexta-turma": "6ª Turma" };
   const tratamento = (m) => (m.tipo === "convocado" ? (m.genero === "f" ? "Desembargadora convocada" : "Desembargador convocado") : m.genero === "f" ? "Ministra" : "Ministro");
   const linkEmail = (s) => esc(s).replace(/([\w.+-]+@[\w-]+\.[\w.]+)/g, '<a href="mailto:$1">$1</a>');
-  const linkTel = (s) => esc(s).replace(/\((\d{2})\)\s*(\d{4})-(\d{4})/g, (m0, dd, a, b) => `<a href="tel:+55${dd}${a}${b}">(${dd}) ${a}-${b}</a>`);
+  // "(61)3319-6454 6623" = dois ramais do mesmo tronco: (61) 3319-6454 e (61) 3319-6623.
+  function telefones(s) {
+    const out = []; let dd = "", pre = "";
+    for (const m of String(s || "").matchAll(/\((\d{2})\)\s*(\d{4,5})-?(\d{4})|\b(\d{4})\b/g)) {
+      if (m[1]) { dd = m[1]; pre = m[2]; out.push([dd, pre, m[3]]); }
+      else if (dd) out.push([dd, pre, m[4]]);
+    }
+    return out;
+  }
+  const linkTel = (s) => {
+    const l = telefones(s);
+    if (!l.length) return esc(s);
+    return l.map(([dd, a, b]) => `<a href="tel:+55${dd}${a}${b}">(${dd}) ${a}-${b}</a>`).join(`<span class="sep-tel">·</span>`);
+  };
 
   function membroBtn(x, c, opts = {}) {
     const m = x.mid && c.idx.get(x.mid);
@@ -1988,7 +2008,7 @@
       ${g ? `<h3>Contato do gabinete</h3><div class="cp-contato">
         ${g.unidade ? `<p><b>${esc(g.unidade)}</b></p>` : ""}
         ${g.chefe ? `<p>Chefia de gabinete: ${esc(g.chefe)}</p>` : ""}
-        ${g.telefones ? `<p>Telefone: ${linkTel(g.telefones)}</p>` : ""}
+        ${g.telefones ? `<p class="cp-tel">${telefones(g.telefones).length > 1 ? "Telefones" : "Telefone"}: ${linkTel(g.telefones)}</p>` : ""}
         ${(g.emails || []).map((e) => `<p>${linkEmail(e)}</p>`).join("")}
       </div>` : ""}
       <h3>No acervo</h3>
@@ -2493,6 +2513,7 @@
     // Dados de cada salvo: cartão, matérias e texto para a busca.
     let itens = [];
     const montar = () => {
+      for (const x of Object.values(P.salvos)) if (x.nota != null && !String(x.nota).trim()) delete x.nota;
       itens = Object.entries(P.salvos).map(([k, x]) => {
         const tp = tipoSalvo(x, k);
         let li = "", ar = x.ar || [], ref = "", extra = "";
@@ -2567,7 +2588,7 @@
             <button type="button" data-sv-av="fav" aria-pressed="${x.aval === "fav"}" title="${penal ? "Favorável à defesa" : "Favorável à tese que você sustenta"}">${ico("polegar")}${rotAval("fav", penal)}</button>
             <button type="button" data-sv-av="desf" aria-pressed="${x.aval === "desf"}" title="${penal ? "Desfavorável à defesa" : "Desfavorável à tese que você sustenta"}">${ico("polegar-b")}${rotAval("desf", penal)}</button>
           </div>
-          ${x.nota ? `<button type="button" class="salvo-nota" data-organizar="${esc(i.k)}" title="Editar anotação">${esc(x.nota)}</button>` : `<button type="button" class="link-acao sv-anotar" data-organizar="${esc(i.k)}">Anotar</button>`}
+          ${String(x.nota || "").trim() ? `<button type="button" class="salvo-nota" data-organizar="${esc(i.k)}" title="Editar anotação">${esc(x.nota)}</button>` : `<button type="button" class="link-acao sv-anotar" data-organizar="${esc(i.k)}">Anotar</button>`}
         </div>`;
     }
     function desenharLista() {

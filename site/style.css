@@ -1203,3 +1203,5 @@ button.salvo-nota:hover { background: var(--sup-3); }
 .sv-compacto #sv-ol .nota-tema { font-size: 15px; }
 .sv-compacto #sv-ol > li { padding-top: 14px; padding-bottom: 12px; }
 .sv-compacto #sv-ol p.questao { display: none; }
+.cp-tel .sep-tel { margin: 0 8px; color: var(--tx-3); }
+.cp-tel a { white-space: nowrap; }
