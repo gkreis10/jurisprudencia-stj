@@ -1864,6 +1864,7 @@ def atualizar_informativos() -> dict:
 #    precedentes de cada uma. Extraída pelo navegador (o STJ recusa robôs).
 # --------------------------------------------------------------------------
 JT_FONTE = RAIZ / "fontes" / "jurisprudencia-em-teses.json"
+JT_NOVAS = RAIZ / "fontes" / "teses"
 RAMO_JT = RAMO_INFO + [("empresarial", r"propriedade intelectual"), ("administrativo", r"direitos humanos")]
 
 
@@ -1874,7 +1875,16 @@ def _iso_br(d: str) -> str:
 
 def atualizar_teses() -> dict:
     fonte = ler_json(JT_FONTE, {})
-    eds, ramos = fonte.get("edicoes", {}), fonte.get("ramos", {})
+    eds, ramos = dict(fonte.get("edicoes", {})), {k: list(v) for k, v in fonte.get("ramos", {}).items()}
+    coletado = fonte.get("coletadoEm", "")
+    # Coletas semanais feitas pelo navegador (scripts/coletar-teses.js), gravadas em fontes/teses/.
+    for arq in sorted(JT_NOVAS.glob("*.json")) if JT_NOVAS.exists() else []:
+        lote = ler_json(arq, {})
+        eds.update({str(k): v for k, v in (lote.get("edicoes") or {}).items()})
+        for r, lst in (lote.get("ramos") or {}).items():
+            atual = ramos.setdefault(r, [])
+            atual[:0] = [str(e) for e in lst if str(e) not in atual]
+        coletado = max(coletado, lote.get("coletadoEm", ""))
     ramo_de = {}
     for r, lst in ramos.items():
         for e in lst:
@@ -1901,7 +1911,7 @@ def atualizar_teses() -> dict:
         gravar_json(SITE_DATA / "teses.json", out)
     n = sum(len(x["teses"]) for x in out)
     log(f"Jurisprudência em Teses: {len(out)} edições, {n} teses.")
-    return {"edicoes": len(out), "teses": n, "coletadoEm": fonte.get("coletadoEm", ""),
+    return {"edicoes": len(out), "teses": n, "coletadoEm": coletado,
             "ultima": out[0]["ed"] if out else 0, "ultimaData": out[0].get("disp", "") if out else ""}
 
 
