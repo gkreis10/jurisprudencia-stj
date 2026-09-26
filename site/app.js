@@ -2753,7 +2753,7 @@
       </div>
       ${teor[0] && !x.an ? `<h3>Informações do inteiro teor</h3><div class="texto-serif">${teor[0].split("\n").map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}
       <h3>Processo</h3><p class="texto-serif">${esc(x.proc || (/^s[úu]mula/i.test(x.tema || "") ? "Enunciado de súmula aprovado pelo STJ." : x.an ? "A nota não indica o número do processo." : "Processo em segredo de justiça."))}</p>
-      ${teor[1] ? `<h3>Informações adicionais</h3><p class="texto-serif">${esc(teor[1])}</p>` : ""}`);
+      ${teor[1] ? `<h3>Informações adicionais</h3><div class="texto-serif">${teor[1].split("\n").map((l) => `<p>${esc(l)}</p>`).join("")}</div>` : ""}`);
     $("#gi-copiar").addEventListener("click", () => copiar(citInfo(x), "Destaque e citação copiados."));
     $("#gi-ref").addEventListener("click", () => copiar(refInfo(x), "Citação copiada."));
     $("#gi-ementa")?.addEventListener("click", () => abrirAcordao({ id: noAcervo[4], m: ix.m[noAcervo[2]], o: ix.o[noAcervo[3]], cl: x.p[0].cl, n: noAcervo[0] }));
@@ -3036,6 +3036,58 @@
     if (/^d:/.test(p)) { const [, de, ate] = p.split(":"); return todos.filter((m) => (!de || m >= de.slice(0, 7)) && (!ate || m <= ate.slice(0, 7))); }
     return todos.slice(0, +(/^u(\d+)$/.exec(p)?.[1] || 1));
   }
+  // Índice da pesquisa: palavra → arquivos mensais (mês e órgão) em que aparece. Serve só para
+  // descartar arquivos que certamente não contêm o termo; a conferência final é sempre no texto.
+  const IB = new Map();
+  const parteIB = (p) => { if (!IB.has(p)) IB.set(p, getJSON(`data/busca/${p}.json`).catch(() => null)); return IB.get(p); };
+  function postIB(v) { const s = new Set(); let a = 0; for (const x of v.split(".")) { a += parseInt(x, 36); s.add(a); } return s; }
+  const interIB = (a, b) => { if (!a) return b; if (!b) return a; const o = new Set(); for (const x of a) if (b.has(x)) o.add(x); return o; };
+  async function idsPalavraIB(w, ex, meta) {
+    const pref = w.endsWith("$"), base = pref ? w.slice(0, -1) : w;
+    if (base.length < (pref ? 2 : 3) || /[^a-z]/.test(base)) return null; // números e palavras curtas não reduzem a busca
+    const re = pref ? null : new RegExp(`^${ex ? base : flexW(base)}$`);
+    const casa = (k) => (pref ? k.startsWith(base) : re.test(k));
+    // Início fixo de toda palavra que casa com o termo (o plural pode trocar até duas letras finais).
+    const b = singular(base);
+    const lit = pref || ex ? base : /(ao|al|el|ol)$/.test(b) ? b.slice(0, -2) : /m$/.test(b) ? b.slice(0, -1) : b;
+    if (lit.length < 2) return null;
+    const partes = meta.partes.filter((p) => { const q = p.replace(/_$/, ""); return q.startsWith(lit) || lit.startsWith(q); });
+    const out = new Set();
+    for (const p of partes) {
+      const d = await parteIB(p);
+      if (!d) return null;
+      for (const k in d) if (casa(k)) { if (d[k] === "*") return null; for (const x of postIB(d[k])) out.add(x); }
+    }
+    return out;
+  }
+  async function idsNoIB(no, meta) {
+    if (!no) return null;
+    switch (no.t) {
+      case "termo": case "frase": {
+        if (no.num) return null;
+        let acc = null;
+        for (const w of no.t === "termo" ? [no.v] : no.v) acc = interIB(acc, await idsPalavraIB(w, no.ex, meta));
+        return acc;
+      }
+      case "e": case "adj": case "prox": { let acc = null; for (const x of no.a) acc = interIB(acc, await idsNoIB(x, meta)); return acc; }
+      case "ou": { const u = new Set(); for (const x of no.a) { const s = await idsNoIB(x, meta); if (!s) return null; s.forEach((v) => u.add(v)); } return u; }
+      default: return null; // negação, tema e súmula: sem redução
+    }
+  }
+  // Devolve só os pares (mês, órgão) que podem conter o termo; sem índice, devolve todos.
+  async function filtrarPorIndice(cons, pares) {
+    const meta = D.man.busca;
+    if (cons.vazio || !meta?.partes?.length || meta.v !== 2) return pares;
+    let ids;
+    try { ids = await idsNoIB(cons.ast, meta); } catch { return pares; }
+    if (!ids) return pares;
+    const oi = new Map(meta.orgs.map((o, i) => [o, i]));
+    return pares.filter(([m, o]) => {
+      if (m < meta.de || m > meta.ate || !oi.has(o)) return true; // mês ainda fora do índice
+      const id = ((+m.slice(0, 4) - meta.base) * 12 + (+m.slice(5, 7) - 1)) * meta.orgs.length + oi.get(o);
+      return ids.has(id);
+    });
+  }
   const rotPeriodo = (p, meses) => (p === "todo" ? "todo o acervo" : /^desde:/.test(p) ? `desde ${p.slice(6)}` : /^a:\d{4}$/.test(p) ? `ano de ${p.slice(2)}` : meses.length === 1 ? fmtMesL(meses[0]) : meses.length ? `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}` : "período sem acórdãos");
   async function buscar() {
     const tk = ++AC.token;
@@ -3063,6 +3115,12 @@
     }
     if (!ids) for (const m of meses) { const info = D.man.meses.find((x) => x.m === m); for (const o of orgs) if (info?.orgaos[o]) pares.push([m, o]); }
     const cons = Busca.compilar(f.q);
+    const paresTodos = pares.length;
+    if (!ids && !cons.vazio && pares.length > 12) {
+      $("#ac-info").textContent = "Consultando o índice…";
+      pares = await filtrarPorIndice(cons, pares);
+      if (tk !== AC.token) return;
+    }
     const clsSel = listaV(f.c).map(norm), relSel = listaV(f.rl).map(norm);
     const temTexto = !cons.vazio;
     const ordem = f.s === "auto" ? (temTexto ? "rel" : "data") : f.s;
@@ -3104,7 +3162,7 @@
       }
     };
     const prog = $("#ac-prog");
-    const longo = !ids && meses.length > 24;
+    const longo = !ids && pares.length > 240;
     let cortado = false;
     AC.parar = 0;
     if (!longo) {
@@ -3160,9 +3218,11 @@
     }
     const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.innerHTML ? " e no DJEN" : ""}` : rotPeriodo(f.p, meses);
     const parcial = AC.parar === tk ? " · busca interrompida" : "";
-    const corte = total > res.length || cortado ? ` · exibindo os ${fmtInt(res.length)} ${ordem === "rel" ? "mais aderentes" : "mais recentes"}` : "";
+    const corte = total > res.length && !cortado ? ` · exibindo os ${fmtInt(res.length)} ${ordem === "rel" ? "mais aderentes" : "mais recentes"}` : "";
+    const lidosIB = pares.length < paresTodos ? ` · ${fmtInt(pares.length)} de ${fmtInt(paresTodos)} arquivos mensais contêm os termos` : "";
     if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: ainda sem ementa no acervo. Veja abaixo a publicação no DJEN.`;
-    else $("#ac-info").innerHTML = `${cortado ? "Mais de " : ""}<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
+    else if (cortado) $("#ac-info").innerHTML = `Exibindo os <b>${fmtInt(res.length)}</b> acórdãos ${ordem === "julg" ? "julgados mais recentemente" : "mais recentes"} (limite da consulta; use os filtros para refinar) · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} ${explicacaoHTML(cons)}`;
+    else $("#ac-info").innerHTML = `<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     renderLista(true);
   }
   const pgAc = paginador("ac", () => renderLista(false), "#ac-lista");
@@ -3775,7 +3835,7 @@
     if (nums) for (const x of nums.l) { if (!porNumero.has(x[0])) porNumero.set(x[0], []); porNumero.get(x[0]).push(x); }
     // Temas citados
     const citTemas = new Map();
-    const reT = /\b(tema|temas|controv[ée]rsia|iac)\s+(?:repetitivo\s+|n[º°o.]*\s*|de\s+n[º°o.]*\s*)*(\d{1,2}(?:\.\d{3})|\d{1,4})(?:\s*(?:\/|do|da)\s*(stj|stf|superior tribunal de justi[çc]a|supremo))?/gi;
+    const reT = /\b(tema|temas|controv[ée]rsia|iac)\s+(?:repetitivo\s+|n[º°o.]*\s*|de\s+n[º°o.]*\s*)*(\d{1,3}(?:\.\d{3})+|\d+)(?![\d])(?:\s*(?:\/|do|da)\s*(stj|stf|superior tribunal de justi[çc]a|supremo))?/gi;
     let m;
     while ((m = reT.exec(txt))) {
       const tipo = /^controv/i.test(m[1]) ? "Controvérsia" : /^iac/i.test(m[1]) ? "IAC" : "Tema";
@@ -3790,7 +3850,7 @@
     while ((m = reP.exec(txt))) { const nd = digitos(m[2]); if (nd.length < 4) continue; const k = nd; if (!citProc.has(k)) citProc.set(k, { cl: m[1].replace(/\s+/g, " "), n: nd, uf: m[3] || "" }); }
     // Súmulas
     const citSum = new Map();
-    const reS = /\bs[úu]mulas?\s+(?:vinculante\s+)?(?:n[º°o.]*\s*)?(\d{1,3})(?:\s*(?:\/|do|da)\s*(stj|stf))?/gi;
+    const reS = /\bs[úu]mulas?\s+(?:vinculante\s+)?(?:n[º°o.]*\s*)?(\d+)(?![\d])(?:\s*(?:\/|do|da)\s*(stj|stf))?/gi;
     while ((m = reS.exec(txt))) { const tr = (m[2] || "").toUpperCase() || "—"; const k = `${m[1]}/${tr}`; if (!citSum.has(k)) citSum.set(k, { n: m[1], tr }); }
 
     const alertas = [];
@@ -3847,7 +3907,7 @@
       <h3 style="font-family:var(--ui)">Fontes</h3>
       <ul>
         <li><b>Acórdãos (espelhos):</b> ementa, tese, relator, datas e referências legislativas da Corte Especial, das Seções e das Turmas. O STJ divulga um arquivo por mês e órgão, poucos dias após o fim do mês. O acervo reúne ${fmtInt(total)} acórdãos, desde ${m.meses.length ? fmtMesL(m.meses.map((x) => x.m).sort()[0]) : "—"}, e é ampliado aos poucos. Os anos anteriores a maio de 2022 vêm do arquivo histórico que o STJ publica com todos os espelhos até aquela data. Na Pesquisa, o filtro Período permite escolher de um mês a todo o acervo (um ano, desde um ano ou um intervalo de datas); os períodos longos são percorridos em sequência, com o progresso na tela.</li>
-        <li><b>Composição do Tribunal:</b> documento oficial de composição do STJ (Plenário, Corte Especial, Seções, Turmas, conselhos e comissões), página de ministros e lista de contatos das unidades. As fotos, quando disponíveis, vêm do Wikimedia Commons, com crédito.</li>
+        <li><b>Composição do Tribunal:</b> documento oficial de composição do STJ (Plenário, Corte Especial, Seções, Turmas, conselhos e comissões), página de ministros e lista de contatos das unidades. As fotos, quando disponíveis, são do Wikimedia Commons (com o crédito de cada autor) e ficam hospedadas no próprio site.</li>
         <li><b>Precedentes qualificados:</b> temas repetitivos, controvérsias, IAC, SIRDR e PUIL, com os processos vinculados. A atualização é diária.</li>
         <li><b>Pautas futuras:</b> processos incluídos nas próximas sessões. A atualização é diária. Por privacidade, o site não exibe os nomes das partes.</li>
         <li><b>Publicações no DJEN:</b> metadados diários dos acórdãos publicados, com cerca de duas semanas de defasagem.</li>
@@ -3873,23 +3933,55 @@
       <h3 style="font-family:var(--ui)">Salvos</h3>
       <p>Acórdãos, publicações do DJEN, temas, notas do Informativo, teses e pautas podem ser salvos pelo marcador e ficam em Meu radar → Salvos, separados por tipo. Um acórdão salvo a partir do DJEN passa a exibir a ementa completa assim que o STJ divulgar o arquivo mensal. Os salvos ficam guardados neste navegador.</p>
       <h3 style="font-family:var(--ui)">Informativo do STJ</h3>
-      <p>A aba Destaques abre com o Informativo de Jurisprudência, publicado pelo próprio STJ com as teses selecionadas pela novidade e pela repercussão. Cada nota traz o tema, o destaque (a tese) e o processo; as mais recentes também entram no Atualize-se e no Meu radar. A “Seleção automática” continua disponível na segunda aba. O acervo vai desde as primeiras edições: as últimas edições abrem de imediato e, ao buscar em todas as edições ou escolher uma data ou edição antiga, o site carrega as demais por ano. Nas edições antigas, anteriores ao formato atual, o texto é a nota narrativa original e a matéria é deduzida pelos termos da nota. O site do STJ recusa acessos automatizados; por isso as edições são extraídas pelo navegador e atualizadas periodicamente.</p>
+      <p>A aba Destaques abre com o Informativo de Jurisprudência, publicado pelo próprio STJ com as teses selecionadas pela novidade e pela repercussão. Cada nota traz o tema, o destaque (a tese) e o processo; as mais recentes também entram no Atualize-se e no Meu radar. A “Seleção automática” continua disponível na segunda aba. O acervo vai desde as primeiras edições: as últimas edições abrem de imediato e, ao buscar em todas as edições ou escolher uma data ou edição antiga, o site carrega as demais por ano. Nas edições antigas, anteriores ao formato atual, o texto é a nota narrativa original e a matéria é deduzida pelos termos da nota. As edições novas são lidas automaticamente do PDF oficial de cada edição, publicado pelo STJ.</p>
       <h3 style="font-family:var(--ui)">Resumo da semana</h3>
       <p>Reúne, em uma página, as teses firmadas em repetitivos, as notas do Informativo, os temas afetados, os julgados com tese, as súmulas aprovadas e os repetitivos pautados para a semana seguinte. Pode ser copiado como texto, impresso ou salvo em PDF.</p>
       <h3 style="font-family:var(--ui)">Súmulas e temas citados</h3>
       <p>Quando a ementa aplica uma súmula do STJ ou um tema repetitivo, o cartão mostra o atalho (“Cita Súmula 7 · Tema 1.137”), que abre o enunciado ou a tese sem sair da tela.</p>
       <h3 style="font-family:var(--ui)">Jurisprudência em Teses</h3>
-      <p>Na aba Súmulas e teses, a Jurisprudência em Teses reúne todas as edições publicadas pelo STJ, cada uma dedicada a um assunto, com as teses consolidadas e os precedentes que as sustentam (até oito acórdãos por tese, com a indicação do total na edição oficial). É possível buscar por palavras, filtrar por matéria, período de disponibilização ou número da edição e ordenar por edição, assunto, matéria ou número de precedentes.</p>
+      <p>Na aba Súmulas e teses, a Jurisprudência em Teses reúne todas as edições publicadas pelo STJ, cada uma dedicada a um assunto, com as teses consolidadas e os precedentes que as sustentam (até oito acórdãos por tese, com a indicação do total na edição oficial). O STJ não publica arquivo aberto das edições; por isso as edições novas são incluídas periodicamente, e a data da última inclusão aparece em “Situação da base”. É possível buscar por palavras, filtrar por matéria, período de disponibilização ou número da edição e ordenar por edição, assunto, matéria ou número de precedentes.</p>
       <h3 style="font-family:var(--ui)">Súmulas</h3>
-      <p>A aba Súmulas reúne todos os enunciados do STJ, extraídos da página oficial do Tribunal, com a situação (vigente, cancelada ou com redação alterada), o órgão que aprovou, as datas de julgamento e de publicação e a matéria.</p>
+      <p>A aba Súmulas reúne todos os enunciados do STJ, conferidos diariamente no arquivo oficial de verbetes do Tribunal, com a situação (vigente, cancelada ou com redação alterada), o órgão que aprovou, as datas de julgamento e de publicação e a matéria.</p>
       <h3 style="font-family:var(--ui)">Privacidade</h3>
       <p>O seu radar (assuntos, processos e OAB) e os itens salvos ficam apenas no seu navegador. A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor.</p>
-      <h3 style="font-family:var(--ui)">Situação da base</h3>
-      <p>Última execução: ${new Date(m.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. ${fmtInt(total)} acórdãos de ${m.meses.length ? fmtMes(m.meses[m.meses.length - 1].m) : "—"} a ${m.meses.length ? fmtMes(m.meses[0].m) : "—"}; ${fmtInt(m.temas?.n)} precedentes qualificados; ${fmtInt(m.pautas?.n)} processos em pauta; ${fmtInt(m.destaques?.n)} destaques nos últimos 3 meses.</p>
+      <h3 style="font-family:var(--ui)" id="sobre-fontes">Situação da base</h3>
+      <p>Última execução da rotina: ${new Date(m.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. A rotina roda duas vezes por dia; cada fonte tem o próprio ritmo de publicação no STJ.</p>
+      ${tabelaFontes(m)}
+      <p> ${fmtInt(total)} acórdãos de ${m.meses.length ? fmtMes(m.meses[m.meses.length - 1].m) : "—"} a ${m.meses.length ? fmtMes(m.meses[0].m) : "—"}; ${fmtInt(m.temas?.n)} precedentes qualificados; ${fmtInt(m.pautas?.n)} processos em pauta; ${fmtInt(m.destaques?.n)} destaques nos últimos 3 meses.</p>
       ${m.erros?.length ? `<p class="aviso">${ico("alerta")}<span>Na última execução, parte das fontes não respondeu (${esc(m.erros.join("; "))}). Os dados anteriores foram mantidos.</span></p>` : ""}
       <h3 style="font-family:var(--ui)">Cautelas</h3>
       <p>O texto das ementas é o oficial; apenas a verbetação, que o STJ publica em caixa alta, é exibida em letras minúsculas para facilitar a leitura, e o botão de copiar traz o texto original. Antes de citar qualquer julgado, confira o inteiro teor no site do STJ. Os processos em segredo de justiça não constam da base aberta. Este é um projeto independente, sem vínculo com o STJ.</p>
     </div>`;
+    if (lerHash().p.get("s") === "fontes") requestAnimationFrame(() => $("#sobre-fontes")?.scrollIntoView({ block: "start" }));
+  }
+
+  // Situação de cada fonte: data do dado mais recente e da última verificação bem-sucedida.
+  // "Defasada" quando a verificação automática falha há alguns dias ou o dado envelheceu além do normal.
+  function situacaoFontes(m) {
+    const dias = (iso) => (iso ? (Date.now() - new Date(iso.length === 10 ? `${iso}T12:00:00-03:00` : iso)) / 864e5 : Infinity);
+    const ymd = (s) => (/^\d{8}$/.test(s || "") ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : s || "");
+    const esp = Object.values(m.ultimoArquivoEspelhos || {}).filter((x) => /^\d{8}$/.test(x)).sort().pop();
+    const L = [
+      { nome: "Acórdãos (espelhos)", dado: ymd(esp), rot: "arquivo mensal de", verif: m.espelhosEm || m.atualizadoEm, lim: 50, auto: true },
+      { nome: "Publicações no DJEN", dado: m.radar?.dias?.[m.radar.dias.length - 1], rot: "até", verif: m.radar?.em, lim: 21, auto: true },
+      { nome: "Pautas de julgamento", dado: ymd(m.pautas?.arquivo), rot: "arquivo de", verif: m.pautas?.em, lim: 10, auto: true },
+      { nome: "Precedentes qualificados", dado: "", verif: m.temas?.em, auto: true },
+      { nome: "Informativo de Jurisprudência", dado: m.informativos?.ultimaData, rot: m.informativos?.ultima ? `edição ${m.informativos.ultima}, de` : "", verif: m.informativos?.verificadoEm, lim: 30, auto: true },
+      { nome: "Súmulas", dado: "", rot: "", extra: m.sumulas?.ultima ? `até a Súmula ${m.sumulas.ultima}` : "", verif: m.sumulas?.verificadoEm, auto: true },
+      { nome: "Jurisprudência em Teses", dado: m.teses?.ultimaData, rot: m.teses?.ultima ? `edição ${m.teses.ultima}, de` : "", verif: m.teses?.coletadoEm, lim: 75, auto: false },
+      { nome: "Composição do Tribunal", dado: "", verif: m.composicao?.em, auto: true },
+    ];
+    for (const x of L) {
+      // A verificação é diária; três dias sem sucesso indicam que a fonte oficial não está respondendo.
+      x.defasada = x.auto ? dias(x.verif) > 3 || (x.lim && dias(x.dado) > x.lim) : dias(x.verif) > (x.lim || 60);
+    }
+    return L;
+  }
+  function tabelaFontes(m) {
+    const fd = (iso) => (iso ? fmtData(iso.slice(0, 10)) : "—");
+    return `<div class="tabela-rolagem"><table class="tab-fontes"><thead><tr><th>Fonte</th><th>Dado mais recente</th><th>Última verificação</th><th></th></tr></thead><tbody>
+      ${situacaoFontes(m).map((x) => `<tr${x.defasada ? ' class="defasada"' : ""}><td>${esc(x.nome)}</td><td>${x.dado ? `${esc(x.rot || "")} ${fd(x.dado)}` : esc(x.extra || "—")}</td><td>${x.verif ? fd(x.verif) : "—"}${x.auto ? "" : " <small>(coleta manual)</small>"}</td><td>${x.defasada ? `<span class="selo alta">defasada</span>` : `<span class="selo ok">em dia</span>`}</td></tr>`).join("")}
+    </tbody></table></div>`;
   }
 
   // =================================================================== init
@@ -3908,7 +4000,8 @@
     catch { $("#view").innerHTML = vazio("alerta", "A base ainda não foi gerada", "Rode a rotina de atualização (veja o README)."); return; }
     D.orgaos = D.man.orgaos;
     const q = new Date(D.man.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    $("#lat-atualizado").textContent = `Atualizado em ${q}`;
+    const defas = situacaoFontes(D.man).filter((x) => x.defasada);
+    $("#lat-atualizado").innerHTML = `Verificado em ${esc(q)}${defas.length ? `<a class="lat-defas" href="#sobre?s=fontes" title="${esc(defas.map((x) => x.nome).join(", "))}">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a class="lat-fontes" href="#sobre?s=fontes">ver cada fonte</a>`}`;
     window.addEventListener("hashchange", rotear);
     await rotear();
     atualizarContadorRadar();

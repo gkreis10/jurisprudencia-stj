@@ -1115,3 +1115,13 @@ svg.gira { transform: rotate(180deg); }
 .toast { display: flex; align-items: center; gap: 14px; }
 .toast-acao { border: 0; background: transparent; color: inherit; font: 700 14px var(--ui); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 0; white-space: nowrap; }
 .toast { pointer-events: auto; }
+
+/* Situação das fontes */
+.tab-fontes { width: 100%; border-collapse: collapse; font-family: var(--ui); font-size: 13.5px; margin: 8px 0 12px; }
+.tab-fontes th { text-align: left; font-weight: 600; color: var(--tx-2); border-bottom: 1px solid var(--linha); padding: 6px 8px; font-size: 12.5px; }
+.tab-fontes td { border-bottom: 1px solid var(--linha); padding: 7px 8px; vertical-align: top; }
+.tab-fontes td small { color: var(--tx-3, var(--tx-2)); }
+.tab-fontes tr.defasada td:first-child { font-weight: 600; }
+.tabela-rolagem { overflow-x: auto; }
+.lateral-rodape small a { display: block; color: var(--nav-tx-2); text-decoration: underline; text-underline-offset: 2px; }
+.lateral-rodape small a.lat-defas { color: #f2b36b; }
