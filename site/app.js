@@ -620,6 +620,8 @@
     if (!D.cache[nome]) D.cache[nome] = getJSON(`data/${nome}.json`).then((x) => (prep ? prep(x) : x)).catch((e) => { delete D.cache[nome]; throw e; });
     return D.cache[nome];
   }
+  // Classe do recurso principal: "AgInt nos EDcl no AREsp" -> "AREsp" (REsp e AREsp têm numerações próprias).
+  const classeBase = (cl) => (String(cl || "").trim().split(/\s+(?:no|na|nos|nas|em)\s+/i).pop().split(/\s+/)[0] || "").replace(/\.$/, "");
   // Índice de números de processo. Na versão fragmentada (manifest.numeros.v = 2), baixa só os
   // fragmentos dos números pedidos (dois últimos dígitos), em vez do índice inteiro.
   // Devolve { m, o, l } com as linhas [número, registro, mês, órgão, id] dos números ou registros pedidos.
@@ -3380,7 +3382,9 @@
     if (f.n) {
       const ix = await numerosDe([f.n], f.n.length >= 10 ? [f.n] : []).catch(() => null);
       if (ix) {
-        const hit = ix.l;
+        // Com a classe digitada ("AREsp 123456"), fica só com os processos dessa classe (se houver).
+        let hit = ix.l;
+        if (clNum) { const cb = classeBase(clNum).toLowerCase(); const so = hit.filter((x) => x[5] === undefined || x[5].toLowerCase() === cb); if (so.length) hit = so; }
         ids = new Set(hit.map((x) => String(x[4])));
         const vistos = new Set();
         for (const x of hit) { const k = `${ix.m[x[2]]}|${ix.o[x[3]]}`; if (!vistos.has(k) && temV(f.o, ix.o[x[3]])) { vistos.add(k); pares.push([ix.m[x[2]], ix.o[x[3]]]); } }
@@ -4167,7 +4171,7 @@
     }
     const citProc = new Map();
     const reP = /\b((?:(?:AgInt|AgRg|EDcl|EREsp|EAREsp)\s+(?:no|nos|na|em)\s+)*(?:REsp|AREsp|EREsp|EAREsp|RMS|HC|RHC|CC|MS|Rcl|AR|AgInt|AgRg))\s*(?:n[º°o.]*\s*)?(\d{1,3}(?:\.\d{3})+|\d{4,7})(?:\s*\/\s*([A-Z]{2}))?/g;
-    while ((m = reP.exec(txt))) { const nd = digitos(m[2]); if (nd.length < 4) continue; ocorr(citProc, nd, { cl: m[1].replace(/\s+/g, " "), n: nd, uf: m[3] || "" }, m.index, m[0].length); }
+    while ((m = reP.exec(txt))) { const nd = digitos(m[2]); if (nd.length < 4) continue; ocorr(citProc, `${classeBase(m[1]).toLowerCase()}-${nd}`, { cl: m[1].replace(/\s+/g, " "), n: nd, uf: m[3] || "" }, m.index, m[0].length); }
     const citSum = new Map(), sumOutras = new Map();
     const reS = /\bs[úu]mulas?\s+(vinculante\s+)?(?:n[º°o.]*\s*)?(\d+)(?![\d])(?:\s*(?:\/|do|da)\s*(stj|stf|tst|tse))?/gi;
     while ((m = reS.exec(txt))) {
@@ -4195,20 +4199,37 @@
       else if (x.tese) nota = `<b>Tese:</b> ${esc(x.tese)}`;
       return `<div class="cit" data-tema="${esc(x.tp)}|${x.n}"><span class="cit-tit"><button type="button" class="link-acao" data-abrir-tema>${esc(x.tp)} ${x.n}</button></span>${selo}<div class="cit-txt">${nota}</div>${ondeHTML(c)}</div>`;
     });
+    // Classe de um processo escrito como "REsp 1633613"; vazio se não houver classe no texto.
+    const classeDe = (txt) => classeBase(String(txt || "").replace(/\s*\d[\s\S]*$/, "")).toLowerCase();
+    const mesmaCl = (txt, c) => { const a = classeDe(txt); return !a || a === classeBase(c.cl).toLowerCase(); };
     const linhasProc = procs.map((c) => {
-      const vinc = pt.porNum.get(c.n) || [];
-      const pauta = pl.filter((p) => digitos(p.p) === c.n);
-      const ac = ix.find((r) => r.n === c.n);
-      const pub = dj.find((x) => digitos(x.p) === c.n);
-      const noAcervo = (porNumero.get(c.n) || []).map((x) => ({ m: nums.m[x[2]], o: nums.o[x[3]], id: x[4] })).sort((a, b) => b.m.localeCompare(a.m));
+      const vinc = (pt.porNum.get(c.n) || []).filter((v) => mesmaCl(v.p, c));
+      const pauta = pl.filter((p) => digitos(p.p) === c.n && mesmaCl(p.p, c));
+      const ac = ix.find((r) => r.n === c.n && classeBase(r.cl).toLowerCase() === classeBase(c.cl).toLowerCase());
+      const pub = dj.find((x) => digitos(x.p) === c.n && mesmaCl(x.p, c));
+      // Mesmo número, mas só da classe citada (o REsp 1.234 e o AREsp 1.234 são processos diferentes).
+      const cb = classeBase(c.cl).toLowerCase();
+      const linhasN = porNumero.get(c.n) || [];
+      const mesmaClasse = linhasN.filter((x) => x[5] === undefined || x[5].toLowerCase() === cb);
+      const outraClasse = [...new Set(linhasN.filter((x) => x[5] !== undefined && x[5].toLowerCase() !== cb).map((x) => x[5]))];
+      const noAcervo = mesmaClasse.map((x) => ({ m: nums.m[x[2]], o: nums.o[x[3]], id: x[4] })).sort((a, b) => b.m.localeCompare(a.m));
       const notas = [];
       for (const v of vinc) { const x = t.idx.get(`${v.tp}-${v.n}`); notas.push(`${v.lc ? "Leading case" : "Processo vinculado"} ${v.tp === "Controvérsia" ? "à" : "ao"} <button type="button" class="link-acao" data-tema-direto="${esc(v.tp)}|${v.n}">${esc(v.tp)} ${v.n}</button>${x ? ` (${esc(x.sit)})` : ""}`); }
       for (const p of pauta) notas.push(`<b>Em pauta</b> em ${fmtData(p.d)} · ${esc(D.orgaos[p.o] || "")}${p.pet ? " (" + esc(p.pet) + ")" : ""}`);
       if (noAcervo.length) notas.push(`<b>${noAcervo.length} acórdão(s) no acervo</b> neste processo: ${noAcervo.slice(0, 4).map((a) => `<button type="button" class="link-acao" data-vf-ac="${esc(a.id)}|${a.m}|${a.o}|${esc(c.cl)}|${c.n}">${esc(D.orgaos[a.o] || a.o)}, ${fmtMes(a.m)}</button>`).join(" · ")}${noAcervo.length > 4 ? ` · <a class="link-acao" href="#pesquisa?q=${c.n}">ver todos</a>` : ""}`);
       else if (ac) notas.push(`Acórdão publicado em ${fmtData(ac.dj)} · ${esc(D.orgaos[ac.o] || "")}`);
       if (pub && !ac && !noAcervo.length) notas.push(`Acórdão publicado no DJEN em ${fmtData(pub.d)}, ainda sem ementa no acervo`);
+      const avisoClasse = !noAcervo.length && outraClasse.length ? ` O acervo tem acórdão de ${outraClasse.map(esc).join(" e ")} com esse número, mas não de ${esc(classeBase(c.cl))}; confira a classe citada.` : "";
       const stj = `<a class="link-acao" href="${URL_PROC_STJ(c.cl, c.n)}" target="_blank" rel="noopener">consultar no site do STJ ${ico("externo")}</a>`;
-      return `<div class="cit"><span class="cit-tit">${esc(c.cl)} ${fmtNumProc(c.n)}${c.uf ? "/" + esc(c.uf) : ""}</span>${notas.length ? '<span class="selo pri">Encontrado</span>' : '<span class="selo">Não encontrado nesta base</span>'}<div class="cit-txt">${notas.join("<br>") || `Não consta do acervo do site, das pautas nem dos precedentes qualificados. O acervo reúne apenas os acórdãos colegiados publicados nos Dados Abertos do STJ, sem decisões monocráticas; isso não significa que o processo não exista. ${stj}`}</div>${ondeHTML(c)}</div>`;
+      // O número do recurso abre o próprio julgado (o acórdão mais recente do processo no acervo); na falta
+      // dele, o tema a que o processo está vinculado, a publicação no DJEN ou a pauta; por fim, o site do STJ.
+      const rotP = `${esc(c.cl)} ${fmtNumProc(c.n)}${c.uf ? "/" + esc(c.uf) : ""}`;
+      const alvo = noAcervo[0] || (ac ? { id: ac.id, m: ac.m, o: ac.o } : null);
+      const titP = alvo ? `<button type="button" class="link-acao" data-vf-ac="${esc(alvo.id)}|${alvo.m}|${alvo.o}|${esc(c.cl)}|${c.n}" title="Abrir o acórdão${noAcervo.length > 1 ? " mais recente" : ""} deste processo">${rotP}</button>`
+        : vinc.length ? `<button type="button" class="link-acao" data-tema-direto="${esc(vinc[0].tp)}|${vinc[0].n}" title="Abrir ${vinc[0].tp === "Controvérsia" ? "a" : "o"} ${esc(vinc[0].tp)} ${vinc[0].n}, a que o processo está vinculado">${rotP}</button>`
+        : pub || pauta.length ? `<a class="link-acao" href="#pesquisa?q=${c.n}" title="Ver a publicação no DJEN e a pauta deste processo">${rotP}</a>`
+        : `<a class="link-acao" href="${URL_PROC_STJ(c.cl, c.n)}" target="_blank" rel="noopener" title="Consultar o processo no site do STJ">${rotP} ${ico("externo")}</a>`;
+      return `<div class="cit"><span class="cit-tit">${titP}</span>${notas.length ? '<span class="selo pri">Encontrado</span>' : '<span class="selo">Não encontrado nesta base</span>'}<div class="cit-txt">${notas.join("<br>") || `Não consta do acervo do site, das pautas nem dos precedentes qualificados. O acervo reúne apenas os acórdãos colegiados publicados nos Dados Abertos do STJ, sem decisões monocráticas; isso não significa que o processo não exista.${avisoClasse} ${stj}`}</div>${ondeHTML(c)}</div>`;
     });
     const porSum = new Map((sums || []).map((s) => [s.n, s]));
     const linhasSum = [...citSum.values()].map((c) => {
