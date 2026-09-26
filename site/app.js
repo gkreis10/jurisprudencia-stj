@@ -91,11 +91,27 @@
     ler() {
       try { return JSON.parse(localStorage.getItem(CHAVE)) || {}; } catch { return {}; }
     },
-    gravar(o) { try { localStorage.setItem(CHAVE, JSON.stringify(o)); } catch { /* sem armazenamento */ } },
+    // Falha ao gravar (armazenamento cheio ou bloqueado): avisa de forma persistente, em vez de perder o dado em silêncio.
+    gravar(o) {
+      try { localStorage.setItem(CHAVE, JSON.stringify(o)); Store.falhou = false; $("#aviso-armaz")?.remove(); return true; }
+      catch (e) { Store.falhou = true; avisoArmazenamento(e); return false; }
+    },
+    uso() { try { return (localStorage.getItem(CHAVE) || "").length * 2; } catch { return 0; } },
+    falhou: false,
   };
+  function avisoArmazenamento(e) {
+    if (document.getElementById("aviso-armaz") || !document.body) return;
+    const cheio = /quota|exceed/i.test(`${e?.name} ${e?.message}`);
+    const d = document.createElement("div"); d.id = "aviso-armaz"; d.className = "aviso-armaz"; d.setAttribute("role", "alert");
+    d.innerHTML = `<span><b>Não foi possível guardar as suas alterações neste navegador.</b> ${cheio ? "O espaço reservado ao site está cheio." : "O navegador está bloqueando o armazenamento (janela anônima ou dados do site desativados)."} Exporte uma cópia de segurança para não perder salvos, anotações e o Meu radar.</span><button type="button" class="btn btn-claro btn-peq" data-aviso-copia>Cópia de segurança</button><button type="button" class="btn-ico" data-aviso-fechar aria-label="Fechar aviso">×</button>`;
+    d.addEventListener("click", (ev) => { if (ev.target.closest("[data-aviso-copia]")) gerenciarPastas(true); if (ev.target.closest("[data-aviso-fechar]")) d.remove(); });
+    document.body.appendChild(d);
+  }
   const P = Object.assign({ termos: [], procs: [], oabs: [], salvos: {}, vistoEm: null }, Store.ler());
   if (!P.vistoEm) { P.vistoEm = somaDias(hojeISO(), -7); Store.gravar(P); }
   const salvarP = () => Store.gravar(P);
+  // Mostra o aviso de armazenamento assim que a página estiver montada, se a primeira gravação já falhou.
+  document.addEventListener("DOMContentLoaded", () => { if (Store.falhou) avisoArmazenamento(); });
 
   // ================================================================ avisos
   function toast(msg, acao) {
@@ -641,7 +657,7 @@
     }
     const fs = await Promise.all([...new Set([...sn].map(frag))].map((k) => carregar(`numeros/n${k}`)));
     const l = [];
-    for (const f of fs) for (const x of f.l) if (sn.has(x[0]) && (!sr.size || sr.has(x[1]) || nums.includes(x[0]))) l.push(x);
+    for (const f of fs) for (const x of f.l) if (sn.has(x[0]) && (!sr.size || sr.has(x[1]) || nums.includes(x[0]))) l.push(f.r ? [...x.slice(0, 6), f.r[x[6]] || "", x[7] || "", x[8] || ""] : x);
     return { m: fs[0]?.m || [], o: fs[0]?.o || [], l };
   }
   const temas = () => carregar("temas", async (t) => {
@@ -718,9 +734,10 @@
     while (kb > LIM_SHARDS_KB && D.shards.size > 1) { const x = D.shards.keys().next().value; kb -= kbShard(x); D.shards.delete(x); }
     return D.shards.get(k);
   }
+  // Baixa os arquivos mensais; os que falharem ficam em res.falhas (a busca avisa, em vez de parecer completa).
   async function carregarShards(pares, onProg) {
-    const res = []; let feitos = 0; let i = 0;
-    const trab = async () => { while (i < pares.length) { const [m, o] = pares[i++]; res.push(...(await shard(m, o))); onProg?.(++feitos, pares.length); } };
+    const res = []; res.falhas = []; let feitos = 0; let i = 0;
+    const trab = async () => { while (i < pares.length) { const [m, o] = pares[i++]; try { res.push(...(await shard(m, o))); } catch { res.falhas.push([m, o]); } onProg?.(++feitos, pares.length); } };
     await Promise.all(Array.from({ length: Math.min(6, pares.length) }, trab));
     return res;
   }
@@ -934,9 +951,10 @@
       toast("Removido dos salvos.", { rot: "Desfazer", fn: () => { P.salvos[chave] = antes; salvarP(); if (botao) botao.setAttribute("aria-pressed", "true"); avisarSalvos(); } });
     } else {
       P.salvos[chave] = { ...obj, salvoEm: hojeISO() };
-      toast(pastas().length ? "Salvo. Quer colocá-lo numa pasta?" : "Salvo na aba Salvos.", { rot: pastas().length ? "Escolher pasta" : "Criar pasta", fn: () => organizarSalvo(chave) });
     }
-    salvarP(); avisarSalvos();
+    const ok = salvarP(); avisarSalvos();
+    if (P.salvos[chave] && ok) toast(pastas().length ? "Salvo. Quer colocá-lo numa pasta?" : "Salvo na aba Salvos.", { rot: pastas().length ? "Escolher pasta" : "Criar pasta", fn: () => organizarSalvo(chave) });
+    else if (P.salvos[chave]) toast("Não foi possível salvar neste navegador. Veja o aviso no alto da página.");
     if (botao) { botao.setAttribute("aria-pressed", String(!!P.salvos[chave])); }
   }
 
@@ -946,10 +964,28 @@
   const avisarSalvos = () => { document.dispatchEvent(new Event("salvos-mudou")); atualizarContadorSalvos(); };
   const ehPenal = (ar) => (ar || []).some((a) => a === "penal" || a === "proc-penal");
   const rotAval = (v, penal) => (v === "fav" ? "Favorável" : v === "desf" ? "Desfavorável" : "") + (v && penal ? " à defesa" : "");
+  // Temas e súmulas salvos: guarda a situação vista e marca o item quando ela muda (afetado → julgado,
+  // súmula cancelada etc.), até o usuário dar ciência.
+  async function conferirMudancasSalvos() {
+    const ks = Object.entries(P.salvos).filter(([k]) => k.startsWith("t:") || k.startsWith("s:"));
+    if (!ks.length) return { todas: [], novas: [] };
+    const [t, sm] = await Promise.all([ks.some(([k]) => k[0] === "t") ? temas().catch(() => null) : null, ks.some(([k]) => k[0] === "s") ? sumulas().catch(() => null) : null]);
+    const novas = []; let gravar = false;
+    for (const [k, x] of ks) {
+      const atual = k[0] === "t" ? t?.idx.get(`${x.tp}-${x.n}`)?.sit : (SIT_SUM[sm?.find((y) => y.n === x.n)?.sit] || [])[0];
+      if (!atual) continue;
+      if (x.sitVista === undefined) { x.sitVista = atual; gravar = true; continue; }
+      if (atual === x.sitVista) { if (x.mudou) { delete x.mudou; gravar = true; } continue; }
+      if (!x.mudou || x.mudou.para !== atual) { x.mudou = { de: x.sitVista, para: atual, em: hojeISO() }; novas.push(k); gravar = true; }
+    }
+    if (gravar) salvarP();
+    return { todas: Object.keys(P.salvos).filter((k) => P.salvos[k].mudou), novas };
+  }
   function tituloSalvo(x, k) {
     const t = x.k || k[0];
     if (t === "a") return `${x.cl} ${fmtNumProc(x.n)}`;
     if (t === "t") return `${x.tp} ${x.n}`;
+    if (t === "s") return `Súmula ${x.n}/STJ`;
     if (t === "j") return `Jurisprudência em Teses · ${String(x.id).replace("-", ", tese ")}`;
     if (t === "i") return "Nota do Informativo";
     return x.p ? String(x.p) : "Item salvo";
@@ -961,6 +997,7 @@
       if (t === "t") return (await temas()).idx.get(`${x.tp}-${x.n}`)?.ar || [];
       if (t === "i") return (await informativos()).idx.get(x.id)?.ar || [];
       if (t === "j") return (await tesesJT()).idx.get(x.id)?.ar || [];
+      if (t === "s") return (await sumulas()).find((y) => y.n === x.n)?.ar || [];
     } catch { /* sem dados */ }
     return [];
   }
@@ -1017,7 +1054,11 @@
   // Importa somando ao que já existe (nada é apagado). Aceita também o arquivo antigo, só de salvos.
   function importarTudo(o) {
     const d = o?.tipo === "radar-stj-backup" ? o.dados : o?.tipo === "radar-stj-salvos" ? { salvos: o.salvos, pastas: o.pastas } : null;
-    if (!d || typeof d.salvos !== "object") throw new Error("inválido");
+    if (!d || typeof d.salvos !== "object" || Array.isArray(d.salvos)) throw new Error("inválido");
+    if ((o.versao || 1) > 2) throw new Error("versão");
+    // Estrutura mínima: listas onde se esperam listas e salvos com a chave no formato do site.
+    for (const k of ["pastas", "termos", "procs", "oabs"]) if (d[k] != null && !Array.isArray(d[k])) throw new Error("inválido");
+    if (Object.keys(d.salvos).some((k) => !/^[a-z]:/.test(k))) throw new Error("inválido");
     let n = 0;
     for (const [k, v] of Object.entries(d.salvos || {})) { if (!P.salvos[k]) n++; P.salvos[k] = { ...(P.salvos[k] || {}), ...v, pastas: [...new Set([...(P.salvos[k]?.pastas || []), ...(v.pastas || [])])] }; }
     for (const p of d.pastas || []) if (!pastas().includes(p)) pastas().push(p);
@@ -1030,19 +1071,20 @@
     salvarP(); avisarSalvos(); atualizarContadorRadar();
     return { n, r };
   }
+  const usoArmaz = () => { const b = Store.uso(); return b ? ` Ocupam hoje ${b < 1048576 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1048576).toFixed(1).replace(".", ",")} MB`} (o navegador costuma reservar cerca de 5 MB por site).` : ""; };
   const TXT_COPIA = "Tudo o que você guarda no site (salvos, pastas, anotações, termos, processos e OABs do Meu radar e preferências) fica apenas neste navegador: não vai para nenhum servidor e se perde se os dados do navegador forem apagados. Exporte uma cópia para guardar ou levar a outro aparelho; ao importar, o conteúdo é somado ao que já existe.";
   function gerenciarPastas(soCopia = false) {
     abrirGaveta(soCopia ? "Meu radar e salvos" : "Salvos", soCopia ? "Cópia de segurança" : "Pastas e cópia de segurança", "");
     const corpo = $("#gaveta-corpo");
     const uso = (p) => Object.values(P.salvos).filter((x) => (x.pastas || []).includes(p)).length;
     const desenhar = () => {
-      corpo.innerHTML = soCopia ? `<p class="nota">${TXT_COPIA}</p>
+      corpo.innerHTML = soCopia ? `<p class="nota">${TXT_COPIA}${usoArmaz()}</p>
         <div class="acoes"><button type="button" class="btn btn-claro btn-peq" data-salvos-exportar>${ico("arquivo")} Exportar cópia</button>
           <label class="btn btn-claro btn-peq" style="cursor:pointer">${ico("mais1")} Importar arquivo<input type="file" accept=".json,application/json" data-salvos-importar hidden></label></div>` : `${pastas().length ? `<ul class="lista-pastas">${pastas().map((p, i) => `<li><input value="${esc(p)}" data-pasta-nome="${i}" aria-label="Nome da pasta" maxlength="60"><span class="nota">${uso(p)} item(ns)</span><button type="button" class="btn-ico" data-pasta-apagar="${i}" title="Excluir pasta" aria-label="Excluir pasta">${ico("x")}</button></li>`).join("")}</ul>` : `<p class="nota">Nenhuma pasta criada.</p>`}
         <form class="adicionar" id="pasta-nova" style="margin-top:12px"><input placeholder="Nova pasta" aria-label="Nova pasta" maxlength="60"><button class="btn btn-pri" type="submit" aria-label="Criar pasta">${ico("mais1")}</button></form>
         <p class="nota">Excluir uma pasta não apaga os itens salvos; eles só deixam de estar nela. Para renomear, edite o nome e saia do campo.</p>
         <h3>Cópia de segurança</h3>
-        <p class="nota">${TXT_COPIA}</p>
+        <p class="nota">${TXT_COPIA}${usoArmaz()}</p>
         <div class="acoes"><button type="button" class="btn btn-claro btn-peq" data-salvos-exportar>${ico("arquivo")} Exportar cópia</button>
           <label class="btn btn-claro btn-peq" style="cursor:pointer">${ico("mais1")} Importar arquivo<input type="file" accept=".json,application/json" data-salvos-importar hidden></label></div>`;
     };
@@ -1061,10 +1103,13 @@
         salvarP(); avisarSalvos(); desenhar(); return;
       }
       if (e.target.matches("[data-salvos-importar]") && e.target.files[0]) {
+        const arq = e.target.files[0];
+        if (arq.size > 5 * 1024 * 1024) { toast("Arquivo grande demais para uma cópia do Radar STJ (mais de 5 MB)."); e.target.value = ""; return; }
         try {
-          const { n, r } = importarTudo(JSON.parse(await e.target.files[0].text()));
-          desenhar(); toast(`Importado: ${n} item(ns) salvo(s) novo(s)${r ? ` e ${r} item(ns) do Meu radar` : ""}.`);
-        } catch { toast("Arquivo inválido: use um arquivo exportado pelo Radar STJ."); }
+          const { n, r } = importarTudo(JSON.parse(await arq.text()));
+          desenhar(); toast(Store.falhou ? "O arquivo foi lido, mas o navegador não permitiu guardar. Veja o aviso no alto da página." : `Importado: ${n} item(ns) salvo(s) novo(s)${r ? ` e ${r} item(ns) do Meu radar` : ""}.`);
+        } catch (err) { toast(err.message === "versão" ? "Esta cópia foi feita por uma versão mais nova do site; atualize a página e tente de novo." : "Arquivo inválido: use uma cópia exportada pelo Radar STJ."); }
+        e.target.value = "";
       }
     };
   }
@@ -1155,11 +1200,13 @@
       <p class="enunciado-g${x.sit === "cancelada" ? " cancelada" : ""}">${esc(x.t)}</p>
       ${x.nota ? `<h3>${x.sit === "cancelada" ? "Cancelamento" : "Histórico da redação"}</h3><p class="texto-serif">${esc(x.nota)}</p>` : ""}
       <div class="acoes" style="margin-top:14px">
+        <button type="button" class="btn btn-claro btn-peq" id="gs-salvar" aria-pressed="${!!P.salvos[`s:${x.n}`]}">${ico("salvar")} ${P.salvos[`s:${x.n}`] ? "Salvo" : "Salvar"}</button>
         <button type="button" class="btn btn-claro btn-peq" id="gs-copiar">${ico("copiar")} Copiar</button>
         <a class="btn btn-claro btn-peq" href="#pesquisa?q=sumula:${x.n}&p=u3" data-fechar>Acórdãos recentes que aplicam</a>
         <a class="btn btn-claro btn-peq" href="${URL_SUMULA(x.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>
       </div>`);
     $("#gs-copiar").addEventListener("click", () => copiar(`Súmula ${x.n}/STJ: "${x.t}"`, "Súmula copiada."));
+    $("#gs-salvar").addEventListener("click", (e) => { alternarSalvo(`s:${x.n}`, { k: "s", n: x.n }, e.currentTarget); e.currentTarget.lastChild.textContent = P.salvos[`s:${x.n}`] ? " Salvo" : " Salvar"; });
     $$("[data-fechar]", $("#gaveta-corpo")).forEach((a) => a.addEventListener("click", fecharGaveta));
   }
   document.addEventListener("click", (ev) => {
@@ -2106,29 +2153,32 @@
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-min]"); if (b && !b.closest("#gaveta")) abrirMinistro(b.dataset.min); });
 
   // ============================================================== roteador
+  // Seções agrupadas no menu: Acompanhar, Pesquisar, Ferramentas e Informações.
   const VIEWS = [
     { id: "painel", tit: "Visão geral", sobre: "Painel diário", ico: "painel", fn: vPainel },
-    { id: "atualize", tit: "Atualize-se", sobre: "Leitura do dia", ico: "raio", fn: vAtualize, cont2: true },
-    { id: "semana", tit: "Resumo da semana", sobre: "O que mudou em 7 dias", ico: "semana", fn: vSemana },
-    { id: "radar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true },
-    { id: "salvos", tit: "Salvos", sobre: "Pastas, avaliações e anotações", ico: "salvar", fn: vSalvos, cont3: true },
-    { id: "destaques", tit: "Destaques", sobre: "Acórdãos relevantes", ico: "destaques", fn: vDestaques },
-    { id: "pesquisa", tit: "Pesquisa de acórdãos", sobre: "Acervo de acórdãos", ico: "pesquisa", fn: vPesquisa },
-    { id: "repetitivos", tit: "Precedentes qualificados", sobre: "Repetitivos, IAC e controvérsias", ico: "repetitivos", fn: vRepetitivos },
-    { id: "sumulas", tit: "Súmulas e teses", sobre: "Súmulas e Jurisprudência em Teses", ico: "sumulas", fn: vSumulas },
-    { id: "pautas", tit: "Pautas e publicações", sobre: "O que vai ser julgado", ico: "pautas", fn: vPautas },
-    { id: "composicao", tit: "Composição", sobre: "Ministros, Seções e Turmas", ico: "composicao", fn: vComposicao },
-    { id: "verificar", tit: "Verificar petição", sobre: "Conferência de citações", ico: "verificar", fn: vVerificar },
-    { id: "sobre", tit: "Sobre o Radar STJ", sobre: "Fontes e método", ico: "sobre", fn: vSobre },
+    { id: "atualize", g: "Acompanhar", tit: "Atualize-se", sobre: "Leitura do dia", ico: "raio", fn: vAtualize, cont2: true },
+    { id: "semana", g: "Acompanhar", tit: "Resumo da semana", sobre: "O que mudou em 7 dias", ico: "semana", fn: vSemana },
+    { id: "destaques", g: "Acompanhar", tit: "Destaques", sobre: "Informativo do STJ e seleção automática", ico: "destaques", fn: vDestaques },
+    { id: "radar", g: "Acompanhar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true },
+    { id: "salvos", g: "Acompanhar", tit: "Salvos", sobre: "Pastas, avaliações e anotações", ico: "salvar", fn: vSalvos, cont3: true },
+    { id: "pesquisa", g: "Pesquisar", tit: "Pesquisa de acórdãos", menu: "Acórdãos", sobre: "Acervo de acórdãos", ico: "pesquisa", fn: vPesquisa },
+    { id: "repetitivos", g: "Pesquisar", tit: "Precedentes qualificados", menu: "Repetitivos", sobre: "Repetitivos, IAC e controvérsias", ico: "repetitivos", fn: vRepetitivos },
+    { id: "sumulas", g: "Pesquisar", tit: "Súmulas e teses", sobre: "Súmulas e Jurisprudência em Teses", ico: "sumulas", fn: vSumulas },
+    { id: "pautas", g: "Pesquisar", tit: "Pautas e publicações", menu: "Pautas", sobre: "O que vai ser julgado", ico: "pautas", fn: vPautas },
+    { id: "verificar", g: "Ferramentas", tit: "Verificar petição", sobre: "Conferência de citações", ico: "verificar", fn: vVerificar },
+    { id: "composicao", g: "Ferramentas", tit: "Composição", sobre: "Ministros, Seções e Turmas", ico: "composicao", fn: vComposicao },
+    { id: "sobre", g: "Informações", tit: "Sobre o Radar STJ", menu: "Sobre e novidades", sobre: "Fontes, método e novidades", ico: "sobre", fn: vSobre },
   ];
   function montarNav() {
-    $("#menu").innerHTML = VIEWS.map((v, i) => `${v.id === "verificar" ? '<div class="sep"></div>' : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.tit === "Precedentes qualificados" ? "Repetitivos" : v.tit === "Pesquisa de acórdãos" ? "Pesquisa" : v.tit === "Pautas e publicações" ? "Pautas" : v.tit === "Visão geral" ? "Visão geral" : v.tit === "Sobre o Radar STJ" ? "Sobre" : v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}${v.cont3 ? '<span class="cont-n cont-salvos" hidden></span>' : ""}</a>`).join("");
+    $("#menu").innerHTML = VIEWS.map((v, i) => `${v.g && v.g !== VIEWS[i - 1]?.g ? `<div class="menu-grupo">${v.g}</div>` : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.menu || v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}${v.cont3 ? '<span class="cont-n cont-salvos" hidden></span>' : ""}</a>`).join("");
     const inf = [["painel", "Início"], ["atualize", "Atualize-se"], ["radar", "Radar"], ["pesquisa", "Pesquisa"]];
     $("#barra-inf").innerHTML = inf.map(([id, l]) => `<a href="#${id}" data-v="${id}">${ico(VIEWS.find((v) => v.id === id).ico)}<span>${l}</span>${id === "radar" ? '<span class="cont cont-radar" hidden></span>' : ""}${id === "atualize" ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("")
       + `<button type="button" id="inf-mais" aria-haspopup="dialog">${ico("mais")}<span>Mais</span></button>`;
     $("#inf-mais").addEventListener("click", () => {
-      abrirGaveta("Navegação", "Mais seções", `<nav class="lista">${VIEWS.filter((v) => !["painel", "atualize", "radar", "pesquisa"].includes(v.id)).map((v) =>
-        `<a class="card item" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit" href="#${v.id}" data-fechar>${ico(v.ico)}<span><b>${v.tit}</b><br><span class="meta">${v.sobre}</span></span></a>`).join("")}</nav>`);
+      const resto = VIEWS.filter((v) => !["painel", "atualize", "radar", "pesquisa"].includes(v.id));
+      const grupos = [...new Set(resto.map((v) => v.g))];
+      abrirGaveta("Navegação", "Mais seções", `<nav class="mais-nav">${grupos.map((g) => `<h3 class="mais-grupo">${g}</h3><div class="lista">${resto.filter((v) => v.g === g).map((v) =>
+        `<a class="card item" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit" href="#${v.id}" data-fechar>${ico(v.ico)}<span><b>${v.tit}</b><br><span class="meta">${v.sobre}</span></span></a>`).join("")}</div>`).join("")}</nav>`);
       $$("[data-fechar]", $("#gaveta-corpo")).forEach((a) => a.addEventListener("click", fecharGaveta));
     });
   }
@@ -2181,30 +2231,39 @@
 
   // ================================================================ PAINEL
   async function vPainel(main) {
-    const [t, pl, ds] = await Promise.all([temas(), pautas(), destaques()]);
     const hoje = hojeISO();
-    const ev7 = eventosTemas(t, somaDias(hoje, -7));
-    const ev30 = eventosTemas(t, somaDias(hoje, -30));
-    const mesUlt = ds[0]?.dj?.slice(0, 7);
-    const dsMes = agrupar(ds.filter((r) => r.dj?.startsWith(mesUlt)));
+    // Resumo leve (painel.json, gerado na atualização): a página abre sem baixar as bases completas.
+    const leve = D.man.painel ? await getJSON("data/painel.json").catch(() => null) : null;
+    let evs, pl, dsTop, dsN, mesUlt;
+    if (leve) {
+      evs = leve.ev.map((e) => ({ d: e.d, k: e.k, txt: e.txt, t: { tp: e.tp, n: e.n, tese: e.tese, q: e.q } }));
+      pl = leve.pautas.filter((p) => p.d >= hoje); mesUlt = leve.dest.mes; dsN = leve.dest.n; dsTop = leve.dest.top;
+    } else {
+      const [t, pl0, ds] = await Promise.all([temas(), pautas(), destaques()]);
+      evs = eventosTemas(t, somaDias(hoje, -31)); pl = pl0;
+      mesUlt = ds[0]?.dj?.slice(0, 7);
+      const dsMes = agrupar(ds.filter((r) => r.dj?.startsWith(mesUlt)));
+      dsN = dsMes.length; dsTop = dsMes.slice().sort((a, b) => b.s - a.s).slice(0, 3);
+    }
+    const ev7 = evs.filter((e) => e.d >= somaDias(hoje, -7));
+    const ev30 = evs.filter((e) => e.d >= somaDias(hoje, -30));
     const lim14 = somaDias(hoje, 14);
     const plRel = pl.filter((p) => p.d <= lim14 && (p.temas?.length || /secao|especial/.test(p.o)));
     const plTema = pl.filter((p) => p.temas?.length);
-    const radar = await calcularRadar();
-    const naoLidos = await contarNaoLidos();
-    const novosRadar = radar.filter((x) => x.novo);
+    // O que depende de você (radar e leituras) é calculado depois de a página aparecer.
+    let radar = null, novosRadar = [], naoLidos = null;
     const configurado = P.termos.length + P.procs.length + P.oabs.length > 0;
 
     const abas = [
       ["rep", "Repetitivos", ev30.length], ["pau", "Pautas", plTema.length + plRel.length ? unicos([...plTema, ...plRel], (p) => `${p.p}|${p.d}|${p.pet || ""}`).length : 0],
-      ["des", "Destaques", dsMes.length], ["rad", "Meu radar", configurado ? novosRadar.length : 0],
+      ["des", "Destaques", dsN], ["rad", "Meu radar", 0],
     ];
     const abaIni = abas.some((a) => a[0] === P.painelAba) ? P.painelAba : "rep";
     main.innerHTML = `
       <section class="hero">
         <p class="sobretitulo">${fmtDiaL(hoje)}</p>
         <h2>O que mudou no STJ?</h2>
-        <a class="btn-feed" href="#atualize">${ico("raio")}<span><b>${naoLidos ? `${fmtInt(naoLidos)} novidade${naoLidos > 1 ? "s" : ""} para ler` : "Você está em dia"}</b><small>${naoLidos ? "Leitura rápida, uma tese por vez" : "Rever as últimas teses e julgados"}</small></span>${ico("seta")}</a>
+        <a class="btn-feed" href="#atualize" id="pn-feed">${ico("raio")}<span><b>Novidades para ler</b><small>Leitura rápida, uma tese por vez</small></span>${ico("seta")}</a>
         <form class="hero-busca" id="hero-f" role="search">
           <input id="hero-q" type="search" placeholder="Assunto, “tema 1234” ou número do processo" aria-label="Pesquisar">
           <button class="btn btn-pri" type="submit" aria-label="Pesquisar">${ico("pesquisa")}<span class="so-largo">Pesquisar</span></button>
@@ -2216,9 +2275,9 @@
         <button type="button" class="stat" data-pn="pau">
           <span class="stat-ico ico-verm">${ico("pautas")}</span><span><b>${fmtInt(plRel.length)}</b><span>processos relevantes em pauta (14 dias)</span></span></button>
         <button type="button" class="stat" data-pn="des">
-          <span class="stat-ico ico-azul">${ico("destaques")}</span><span><b>${fmtInt(dsMes.length)}</b><span>destaques de ${mesUlt ? fmtMes(mesUlt) : "—"}</span></span></button>
+          <span class="stat-ico ico-azul">${ico("destaques")}</span><span><b>${fmtInt(dsN)}</b><span>destaques de ${mesUlt ? fmtMes(mesUlt) : "—"}</span></span></button>
         <button type="button" class="stat" data-pn="rad">
-          <span class="stat-ico ico-lar">${ico("radar")}</span><span><b>${configurado ? fmtInt(novosRadar.length) : "—"}</b><span>${configurado ? "novidades no seu radar" : "configure o seu radar"}</span></span></button>
+          <span class="stat-ico ico-lar">${ico("radar")}</span><span><b id="pn-rad-n">${configurado ? "…" : "—"}</b><span>${configurado ? "novidades no seu radar" : "configure o seu radar"}</span></span></button>
       </div>
       <section class="secao painel-abas">
         <div class="secao-cab"><div class="segmentos" role="tablist" id="pn-abas">${abas.map(([k, l, n]) => `<button type="button" role="tab" data-pn="${k}" aria-selected="${k === abaIni}">${l}${k === "rad" && n ? ` <span class="n">${n > 99 ? "99+" : n}</span>` : ""}</button>`).join("")}</div>
@@ -2236,8 +2295,8 @@
             <li class="evento"><span class="quando">${fmtData(p.d)}</span><span class="marco"><i class="pauta"></i></span>
               <div><div class="evento-tit">${esc(p.p)}${p.pet ? ` (${esc(p.pet)})` : ""} · ${esc(D.orgaos[p.o] || "")}</div>
               <div class="evento-txt">${p.temas?.length ? `Vinculado a ${p.temas.map(([tp, n]) => `${tp} ${n}`).join(", ")}` : `Rel. ${esc(p.rel || "")}`}</div></div></li>`).join("")) : `<div class="card card-pad"><p class="nota">Nenhuma sessão relevante nos próximos dias.</p></div>`; } },
-      des: { href: "#destaques", html: () => `<ol class="lista" id="painel-dest">${dsMes.slice().sort((a, b) => b.s - a.s).slice(0, 3).map((r) => cardAcordao(r)).join("")}</ol>` },
-      rad: { href: "#radar", html: () => configurado ? (radar.length ? lista(radar.slice(0, 6).map(itemRadarCompacto).join("")) : `<div class="card card-pad"><p class="nota">Nada encontrado ainda para os seus assuntos.</p></div>`)
+      des: { href: "#destaques", html: () => `<ol class="lista" id="painel-dest">${dsTop.map((r) => cardAcordao(r)).join("")}</ol>` },
+      rad: { href: "#radar", html: () => configurado ? (!radar ? esqueleto() : radar.length ? lista(radar.slice(0, 6).map(itemRadarCompacto).join("")) : `<div class="card card-pad"><p class="nota">Nada encontrado ainda para os seus assuntos.</p></div>`)
         : `<div class="card card-pad"><p class="texto-serif" style="margin-bottom:12px">Cadastre os assuntos que você acompanha, os números dos seus processos ou a sua OAB. O site avisa quando houver novidade.</p><a class="btn btn-pri" href="#radar">${ico("mais1")} Configurar meu radar</a></div>` },
     };
     const mostrar = (k) => {
@@ -2249,6 +2308,19 @@
     };
     $$("[data-pn]", main).forEach((b) => b.addEventListener("click", () => { mostrar(b.dataset.pn); if (b.classList.contains("stat")) $(".painel-abas").scrollIntoView({ behavior: "smooth", block: "start" }); }));
     mostrar(abaIni);
+    // Parte pessoal, em segundo plano.
+    (async () => {
+      const [r, n] = await Promise.all([configurado ? calcularRadar().catch(() => []) : [], contarNaoLidos()]);
+      if (viewAtual !== "painel" || !main.contains($("#pn-feed"))) return;
+      radar = r; novosRadar = r.filter((x) => x.novo); naoLidos = n;
+      $("#pn-feed b").textContent = naoLidos ? `${fmtInt(naoLidos)} novidade${naoLidos > 1 ? "s" : ""} para ler` : "Você está em dia";
+      $("#pn-feed small").textContent = naoLidos ? "Leitura rápida, uma tese por vez" : "Rever as últimas teses e julgados";
+      if (configurado) {
+        $("#pn-rad-n").textContent = fmtInt(novosRadar.length);
+        const ab = $('#pn-abas [data-pn="rad"]'); if (ab && novosRadar.length) ab.insertAdjacentHTML("beforeend", ` <span class="n">${novosRadar.length > 99 ? "99+" : novosRadar.length}</span>`);
+        if (P.painelAba === "rad") mostrar("rad");
+      }
+    })();
     $("#hero-f").addEventListener("submit", (e) => {
       e.preventDefault();
       const q = $("#hero-q").value.trim(); if (!q) return;
@@ -2577,8 +2649,8 @@
   // ================================================================== SALVOS
   // Biblioteca pessoal: pastas à esquerda (por tema, cliente ou processo) e, à direita, os itens
   // da pasta com filtros por tipo, matéria e avaliação, busca nas anotações e cópia das citações.
-  const TIPOS_S = [["a", "Acórdãos"], ["d", "Aguardando ementa"], ["t", "Repetitivos e IAC"], ["j", "Jurisprudência em Teses"], ["i", "Informativo"], ["p", "Pautas"]];
-  const SV = { pasta: "", tp: "", aval: "", ar: "", q: "", ord: "rec" };
+  const TIPOS_S = [["a", "Acórdãos"], ["d", "Aguardando ementa"], ["t", "Repetitivos e IAC"], ["s", "Súmulas"], ["j", "Jurisprudência em Teses"], ["i", "Informativo"], ["p", "Pautas"]];
+  const SV = { pasta: "", tp: "", aval: "", ar: "", q: "", ord: "rec", mud: false };
   const tipoSalvo = (x, k) => x.k || k[0];
   const dataSalvo = (x) => x.dj || x.dd || x.d || x.disp || x.salvoEm || "";
   function atualizarContadorSalvos() {
@@ -2589,8 +2661,9 @@
     if (p.has("pasta")) SV.pasta = p.get("pasta");
     main.innerHTML = esqueleto();
     await promoverSalvosDjen();
-    const temJ = Object.keys(P.salvos).some((k) => k.startsWith("j:"));
-    const [t, inf, jt] = await Promise.all([temas().catch(() => ({ idx: new Map() })), informativos().catch(() => ({ idx: new Map() })), temJ ? tesesJT().catch(() => ({ idx: new Map() })) : { idx: new Map() }]);
+    const temJ = Object.keys(P.salvos).some((k) => k.startsWith("j:")), temS = Object.keys(P.salvos).some((k) => k.startsWith("s:"));
+    const [t, inf, jt, sms] = await Promise.all([temas().catch(() => ({ idx: new Map() })), informativos().catch(() => ({ idx: new Map() })), temJ ? tesesJT().catch(() => ({ idx: new Map() })) : { idx: new Map() }, temS ? sumulas().catch(() => []) : []]);
+    await conferirMudancasSalvos().catch(() => null);
     if (viewAtual !== "salvos") return;
     const pg = paginador("sv", () => desenharLista(), "#sv-lista");
     main.innerHTML = `<div class="sv${P.svCompacto ? " sv-compacto" : ""}">
@@ -2610,6 +2683,7 @@
         else if (tp === "d") { li = cardDjen(x); ref = `${x.p || ""}`; }
         else if (tp === "j") { const o = jt.idx.get(x.id); li = o ? `<li class="card jt-salva"><ol class="jt-teses plano">${linhaTeseJT(o, [], true)}</ol></li>` : ""; ar = o?.ar || []; extra = o?.t || ""; ref = o ? `“${o.t.trim().replace(/\.$/, "")}” (STJ, Jurisprudência em Teses, edição n. ${o.ed}, tese n. ${o.n}.)` : ""; }
         else if (tp === "p") { li = cardPauta(x); ref = `${x.p || ""}`; }
+        else if (tp === "s") { const o = sms.find((y) => y.n === x.n); li = o ? cardSumula(o, []) : ""; ar = o?.ar || []; extra = o?.t || ""; ref = o ? `Súmula ${o.n}/STJ: “${o.t.trim().replace(/\.$/, "")}”.` : ""; }
         else { li = cardAcordao({ ...x, em: "", h: x.h }); extra = `${x.h || ""} ${x.tese || ""} ${x.tj || ""}`; ref = citavel(x) ? citacao(x) : `${x.cl} ${fmtNumProc(x.n)}`; }
         return { k, x, tp, li, ar, ref, txt: norm(`${tituloSalvo(x, k)} ${extra} ${x.nota || ""} ${(x.pastas || []).join(" ")}`) };
       }).filter((i) => i.li);
@@ -2619,6 +2693,7 @@
       && (ignora === "tp" || !SV.tp || i.tp === SV.tp)
       && (ignora === "aval" || !SV.aval || (i.x.aval || "_") === SV.aval)
       && (ignora === "ar" || !SV.ar || i.ar.includes(SV.ar))
+      && (!SV.mud || i.x.mudou)
       && (!SV.q || norm(SV.q).split(/\s+/).every((w) => i.txt.includes(w)));
     const visiveis = () => itens.filter((i) => passa(i)).sort(SV.ord === "data" ? (a, b) => dataSalvo(b.x).localeCompare(dataSalvo(a.x)) : (a, b) => (b.x.salvoEm || "").localeCompare(a.x.salvoEm || ""));
     const nomePasta = () => (SV.pasta === "_sem" ? "Sem pasta" : SV.pasta || "Todos os salvos");
@@ -2633,6 +2708,7 @@
           <div class="sv-grupo"><span>Pastas</span><button type="button" class="btn-ico" data-sv-nova title="Nova pasta" aria-label="Nova pasta">${ico("mais1")}</button></div>
           <form class="sv-nova" id="sv-nova" hidden><input placeholder="Nome da pasta" aria-label="Nome da nova pasta" maxlength="60"><button class="btn btn-pri btn-peq" type="submit">Criar</button></form>
           ${ps.map((pn) => btn("data-sv-pasta", pn, "pasta", pn, cont((i) => (i.x.pastas || []).includes(pn)), SV.pasta === pn)).join("") || `<p class="nota sv-dica">Crie pastas por tese, cliente ou processo. Um precedente pode ficar em mais de uma.</p>`}
+          ${cont((i) => i.x.mudou) ? btn("data-sv-mud", "1", "alerta", "Mudaram de situação", cont((i) => i.x.mudou), SV.mud) : ""}
           <div class="sv-grupo"><span>Avaliação</span></div>
           ${btn("data-sv-aval", "fav", "polegar", "Favoráveis", cont((i) => naPasta(i) && i.x.aval === "fav"), SV.aval === "fav")}
           ${btn("data-sv-aval", "desf", "polegar-b", "Desfavoráveis", cont((i) => naPasta(i) && i.x.aval === "desf"), SV.aval === "desf")}
@@ -2667,7 +2743,7 @@
     }
     function barra(i) {
       const x = i.x, penal = ehPenal(i.ar);
-      return `<div class="salvo-org" data-sv-k="${esc(i.k)}">
+      return `${x.mudou ? `<div class="sv-mudou" role="status">${ico("alerta")}<span>Situação mudou${x.mudou.em ? ` (notado em ${fmtData(x.mudou.em)})` : ""}: de “${esc(x.mudou.de)}” para <b>“${esc(x.mudou.para)}”</b>.</span><button type="button" class="btn btn-claro btn-peq" data-sv-ciente="${esc(i.k)}">Ciente</button></div>` : ""}<div class="salvo-org" data-sv-k="${esc(i.k)}">
           <div class="sv-org-l">
             ${(x.pastas || []).map((pn) => `<button type="button" class="tag-pasta" data-sv-pasta="${esc(pn)}" title="Abrir a pasta">${ico("pasta")}${esc(pn)}</button>`).join("")}
             <button type="button" class="tag-pasta tag-add" data-organizar="${esc(i.k)}">${ico("mais1")}${(x.pastas || []).length ? "Pasta" : "Colocar em pasta"}</button>
@@ -2703,6 +2779,8 @@
       let b;
       if ((b = el("[data-sv-pasta]"))) { SV.pasta = b.dataset.svPasta; SV.tp = ""; SV.ar = ""; tudo(); scrollTo({ top: 0, behavior: "smooth" }); return; }
       if ((b = el("[data-sv-aval]"))) { SV.aval = SV.aval === b.dataset.svAval ? "" : b.dataset.svAval; tudo(); return; }
+      if (el("[data-sv-mud]")) { SV.mud = !SV.mud; tudo(); return; }
+      if ((b = el("[data-sv-ciente]"))) { const x = P.salvos[b.dataset.svCiente]; if (x?.mudou) { x.sitVista = x.mudou.para; delete x.mudou; salvarP(); } if (SV.mud && !Object.values(P.salvos).some((y) => y.mudou)) SV.mud = false; tudo(false); return; }
       if ((b = el("[data-sv-tp]"))) { SV.tp = b.dataset.svTp; desenharFiltros(); parcial(); return; }
       if ((b = el("[data-sv-ar]"))) { SV.ar = SV.ar === b.dataset.svAr ? "" : b.dataset.svAr; desenharFiltros(); parcial(); return; }
       if (el("[data-sv-limpar]")) { if (SV.pasta && !itens.some(naPasta)) SV.pasta = ""; Object.assign(SV, { tp: "", aval: "", ar: "", q: "" }); tudo(); return; }
@@ -3275,8 +3353,9 @@
         defOrdem(() => AC.f.s, (v) => (AC.f.s = v), [{ v: "auto", t: "Automática" }, { v: "rel", t: "Mais relevantes" }, { v: "data", t: "Publicação mais recente" }, { v: "julg", t: "Julgamento mais recente" }],
           "Automática: com termos de busca, os mais aderentes primeiro; sem termos, os publicados mais recentemente."),
       ], () => buscar());
-      $("#ac-q").addEventListener("input", debounce(() => buscar(), 400));
+      // A consulta começa só com Enter ou o botão "Pesquisar" (ou ao limpar o campo), não a cada letra.
       $("#ac-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); buscar(); } });
+      $("#ac-q").addEventListener("search", (e) => { if (!e.target.value) buscar(); });
       $("#ac-ir").addEventListener("click", () => buscar());
       $("#ac-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
       ligarCards($("#ac-lista"));
@@ -3463,13 +3542,14 @@
     };
     const prog = $("#ac-prog");
     const longo = !ids && pares.length > 240;
-    let cortado = false;
+    let cortado = false, falhas = 0;
     AC.parar = 0;
     if (!longo) {
       const pend = pares.filter(([m, o]) => !D.shards.has(`${m}/${o}`)).length;
       if (pend) { prog.hidden = false; prog.firstElementChild.style.width = "0"; $("#ac-info").textContent = `Carregando ${pares.length} arquivo(s)…`; }
       const dados = await carregarShards(pares, (a, b) => { if (tk === AC.token) prog.firstElementChild.style.width = `${(a / b) * 100}%`; });
       if (tk !== AC.token) return;
+      falhas = dados.falhas.length;
       consumir(dados);
     } else {
       // Período longo: percorre os arquivos do mais recente ao mais antigo, sem guardá-los na memória.
@@ -3488,7 +3568,7 @@
           if (ordem !== "rel" && res.length >= MAX_RES) { cortado = true; break; }
           const [m, o] = pares[i++]; mesAt = m;
           let l = [];
-          try { l = D.shards.has(`${m}/${o}`) ? await shard(m, o) : await getJSONgz(`data/acordaos/${m}/${o}.json`, ctrl.signal); } catch { /* arquivo indisponível ou busca cancelada */ }
+          try { l = D.shards.has(`${m}/${o}`) ? await shard(m, o) : await getJSONgz(`data/acordaos/${m}/${o}.json`, ctrl.signal); } catch { if (!ctrl.signal.aborted && tk === AC.token) falhas++; }
           if (tk !== AC.token) return;
           consumir(l); feitos++;
           if (feitos % 10 === 0) mostrar();
@@ -3520,9 +3600,12 @@
     const parcial = AC.parar === tk ? " · busca interrompida" : "";
     const corte = total > res.length && !cortado ? ` · exibindo os ${fmtInt(res.length)} ${ordem === "rel" ? "mais aderentes" : "mais recentes"}` : "";
     const lidosIB = pares.length < paresTodos ? ` · ${fmtInt(pares.length)} de ${fmtInt(paresTodos)} arquivos mensais consultados` : "";
+    // Arquivos que não puderam ser baixados: a lista está incompleta, e o usuário precisa saber.
+    const avisoFalha = falhas ? `<span class="aviso-falha" role="alert">${ico("alerta")} ${falhas === 1 ? "1 arquivo mensal não pôde ser consultado" : `${fmtInt(falhas)} arquivos mensais não puderam ser consultados`}; os resultados podem estar incompletos. <button type="button" class="btn btn-claro btn-peq" id="ac-denovo">Tentar novamente</button></span>` : "";
     if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: ainda sem ementa no acervo. Veja abaixo a publicação no DJEN.`;
     else if (cortado) $("#ac-info").innerHTML = `Exibindo os <b>${fmtInt(res.length)}</b> acórdãos ${ordem === "julg" ? "julgados mais recentemente" : "mais recentes"} (limite da consulta; use os filtros para refinar) · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} ${explicacaoHTML(cons)}`;
     else $("#ac-info").innerHTML = `<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
+    if (avisoFalha) { $("#ac-info").insertAdjacentHTML("beforeend", avisoFalha); $("#ac-denovo").addEventListener("click", () => buscar()); }
     renderLista(true);
   }
   const pgAc = paginador("ac", () => renderLista(false), "#ac-lista");
@@ -3819,7 +3902,7 @@
       <div class="acoes">
         <a class="link-acao" href="${URL_SUMULA(x.n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>
         <a class="link-acao" href="#pesquisa?q=sumula:${x.n}&p=u3">Acórdãos recentes que aplicam</a>
-        <span class="dir"><button type="button" class="btn-ico" data-copiar-sum title="Copiar enunciado e referência" aria-label="Copiar">${ico("copiar")}</button></span>
+        <span class="dir">${botaoSalvar(`s:${x.n}`, { k: "s", n: x.n })}<button type="button" class="btn-ico" data-copiar-sum title="Copiar enunciado e referência" aria-label="Copiar">${ico("copiar")}</button></span>
       </div></li>`;
   }
   async function vSumulas(main, p) {
@@ -4088,18 +4171,30 @@
   function carregarScript({ src, sri }) {
     return new Promise((ok, erro) => { const s = document.createElement("script"); s.src = src; if (sri) { s.integrity = sri; s.crossOrigin = "anonymous"; } s.onload = ok; s.onerror = () => erro(new Error("Não foi possível carregar o leitor de arquivos. Cole o texto no campo abaixo.")); document.head.appendChild(s); });
   }
-  const VF = { txt: "", pags: null }; // texto lido do PDF e início de cada página, para indicar a página das citações
-  async function lerArquivo(arq) {
+  // Texto lido do PDF, início de cada página (para indicar a página das citações) e páginas sem texto.
+  const VF = { txt: "", pags: null, semTexto: [], cancelar: false };
+  const LIM_ARQ_MB = 50;
+  async function lerArquivo(arq, prog = () => {}) {
     const nome = arq.name.toLowerCase();
-    VF.txt = ""; VF.pags = null;
+    VF.txt = ""; VF.pags = null; VF.semTexto = []; VF.cancelar = false;
+    if (arq.size > LIM_ARQ_MB * 1024 * 1024) throw new Error(`O arquivo tem ${Math.round(arq.size / 1048576)} MB; o limite é ${LIM_ARQ_MB} MB. Divida o documento ou cole o texto.`);
     if (/\.(txt|md)$/.test(nome)) return arq.text();
     if (nome.endsWith(".pdf")) {
       if (!window.pdfjsLib) await carregarScript(VENDOR.pdf);
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = VENDOR.pdfWorker;
       const pdf = await window.pdfjsLib.getDocument({ data: await arq.arrayBuffer(), isEvalSupported: false }).promise;
-      let txt = ""; const pags = [];
-      for (let i = 1; i <= pdf.numPages; i++) { const pg = await pdf.getPage(i); const c = await pg.getTextContent(); pags.push(txt.length); txt += c.items.map((x) => x.str).join(" ") + "\n"; }
-      VF.txt = txt; VF.pags = pags;
+      let txt = ""; const pags = [], vazias = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        if (VF.cancelar) throw new Error("Leitura cancelada.");
+        prog(i, pdf.numPages);
+        const pg = await pdf.getPage(i); const c = await pg.getTextContent();
+        const t = c.items.map((x) => x.str).join(" ");
+        if (t.replace(/\s/g, "").length < 20) vazias.push(i);
+        pags.push(txt.length); txt += t + "\n";
+      }
+      // Quase sem texto: o PDF é uma imagem digitalizada e precisa de OCR para ser lido.
+      if (txt.replace(/\s/g, "").length < 200 || vazias.length / pdf.numPages > 0.8) throw new Error(`Este PDF parece digitalizado (${vazias.length} de ${pdf.numPages} páginas sem texto): o conteúdo é imagem e precisa passar por OCR antes da verificação. Muitos leitores de PDF oferecem a opção “Reconhecer texto”.`);
+      VF.txt = txt; VF.pags = pags; VF.semTexto = vazias;
       return txt;
     }
     if (nome.endsWith(".docx")) {
@@ -4109,6 +4204,39 @@
     }
     throw new Error("Formato não suportado. Use PDF, DOCX, TXT ou MD.");
   }
+  // ---- Dados que a petição atribui a um precedente (relator, órgão, datas), no trecho logo após a citação.
+  const ORG_CIT = [
+    [/corte\s+especial/i, "corte-especial"],
+    [/(primeira|1[ªºa.]?)\s+se[çc][ãa]o|\bS1\b/i, "primeira-secao"], [/(segunda|2[ªºa.]?)\s+se[çc][ãa]o|\bS2\b/i, "segunda-secao"], [/(terceira|3[ªºa.]?)\s+se[çc][ãa]o|\bS3\b/i, "terceira-secao"],
+    [/(primeira|1[ªºa.]?)\s+turma|\bT1\b/i, "primeira-turma"], [/(segunda|2[ªºa.]?)\s+turma|\bT2\b/i, "segunda-turma"], [/(terceira|3[ªºa.]?)\s+turma|\bT3\b/i, "terceira-turma"],
+    [/(quarta|4[ªºa.]?)\s+turma|\bT4\b/i, "quarta-turma"], [/(quinta|5[ªºa.]?)\s+turma|\bT5\b/i, "quinta-turma"], [/(sexta|6[ªºa.]?)\s+turma|\bT6\b/i, "sexta-turma"],
+  ];
+  const dataCit = (d, m, a) => { const ano = a.length === 2 ? `20${a}` : a; return `${ano}${m.padStart(2, "0")}${d.padStart(2, "0")}`; };
+  function dadosCitados(trecho) {
+    const out = {}; let pos = Infinity;
+    const rel = /\brel(?:ator[a]?\b|\.)\s*(?:p\/\s*(?:o\s+)?ac[óo]rd[ãa]o\s*)?[.:]?\s*(?:(?:o|a)\s+)?(?:min(?:istr[oa])?\.?\s+|des(?:embargador[a]?)?\.?\s+(?:convocad[oa]\s+)?)?(\p{L}[\p{L}'’\-]+(?:\s+(?:d[aeo]s?\s+)?\p{L}[\p{L}'’\-]+){0,5})/iu.exec(trecho);
+    if (rel) {
+      // O nome termina antes de palavras que já não são dele ("Terceira Turma", "julgado em").
+      const pal = rel[1].split(/\s+/), fim = pal.findIndex((w) => /^(julgad|dj|primeir|segund|terceir|quart|quint|sext|turma|se[cç][aã]o|corte|em|publicad|p\.)/i.test(w));
+      const nome = (fim < 0 ? pal : pal.slice(0, fim)).join(" ").replace(/\s+(d[aeo]s?)$/i, "");
+      if (nome.length > 2) out.rel = nome;
+    }
+    for (const [re, slug] of ORG_CIT) { const m = re.exec(trecho); if (m && (out.o === undefined || m.index < pos)) { out.o = slug; pos = m.index; } }
+    const j = /julgad[oa]\s+em\s*:?\s*(\d{1,2})[./](\d{1,2})[./](\d{4}|\d{2})\b/i.exec(trecho);
+    if (j) out.dd = dataCit(j[1], j[2], j[3]);
+    const p = /\bDJ[eE]?[nN]?\s*(?:de\s+|:\s*)?(\d{1,2})[./](\d{1,2})[./](\d{4}|\d{2})\b/.exec(trecho);
+    if (p) out.dj = dataCit(p[1], p[2], p[3]);
+    return out;
+  }
+  // Nome citado confere com o do acervo quando as palavras do nome citado estão no nome registrado.
+  function mesmoRelator(citado, registrado) {
+    const pal = (x) => norm(x).replace(/\([^)]*\)/g, " ").split(/[^a-z]+/).filter((w) => w.length > 2 && !["dos", "das", "des", "min", "ministro", "ministra", "rel", "relator", "relatora"].includes(w));
+    const a = pal(citado), b = new Set(pal(registrado));
+    if (!a.length) return true;
+    const comuns = a.filter((w) => b.has(w)).length;
+    return comuns === a.length || comuns >= 2;
+  }
+  const fmtAMD = (x) => (x && x.length === 8 ? `${x.slice(6, 8)}/${x.slice(4, 6)}/${x.slice(0, 4)}` : "—");
   const URL_PROC_STJ = (cl, n) => `https://processo.stj.jus.br/processo/pesquisa/?tipoPesquisa=tipoPesquisaGenerica&termo=${encodeURIComponent(`${String(cl).trim().split(/\s+/).pop()} ${n}`)}`;
   async function vVerificar(main) {
     main.innerHTML = `
@@ -4116,7 +4244,7 @@
         <section class="card card-pad">
           <h2 style="margin:0 0 4px;font:700 19px/1.3 var(--serif)">Cole o texto ou envie o arquivo</h2>
           <p class="nota" style="color:var(--tx-3);font-size:13.5px;margin:0 0 12px">O arquivo é lido no seu navegador e não é enviado a nenhum servidor. Os leitores de PDF e DOCX ficam no próprio site: nenhum código externo é carregado durante a análise.</p>
-          <div class="solta" id="vf-solta">${ico("arquivo")}<div style="margin-top:6px">Arraste um PDF, DOCX, TXT ou MD, ou <label style="color:var(--pri);font-weight:600;cursor:pointer">escolha um arquivo<input type="file" id="vf-arq" accept=".pdf,.docx,.txt,.md" hidden></label></div><div id="vf-nome" class="meta" style="justify-content:center;margin-top:6px"></div></div>
+          <div class="solta" id="vf-solta">${ico("arquivo")}<div style="margin-top:6px">Arraste um PDF, DOCX, TXT ou MD, ou <label style="color:var(--pri);font-weight:600;cursor:pointer">escolha um arquivo<input type="file" id="vf-arq" accept=".pdf,.docx,.txt,.md" hidden></label></div><div id="vf-nome" class="meta" role="status" aria-live="polite" style="justify-content:center;margin-top:6px"></div><div class="meta" style="justify-content:center;margin-top:4px">Até ${LIM_ARQ_MB} MB. PDFs digitalizados (imagem) precisam de OCR.</div></div>
           <textarea id="vf-txt" rows="14" style="margin-top:12px" placeholder="Ou cole aqui o texto da petição, do recurso ou do parecer…"></textarea>
           <div class="acoes"><button class="btn btn-pri" id="vf-ok">${ico("verificar")} Verificar citações</button><button class="btn btn-fant" id="vf-limpar">Limpar</button></div>
         </section>
@@ -4125,9 +4253,14 @@
     const solta = $("#vf-solta");
     const receber = async (arq) => {
       if (!arq) return;
-      $("#vf-nome").textContent = `Lendo ${arq.name}…`;
-      try { $("#vf-txt").value = await lerArquivo(arq); $("#vf-nome").textContent = `${arq.name} carregado.`; verificar(); }
-      catch (e) { $("#vf-nome").textContent = e.message; }
+      const st = $("#vf-nome");
+      st.innerHTML = `<span>Lendo ${esc(arq.name)}…</span> <button type="button" class="btn btn-fant btn-peq" id="vf-cancelar">Cancelar</button>`;
+      $("#vf-cancelar").addEventListener("click", () => { VF.cancelar = true; });
+      try {
+        $("#vf-txt").value = await lerArquivo(arq, (i, n) => { const sp = $("span", st); if (sp) sp.textContent = `Lendo ${arq.name}: página ${i} de ${n}…`; });
+        st.textContent = `${arq.name} carregado${VF.pags ? ` (${VF.pags.length} página${VF.pags.length > 1 ? "s" : ""})` : ""}.`;
+        verificar();
+      } catch (e) { st.textContent = e.message; }
     };
     $("#vf-arq").addEventListener("change", (e) => receber(e.target.files[0]));
     ["dragenter", "dragover"].forEach((t) => solta.addEventListener(t, (e) => { e.preventDefault(); solta.classList.add("sobre"); }));
@@ -4172,6 +4305,18 @@
     const citProc = new Map();
     const reP = /\b((?:(?:AgInt|AgRg|EDcl|EREsp|EAREsp)\s+(?:no|nos|na|em)\s+)*(?:REsp|AREsp|EREsp|EAREsp|RMS|HC|RHC|CC|MS|Rcl|AR|AgInt|AgRg))\s*(?:n[º°o.]*\s*)?(\d{1,3}(?:\.\d{3})+|\d{4,7})(?:\s*\/\s*([A-Z]{2}))?/g;
     while ((m = reP.exec(txt))) { const nd = digitos(m[2]); if (nd.length < 4) continue; ocorr(citProc, `${classeBase(m[1]).toLowerCase()}-${nd}`, { cl: m[1].replace(/\s+/g, " "), n: nd, uf: m[3] || "" }, m.index, m[0].length); }
+    // Relator, órgão e datas citados: no trecho entre a citação e a próxima (até 320 caracteres).
+    const inicios = [...citProc.values()].flatMap((c) => c.oc.map((o) => o.i)).sort((a, b) => a - b);
+    for (const c of citProc.values()) {
+      // Cada ocorrência é conferida à parte (a mesma peça pode citar o precedente com dados diferentes).
+      c.cits = []; const vistos = new Set();
+      for (const o of c.oc) {
+        const prox = inicios.find((i) => i > o.i) ?? txt.length;
+        const d = dadosCitados(txt.slice(o.i + o.len, Math.min(prox, o.i + o.len + 320)));
+        const k = JSON.stringify([d.rel && norm(d.rel), d.o, d.dd, d.dj]);
+        if ((d.rel || d.o || d.dd || d.dj) && !vistos.has(k)) { vistos.add(k); c.cits.push({ ...d, pg: o.pg }); }
+      }
+    }
     const citSum = new Map(), sumOutras = new Map();
     const reS = /\bs[úu]mulas?\s+(vinculante\s+)?(?:n[º°o.]*\s*)?(\d+)(?![\d])(?:\s*(?:\/|do|da)\s*(stj|stf|tst|tse))?/gi;
     while ((m = reS.exec(txt))) {
@@ -4214,6 +4359,24 @@
       const outraClasse = [...new Set(linhasN.filter((x) => x[5] !== undefined && x[5].toLowerCase() !== cb).map((x) => x[5]))];
       const noAcervo = mesmaClasse.map((x) => ({ m: nums.m[x[2]], o: nums.o[x[3]], id: x[4] })).sort((a, b) => b.m.localeCompare(a.m));
       const notas = [];
+      // Conferência dos dados citados com os acórdãos do processo no acervo.
+      const regs = mesmaClasse.filter((x) => x[6] !== undefined);
+      let conf = "";
+      if (regs.length && c.cits.length) {
+        const difsTot = new Set();
+        const linhas = c.cits.slice(0, 4).map((ci) => {
+          const partes = [], difs = [];
+          const item = (rot, ok, real) => { partes.push(`${rot} ${ok ? '<span class="conf ok">confere</span>' : `<span class="conf dif">no acervo: ${esc(real)}</span>`}`); };
+          if (ci.rel) { const ok = regs.some((x) => mesmoRelator(ci.rel, x[6])); item(`relator ${esc(ci.rel)}`, ok, [...new Set(regs.map((x) => relatorFmt(x[6])))].join(" / ")); if (!ok) difs.push("relator"); }
+          if (ci.o) { const ok = regs.some((x) => nums.o[x[3]] === ci.o); item(esc(D.orgaos[ci.o] || ci.o), ok, [...new Set(regs.map((x) => D.orgaos[nums.o[x[3]]] || ""))].join(" / ")); if (!ok) difs.push("órgão"); }
+          if (ci.dd) { const ok = regs.some((x) => x[7] === ci.dd); item(`julgado em ${fmtAMD(ci.dd)}`, ok, [...new Set(regs.map((x) => fmtAMD(x[7])))].join(" / ")); if (!ok) difs.push("data do julgamento"); }
+          if (ci.dj) { const ok = regs.some((x) => x[8] === ci.dj); item(`DJe ${fmtAMD(ci.dj)}`, ok, [...new Set(regs.map((x) => fmtAMD(x[8])))].join(" / ")); if (!ok) difs.push("data da publicação"); }
+          difs.forEach((d) => difsTot.add(d));
+          return `<p class="cit-dados"><b>Dados citados${c.cits.length > 1 && ci.pg ? ` (p. ${ci.pg})` : c.cits.length > 1 ? ` (${c.cits.indexOf(ci) + 1}ª citação)` : ""}:</b> ${partes.join("; ")}.</p>`;
+        });
+        conf = linhas.join("") + (difsTot.size ? `<p class="cit-dados nota">Confira: o dado divergente pode se referir a outro julgamento do mesmo processo (agravo, embargos) ou a uma decisão monocrática.</p>` : "");
+        if (difsTot.size) alertas.push(`${c.cl} ${fmtNumProc(c.n)}: ${[...difsTot].join(", ")} citado${difsTot.size > 1 ? "s" : ""} não confere${difsTot.size > 1 ? "m" : ""} com o acervo`);
+      }
       for (const v of vinc) { const x = t.idx.get(`${v.tp}-${v.n}`); notas.push(`${v.lc ? "Leading case" : "Processo vinculado"} ${v.tp === "Controvérsia" ? "à" : "ao"} <button type="button" class="link-acao" data-tema-direto="${esc(v.tp)}|${v.n}">${esc(v.tp)} ${v.n}</button>${x ? ` (${esc(x.sit)})` : ""}`); }
       for (const p of pauta) notas.push(`<b>Em pauta</b> em ${fmtData(p.d)} · ${esc(D.orgaos[p.o] || "")}${p.pet ? " (" + esc(p.pet) + ")" : ""}`);
       if (noAcervo.length) notas.push(`<b>${noAcervo.length} acórdão(s) no acervo</b> neste processo: ${noAcervo.slice(0, 4).map((a) => `<button type="button" class="link-acao" data-vf-ac="${esc(a.id)}|${a.m}|${a.o}|${esc(c.cl)}|${c.n}">${esc(D.orgaos[a.o] || a.o)}, ${fmtMes(a.m)}</button>`).join(" · ")}${noAcervo.length > 4 ? ` · <a class="link-acao" href="#pesquisa?q=${c.n}">ver todos</a>` : ""}`);
@@ -4229,7 +4392,7 @@
         : vinc.length ? `<button type="button" class="link-acao" data-tema-direto="${esc(vinc[0].tp)}|${vinc[0].n}" title="Abrir ${vinc[0].tp === "Controvérsia" ? "a" : "o"} ${esc(vinc[0].tp)} ${vinc[0].n}, a que o processo está vinculado">${rotP}</button>`
         : pub || pauta.length ? `<a class="link-acao" href="#pesquisa?q=${c.n}" title="Ver a publicação no DJEN e a pauta deste processo">${rotP}</a>`
         : `<a class="link-acao" href="${URL_PROC_STJ(c.cl, c.n)}" target="_blank" rel="noopener" title="Consultar o processo no site do STJ">${rotP} ${ico("externo")}</a>`;
-      return `<div class="cit"><span class="cit-tit">${titP}</span>${notas.length ? '<span class="selo pri">Encontrado</span>' : '<span class="selo">Não encontrado nesta base</span>'}<div class="cit-txt">${notas.join("<br>") || `Não consta do acervo do site, das pautas nem dos precedentes qualificados. O acervo reúne apenas os acórdãos colegiados publicados nos Dados Abertos do STJ, sem decisões monocráticas; isso não significa que o processo não exista.${avisoClasse} ${stj}`}</div>${ondeHTML(c)}</div>`;
+      return `<div class="cit"><span class="cit-tit">${titP}</span>${notas.length ? '<span class="selo pri">Encontrado</span>' : '<span class="selo">Não encontrado nesta base</span>'}<div class="cit-txt">${notas.join("<br>") || `Não consta do acervo do site, das pautas nem dos precedentes qualificados. O acervo reúne apenas os acórdãos colegiados publicados nos Dados Abertos do STJ, sem decisões monocráticas; isso não significa que o processo não exista.${avisoClasse} ${stj}`}</div>${conf}${ondeHTML(c)}</div>`;
     });
     const porSum = new Map((sums || []).map((s) => [s.n, s]));
     const linhasSum = [...citSum.values()].map((c) => {
@@ -4257,6 +4420,8 @@
         </div>
         ${alertas.length ? `<p class="aviso" role="alert" style="margin-top:12px">${ico("alerta")}<span><b>Pontos de atenção:</b> ${alertas.map(esc).join("; ")}.</span></p>` : ""}
         ${semAlerta ? `<p class="aviso ok" style="margin-top:12px">${ico("verificar")}<span><b>Nenhum ponto de atenção encontrado</b> nos temas e súmulas do STJ citados. Os precedentes não encontrados nesta base continuam a merecer conferência no site do STJ.</span></p>` : ""}
+        ${nada ? "" : `<p class="nota ressalva" style="margin-top:10px">A verificação é automática: confere a existência, a situação e os dados dos precedentes nesta base, mas não a fidelidade das transcrições, o contexto do julgado nem a sua aplicabilidade ao caso concreto.</p>`}
+        ${pags && VF.semTexto.length ? `<p class="aviso" style="margin-top:12px">${ico("alerta")}<span>${VF.semTexto.length === 1 ? "A página" : "As páginas"} ${VF.semTexto.slice(0, 20).join(", ")}${VF.semTexto.length > 20 ? "…" : ""} não ${VF.semTexto.length === 1 ? "tem" : "têm"} texto (provavelmente digitalizada${VF.semTexto.length === 1 ? "" : "s"}) e não ${VF.semTexto.length === 1 ? "foi verificada" : "foram verificadas"}.</span></p>` : ""}
         ${nada ? `<p class="nota" style="margin-top:12px">Nenhuma citação de tema, processo ou súmula do STJ foi identificada no texto. A verificação reconhece formas como “Tema 1.234”, “REsp 2.231.419/SP” e “Súmula 7/STJ”.</p>` : ""}
         ${citProc.size > LIM ? `<p class="aviso" style="margin-top:12px">${ico("alerta")}<span>O texto cita ${citProc.size} processos; foram conferidos os ${LIM} primeiros.</span></p>` : ""}
       </div>
@@ -4281,7 +4446,8 @@
       for (const c of $$(".cit", card)) {
         const tit = $(".cit-tit", c)?.textContent.trim(), selo = $(".selo", c)?.textContent.trim(), onde = $(".cit-onde summary", c)?.textContent.trim();
         const txtc = $(".cit-txt", c)?.innerText.replace(/consultar no site do STJ/g, "").replace(/\s+/g, " ").trim();
-        L.push(`- ${tit}${selo ? ` [${selo}]` : ""}${onde && onde !== "Ver trecho" ? ` (${onde})` : ""}${txtc ? `: ${txtc}` : ""}`);
+        const dados = $(".cit-dados", c)?.innerText.replace(/\s+/g, " ").trim();
+        L.push(`- ${tit}${selo ? ` [${selo}]` : ""}${onde && onde !== "Ver trecho" ? ` (${onde})` : ""}${txtc ? `: ${txtc}` : ""}${dados ? ` ${dados}` : ""}`);
       }
       if (h) for (const x of $$(".chips .selo", card)) L.push(`- ${x.textContent.trim()}`);
       if (!h) for (const p of $$(".aviso, .stat", card)) L.push(p.innerText.replace(/\s+/g, " ").trim());
@@ -4292,6 +4458,23 @@
   }
 
   // ================================================================= SOBRE
+  // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
+  const VERSAO = "2026.09.26";
+  const NOVIDADES = [
+    ["2026-09-26", [
+      "Menu agrupado em Acompanhar, Pesquisar, Ferramentas e Informações.",
+      "A página inicial abre com um resumo leve; o Meu radar e as leituras pendentes são calculados em seguida.",
+      "Pesquisa: a consulta começa com Enter ou o botão “Pesquisar”; se algum arquivo mensal não puder ser consultado, o site avisa que os resultados podem estar incompletos e oferece nova tentativa.",
+      "Verificar petição: confere relator, órgão julgador e datas citados na peça; o número do recurso abre o próprio julgado; a classe (REsp, AREsp etc.) é considerada; avisa sobre PDF digitalizado e páginas sem texto; mostra o progresso da leitura e permite cancelar.",
+      "Salvos: súmulas podem ser salvas; temas e súmulas salvos avisam quando mudam de situação.",
+      "Aviso quando o navegador não permite guardar os dados; a cópia de segurança passou a ser validada antes da importação.",
+      "Fontes, leitores de PDF e DOCX e fotos servidos pelo próprio site: nenhum recurso de outros endereços é carregado.",
+      "Conferência automática do site a cada atualização, antes da publicação.",
+      "Pesquisa leve ao abrir, índice de números de processo fragmentado e linha de cobertura da base junto dos resultados.",
+      "Selo “Sinal forte de relevância” (antes “Alta relevância”), com os pontos de cada acórdão.",
+      "Cópia de segurança única (salvos, pastas, anotações, Meu radar e preferências).",
+    ]],
+  ];
   async function vSobre(main) {
     const m = D.man;
     const total = m.meses.reduce((s, x) => s + Object.values(x.orgaos).reduce((a, b) => a + b.n, 0), 0);
@@ -4337,7 +4520,10 @@
       <p>A aba Súmulas reúne todos os enunciados do STJ, conferidos diariamente no arquivo oficial de verbetes do Tribunal, com a situação (vigente, cancelada ou com redação alterada), o órgão que aprovou, as datas de julgamento e de publicação e a matéria.</p>
       <h3 style="font-family:var(--ui)">Privacidade e segurança</h3>
       <p>O seu radar (assuntos, processos e OAB), os itens salvos, as pastas e as anotações ficam apenas no seu navegador e se perdem se os dados do navegador forem apagados; use a cópia de segurança (em Salvos ou no Meu radar) para guardá-los ou levá-los a outro aparelho. O link do Meu radar leva os termos, processos e OABs acompanhados: quem o receber poderá vê-los.</p>
-      <p>A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor. Os leitores de PDF (PDF.js) e de DOCX (Mammoth) ficam hospedados no próprio site, em versões fixas conferidas pelo hash, e a política de segurança da página impede que ela carregue código de outros endereços ou envie dados para eles.</p>
+      <p>A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor. Os leitores de PDF (PDF.js) e de DOCX (Mammoth) ficam hospedados no próprio site, em versões fixas conferidas pelo hash, e a política de segurança da página impede que ela carregue código, fontes ou imagens de outros endereços ou envie dados para eles.</p>
+      <h3 style="font-family:var(--ui)" id="sobre-novidades">Novidades</h3>
+      <p class="nota">Versão ${VERSAO}.</p>
+      ${NOVIDADES.map(([d, l]) => `<p><b>${fmtData(d)}</b></p><ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}
       <h3 style="font-family:var(--ui)" id="sobre-fontes">Situação da base</h3>
       <p>Última execução da rotina: ${new Date(m.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. A rotina roda duas vezes por dia; cada fonte tem o próprio ritmo de publicação no STJ.</p>
       ${tabelaFontes(m)}
@@ -4346,7 +4532,7 @@
       <h3 style="font-family:var(--ui)">Cautelas</h3>
       <p>O texto das ementas é o oficial; apenas a verbetação, que o STJ publica em caixa alta, é exibida em letras minúsculas para facilitar a leitura, e o botão de copiar traz o texto original. Antes de citar qualquer julgado, confira o inteiro teor no site do STJ. Os processos em segredo de justiça não constam da base aberta. Este é um projeto independente, sem vínculo com o STJ.</p>
     </div>`;
-    if (lerHash().p.get("s") === "fontes") requestAnimationFrame(() => $("#sobre-fontes")?.scrollIntoView({ block: "start" }));
+    const alvoS = lerHash().p.get("s"); if (alvoS === "fontes" || alvoS === "novidades") requestAnimationFrame(() => $(`#sobre-${alvoS}`)?.scrollIntoView({ block: "start" }));
   }
 
   // Situação de cada fonte: data do dado mais recente e da última verificação bem-sucedida.
@@ -4404,12 +4590,20 @@
     const defas = situacaoFontes(D.man).filter((x) => x.defasada);
     $("#lat-atualizado").innerHTML = `Verificado em ${esc(q)}${defas.length ? `<a class="lat-defas" href="#sobre?s=fontes" title="${esc(defas.map((x) => x.nome).join(", "))}">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a class="lat-fontes" href="#sobre?s=fontes">ver cada fonte</a>`}`;
     // No celular a barra lateral não aparece: a situação da base vai também para o rodapé.
-    $("#rod-atualizado").innerHTML = `Base verificada em ${esc(q)} · ${defas.length ? `<a class="defas" href="#sobre?s=fontes">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a href="#sobre?s=fontes">situação de cada fonte</a>`}.`;
+    $("#rod-atualizado").innerHTML = `Versão ${VERSAO} (<a href="#sobre?s=novidades">novidades</a>) · Base verificada em ${esc(q)} · ${defas.length ? `<a class="defas" href="#sobre?s=fontes">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a href="#sobre?s=fontes">situação de cada fonte</a>`}.`;
     window.addEventListener("hashchange", rotear);
     await rotear();
-    atualizarContadorRadar();
-    atualizarContadorFeed();
     atualizarContadorSalvos();
+    // Contadores do menu (radar e leituras) dependem das bases completas: ficam para depois da tela aberta.
+    const depois = window.requestIdleCallback || ((f) => setTimeout(f, 600));
+    depois(() => {
+      atualizarContadorRadar(); atualizarContadorFeed();
+      conferirMudancasSalvos().then(({ novas }) => {
+        if (!novas.length) return;
+        const x = P.salvos[novas[0]];
+        toast(novas.length === 1 ? `${tituloSalvo(x, novas[0])} mudou de situação: agora “${x.mudou.para}”.` : `${novas.length} temas ou súmulas salvos mudaram de situação.`, { rot: "Ver", fn: () => { SV.mud = true; location.hash = "#salvos"; } });
+      }).catch(() => {});
+    }, { timeout: 2500 });
   }
   function irParaBusca() {
     const campo = $("#view input[type=search]");

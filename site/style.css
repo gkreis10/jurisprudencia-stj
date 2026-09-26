@@ -1,3 +1,6 @@
+/* Fontes hospedadas no próprio site (Inter e Source Serif 4, SIL Open Font License). */
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("vendor/inter-latin-wght-normal.woff2") format("woff2"); }
+@font-face { font-family: "Source Serif 4"; font-style: normal; font-weight: 200 900; font-display: swap; src: url("vendor/source-serif-4-latin-opsz-normal.woff2") format("woff2"); }
 /* Radar STJ — estilos
    Movimento: curvas fortes de ease-out, durações curtas, só transform/opacity,
    hover restrito a ponteiros finos, respeito a prefers-reduced-motion. */
@@ -1234,3 +1237,30 @@ button.salvo-nota:hover { background: var(--sup-3); }
   .chip { min-height: 40px; }
 }
 #topo-titulo:focus { outline: none; }
+
+/* Pesquisa: arquivos que não puderam ser consultados */
+.aviso-falha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: var(--alta-bg); color: var(--alta); font-weight: 600; font-size: 13px; }
+.aviso-falha svg { width: 16px; height: 16px; }
+
+/* Verificar petição: conferência dos dados citados */
+.cit-dados { grid-column: 1 / -1; margin: 6px 0 0; font-size: 13px; color: var(--tx-2); }
+.conf { font-weight: 600; border-radius: 6px; padding: 0 5px; white-space: nowrap; }
+.conf.ok { color: #1a7f4b; background: rgba(26, 127, 75, .1); }
+.conf.dif { color: var(--alta); background: var(--alta-bg); white-space: normal; }
+.ressalva { font-size: 12.5px; color: var(--tx-3); }
+
+/* Salvos: tema ou súmula que mudou de situação */
+.sv-mudou { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 6px; padding: 8px 12px; border-radius: 10px; background: var(--rel-bg); color: var(--rel); font-size: 13px; }
+.sv-mudou svg { width: 16px; height: 16px; flex: none; }
+.sv-mudou span { flex: 1; min-width: 200px; }
+
+/* Aviso persistente: o navegador não permitiu guardar */
+.aviso-armaz { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 80; width: min(760px, calc(100% - 32px)); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px; border-radius: 12px; background: var(--alta-bg); color: var(--alta); border: 1px solid currentColor; box-shadow: var(--sombra-1); font-size: 13.5px; }
+.aviso-armaz span { flex: 1; min-width: 220px; }
+.aviso-armaz .btn-ico { color: inherit; font-size: 20px; }
+
+/* Menu agrupado */
+.menu-grupo { margin: 12px 12px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--nav-tx-2); }
+.menu a { padding-top: 8px; padding-bottom: 8px; }
+.mais-grupo { margin: 16px 2px 8px; font: 700 11px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--tx-3); }
+.mais-grupo:first-child { margin-top: 0; }
