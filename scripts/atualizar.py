@@ -1250,6 +1250,12 @@ def gerar_destaques(meses_disp: list[str]) -> dict:
 # --------------------------------------------------------------------------
 # 6a. Índice de números de processo (todo o acervo), para a busca por número.
 # --------------------------------------------------------------------------
+def classe_base(cl) -> str:
+    """Classe do recurso principal: "AgInt nos EDcl no AREsp" -> "AREsp" (REsp e AREsp têm numerações próprias)."""
+    partes = re.split(r"\s+(?:no|na|nos|nas|em)\s+", str(cl or "").strip())
+    return (partes[-1].split() or [""])[0]
+
+
 def _frag(num: str) -> str:
     """Fragmento do índice de números: os dois últimos dígitos."""
     return num[-2:].rjust(2, "0")
@@ -1270,7 +1276,7 @@ def gerar_numeros(meses_disp: list[str]) -> dict:
                 if not n:
                     continue
                 reg = re.sub(r"\D", "", str(r.get("reg") or ""))
-                por_n.setdefault(_frag(n), []).append([n, reg, mi, oi, r.get("id")])
+                por_n.setdefault(_frag(n), []).append([n, reg, mi, oi, r.get("id"), classe_base(r.get("cl"))])
                 if reg:
                     por_r.setdefault(_frag(reg), []).append([reg, n])
                 total += 1
