@@ -70,6 +70,18 @@ jobs:
       - name: Empacotar o site
         run: python scripts/empacotar.py
 
+      # Conferência automática do site montado: dados, todas as seções, uma pesquisa, uma busca
+      # por número e uma verificação de petição. Se falhar, esta execução não publica nada e o
+      # site continua na versão anterior (o GitHub avisa por e-mail).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Conferir o site antes de publicar
+        run: |
+          npm install --no-save --no-audit --no-fund --silent playwright-core@1.55.0
+          node scripts/teste-site.mjs _site
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
