@@ -3939,7 +3939,7 @@
       <h3 style="font-family:var(--ui)">Súmulas e temas citados</h3>
       <p>Quando a ementa aplica uma súmula do STJ ou um tema repetitivo, o cartão mostra o atalho (“Cita Súmula 7 · Tema 1.137”), que abre o enunciado ou a tese sem sair da tela.</p>
       <h3 style="font-family:var(--ui)">Jurisprudência em Teses</h3>
-      <p>Na aba Súmulas e teses, a Jurisprudência em Teses reúne todas as edições publicadas pelo STJ, cada uma dedicada a um assunto, com as teses consolidadas e os precedentes que as sustentam (até oito acórdãos por tese, com a indicação do total na edição oficial). O STJ não publica arquivo aberto das edições; por isso as edições novas são incluídas periodicamente, e a data da última inclusão aparece em “Situação da base”. É possível buscar por palavras, filtrar por matéria, período de disponibilização ou número da edição e ordenar por edição, assunto, matéria ou número de precedentes.</p>
+      <p>Na aba Súmulas e teses, a Jurisprudência em Teses reúne todas as edições publicadas pelo STJ, cada uma dedicada a um assunto, com as teses consolidadas e os precedentes que as sustentam (até oito acórdãos por tese, com a indicação do total na edição oficial). O STJ não publica arquivo aberto das edições; por isso as edições novas e as atualizadas são coletadas pelo navegador uma vez por semana, às segundas-feiras, e a data da última coleta aparece em “Situação da base”. É possível buscar por palavras, filtrar por matéria, período de disponibilização ou número da edição e ordenar por edição, assunto, matéria ou número de precedentes.</p>
       <h3 style="font-family:var(--ui)">Súmulas</h3>
       <p>A aba Súmulas reúne todos os enunciados do STJ, conferidos diariamente no arquivo oficial de verbetes do Tribunal, com a situação (vigente, cancelada ou com redação alterada), o órgão que aprovou, as datas de julgamento e de publicação e a matéria.</p>
       <h3 style="font-family:var(--ui)">Privacidade</h3>
@@ -3968,7 +3968,7 @@
       { nome: "Precedentes qualificados", dado: "", verif: m.temas?.em, auto: true },
       { nome: "Informativo de Jurisprudência", dado: m.informativos?.ultimaData, rot: m.informativos?.ultima ? `edição ${m.informativos.ultima}, de` : "", verif: m.informativos?.verificadoEm, lim: 30, auto: true },
       { nome: "Súmulas", dado: "", rot: "", extra: m.sumulas?.ultima ? `até a Súmula ${m.sumulas.ultima}` : "", verif: m.sumulas?.verificadoEm, auto: true },
-      { nome: "Jurisprudência em Teses", dado: m.teses?.ultimaData, rot: m.teses?.ultima ? `edição ${m.teses.ultima}, de` : "", verif: m.teses?.coletadoEm, lim: 75, auto: false },
+      { nome: "Jurisprudência em Teses", dado: m.teses?.ultimaData, rot: m.teses?.ultima ? `edição ${m.teses.ultima}, de` : "", verif: m.teses?.coletadoEm, lim: 14, auto: false },
       { nome: "Composição do Tribunal", dado: "", verif: m.composicao?.em, auto: true },
     ];
     for (const x of L) {
