@@ -1297,6 +1297,29 @@ def _chaves_busca(lista: list) -> list[str]:
     return sorted(chaves)
 
 
+def _facetas_busca(lista: list) -> dict:
+    """Relatores, classes e matérias presentes num arquivo mensal (para os filtros da Pesquisa)."""
+    rel, cls, mat = {}, {}, set()
+    for r in lista:
+        if r.get("rel"):
+            k = _norm_js(r["rel"])
+            rel.setdefault(k, [r["rel"], 0])[1] += 1
+        if r.get("cl"):
+            k = _norm_js(r["cl"])
+            cls.setdefault(k, [r["cl"], 0])[1] += 1
+        mat.update(r.get("ar") or [])
+        mat.update(r.get("sa") or [])
+    return {"r": rel, "c": cls, "m": sorted(mat)}
+
+
+def _posting(ids: list[int]) -> str:
+    ids, out, ant_id = sorted(ids), [], 0
+    for x in ids:
+        out.append(_b36(x - ant_id))
+        ant_id = x
+    return ".".join(out)
+
+
 def _b36(n: int) -> str:
     dig = "0123456789abcdefghijklmnopqrstuvwxyz"
     out = ""
@@ -1312,6 +1335,9 @@ def gerar_indice_busca(meses_disp: list[str]) -> dict:
     pasta_cache = CACHE / "busca"
     pasta_cache.mkdir(parents=True, exist_ok=True)
     inv: dict[str, list[int]] = {}
+    facR: dict[str, list] = {}
+    facC: dict[str, list] = {}
+    facM: dict[str, list[int]] = {}
     n_arq, lidos = 0, 0
     for mes in sorted(meses_disp):
         a, m = int(mes[:4]), int(mes[5:7])
@@ -1330,15 +1356,24 @@ def gerar_indice_busca(meses_disp: list[str]) -> dict:
                 continue
             bruto = arq.read_bytes()
             h = hashlib.md5(bruto).hexdigest()
-            if (ant.get(slug) or {}).get("h") == h:
-                chaves = ant[slug]["k"]
+            velho = ant.get(slug) or {}
+            if velho.get("h") == h and "f" in velho:
+                chaves, fac = velho["k"], velho["f"]
             else:
-                chaves = _chaves_busca(json.loads(bruto))
+                lista = json.loads(bruto)
+                chaves = velho["k"] if velho.get("h") == h else _chaves_busca(lista)
+                fac = _facetas_busca(lista)
                 mudou, lidos = True, lidos + 1
-            novo[slug] = {"h": h, "k": chaves}
+            novo[slug] = {"h": h, "k": chaves, "f": fac}
             sid = base_id + i
             for k in chaves:
                 inv.setdefault(k, []).append(sid)
+            for k, (nome, n) in fac["r"].items():
+                e = facR.setdefault(k, [nome, 0, []]); e[1] += n; e[2].append(sid)
+            for k, (nome, n) in fac["c"].items():
+                e = facC.setdefault(k, [nome, 0, []]); e[1] += n; e[2].append(sid)
+            for k in fac["m"]:
+                facM.setdefault(k, []).append(sid)
             n_arq += 1
         if mudou or set(novo) != set(ant):
             arq_cache.write_bytes(gzip.compress(json.dumps(novo, ensure_ascii=False, separators=(",", ":")).encode(), compresslevel=6, mtime=0))
@@ -1376,13 +1411,17 @@ def gerar_indice_busca(meses_disp: list[str]) -> dict:
     pasta = SITE_DATA / "busca"
     pasta.mkdir(exist_ok=True)
     for f in pasta.glob("*.json"):
-        if f.stem not in por_pref:
+        if f.stem not in por_pref and not f.stem.startswith("_"):
             f.unlink()
     total = 0
     for pref, d in por_pref.items():
         total += gravar_json(pasta / f"{pref}.json", d) or 0
+    # Filtros de relator, classe e matéria: em que arquivos mensais cada valor aparece.
+    gravar_json(pasta / "_r.json", {k: [v[0], v[1], _posting(v[2])] for k, v in facR.items()})
+    gravar_json(pasta / "_c.json", {k: [v[0], v[1], _posting(v[2])] for k, v in facC.items()})
+    gravar_json(pasta / "_m.json", {k: _posting(v) for k, v in facM.items()})
     log(f"Índice de busca: {len(inv)} palavras em {n_arq} arquivos ({lidos} relidos; {frequentes} frequentes); {len(por_pref)} partes.")
-    return {"v": BUSCA_VERSAO, "base": BUSCA_BASE, "orgs": orgs, "de": min(meses_disp, default=""), "ate": max(meses_disp, default=""), "arquivos": n_arq, "palavras": len(inv), "partes": sorted(por_pref)}
+    return {"v": BUSCA_VERSAO, "base": BUSCA_BASE, "orgs": orgs, "de": min(meses_disp, default=""), "ate": max(meses_disp, default=""), "arquivos": n_arq, "palavras": len(inv), "partes": sorted(por_pref), "facetas": 1}
 
 
 # --------------------------------------------------------------------------
@@ -1431,6 +1470,33 @@ def _juntar(linhas: list[str]) -> str:
         else:
             out += " " + t
     return out
+
+
+SUMULAS_RAMOS_PDF = "https://scon.stj.jus.br/docs_internet/jurisprudencia/tematica/download/SU/RamosDoDireito/SumulasSTJ_Ramos.pdf"
+
+
+def _ramos_sumulas_pdf() -> dict[int, str]:
+    """Ramo e assunto de cada súmula, lidos do sumário do PDF oficial organizado por ramo do direito."""
+    import pdfplumber
+    bruto = baixar(SUMULAS_RAMOS_PDF, tentativas=2, timeout=300)
+    if not bruto.startswith(b"%PDF"):
+        raise RuntimeError("resposta sem PDF")
+    mapa, atual = {}, None
+    with pdfplumber.open(io.BytesIO(bruto)) as pdf:
+        for pg in pdf.pages[:80]:  # o sumário ocupa as primeiras páginas
+            achou = False
+            for ln in (pg.extract_text() or "").split("\n"):
+                ln = ln.strip()
+                s_ = re.match(r"^S[úu]mula (\d+)\s+\d+$", ln)
+                r_ = re.match(r"^([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇ ,/()-]+ - .+?)\s+\d+$", ln)
+                if s_ and atual:
+                    mapa.setdefault(int(s_.group(1)), atual)
+                    achou = True
+                elif r_:
+                    atual, achou = r_.group(1).strip(), True
+            if not achou and mapa:
+                break
+    return mapa
 
 
 def _coletar_sumulas_pdf() -> dict[int, dict]:
@@ -1488,6 +1554,23 @@ def atualizar_sumulas() -> dict:
         log(f"Súmulas: PDF oficial conferido ({len(pdf)} enunciados; {novas} nova(s), {canceladas} cancelamento(s)).")
     except Exception as e:  # noqa: BLE001
         log(f"Súmulas: PDF oficial indisponível ({e}); usando a extração de {coletado[:10] or 'arquivo local'}.")
+    # Súmula nova ainda sem o ramo do direito atribuído pelo STJ: consulta o PDF das súmulas
+    # organizadas por ramo (arquivo estático, grande) só nesse caso, e guarda o resultado.
+    sem_ramo = [n for n, x in por_n.items() if not (x.get("ramo") or "").strip()]
+    if sem_ramo:
+        try:
+            ramos = _ramos_sumulas_pdf()
+            achados = 0
+            for n in sem_ramo:
+                if ramos.get(n):
+                    por_n[n]["ramo"] = ramos[n]
+                    ext[str(n)] = por_n[n]
+                    achados += 1
+            if achados:
+                gravar_json(SUMULAS_NOVAS, {"em": coletado, "sumulas": ext})
+            log(f"Súmulas: ramo do direito obtido para {achados} de {len(sem_ramo)} enunciado(s) sem classificação.")
+        except Exception as e:  # noqa: BLE001
+            log(f"Súmulas: PDF por ramo do direito indisponível ({e}); a matéria fica deduzida pelo texto.")
     brutas = sorted(por_n.values(), key=lambda x: -(x.get("n") or 0))
     lista = []
     for x in brutas:
