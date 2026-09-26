@@ -104,10 +104,12 @@ console.log("3. Pesquisa");
 const info = () => page.$eval("#ac-info", (e) => e.textContent);
 try {
   await page.goto(BASE + "#pesquisa"); await page.waitForFunction(() => /recentemente|resultado/.test(document.querySelector("#ac-info")?.textContent || ""), null, { timeout: 30000 });
+  // Pesquisa textual nos últimos 3 meses (em todo o acervo, um termo comum levaria minutos).
+  await page.goto(BASE + "#pesquisa?p=u3"); await page.waitForSelector("#ac-q");
   await page.fill("#ac-q", "prescrição"); await page.press("#ac-q", "Enter");
   await page.waitForFunction(() => /resultado|Exibindo/.test(document.querySelector("#ac-info")?.textContent || ""), null, { timeout: 180000 });
   const t = await info(); const n = +(/([\d.]+)\s+resultado|Exibindo os ([\d.]+)/.exec(t)?.slice(1).find(Boolean) || "0").replace(/\./g, "");
-  if (!n) falha(`pesquisa "prescrição" sem resultados (${t.slice(0, 120)})`); else ok(`pesquisa "prescrição": ${n} resultados`);
+  if (!n) falha(`pesquisa "prescrição" sem resultados (${t.slice(0, 120)})`); else ok(`pesquisa "prescrição" (3 meses): ${n} resultados`);
   if (await page.$(".aviso-falha")) falha("pesquisa com arquivos não consultados");
   const r0 = recentes.find((x) => x.cl && x.n);
   if (r0) {
