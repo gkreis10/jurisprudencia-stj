@@ -5,7 +5,8 @@ Fontes oficiais do STJ (www.stj.jus.br):
   - Ministros em atividade e currículos (verMinistrosSTJ / verCurriculoMinistro);
   - Contatos das unidades (contatosUnidades.json).
 Quando o portal do STJ recusa o acesso automatizado, usa a última extração guardada em
-fontes/composicao/ (feita pelo navegador). Fotos: Wikimedia Commons, via Wikidata, com crédito.
+fontes/composicao/ (feita pelo navegador). Fotos: Wikimedia Commons, via Wikidata, com crédito,
+hospedadas como miniaturas em site/img/ministros.
 """
 from __future__ import annotations
 
@@ -330,6 +331,29 @@ def foto_wikidata(nomes: list[str], cache: dict) -> dict | None:
     return res
 
 
+FOTOS_SITE = RAIZ / "site" / "img" / "ministros"
+
+
+def foto_local(foto: dict | None) -> dict | None:
+    """Usa a miniatura hospedada no próprio site (site/img/ministros); baixa a que faltar."""
+    if not foto or not foto.get("pagina"):
+        return foto
+    import hashlib
+    nome = hashlib.md5(foto["pagina"].encode()).hexdigest()[:12] + ".jpg"
+    arq = FOTOS_SITE / nome
+    if not arq.exists():
+        try:
+            bruto = baixar(re.sub(r"\?width=\d+", "", foto["url"]) + "?width=330", 60)
+            if bruto[:3] != b"\xff\xd8\xff" or len(bruto) > 400_000:
+                raise ValueError("resposta sem imagem JPEG")
+            FOTOS_SITE.mkdir(parents=True, exist_ok=True)
+            arq.write_bytes(bruto)
+        except Exception as e:  # noqa: BLE001
+            log(f"  miniatura de {foto['pagina'].rsplit(':', 1)[-1]}: {e}")
+            return foto  # mantém o endereço original do Wikimedia Commons
+    return {**foto, "url": f"img/ministros/{nome}", "orig": foto["url"]}
+
+
 # ------------------------------------------------------------------ principal
 def atualizar_composicao() -> dict:
     FONTE.mkdir(parents=True, exist_ok=True)
@@ -414,7 +438,7 @@ def atualizar_composicao() -> dict:
         cod = fm["cod"] if fm else None
         cv = (fonte.get("curriculos") or {}).get(cod, "") if cod else ""
         nome_completo = re.split(r"\s+-\s+", fm["nome"])[0] if fm else nome
-        foto = foto_wikidata([nome_completo, curto or nome, nome], cache) if b["tipo"] == "ministro" else None
+        foto = foto_local(foto_wikidata([nome_completo, curto or nome, nome], cache)) if b["tipo"] == "ministro" else None
         emails = [re.sub(r"\s+", " ", e).strip() for e in (gab.get("EMAIL_INSTITUCIONAL") or "").split("\n") if e.strip()] if gab else []
         ministros.append({k: v for k, v in {
             "genero": ("f" if re.match(r"Gabinete da ", gab.get("UNIDADE", "")) else "m") if gab else None,

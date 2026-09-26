@@ -1265,11 +1265,134 @@ def gerar_numeros(meses_disp: list[str]) -> int:
 
 
 # --------------------------------------------------------------------------
-# 7. Súmulas do STJ (página oficial SCON). O site oficial costuma recusar
-#    acessos automatizados; nesse caso vale a última extração guardada no
-#    repositório (site/sumulas-fonte.json).
+# 6b. Índice da pesquisa por palavras: para cada palavra (sem acento, como
+#     aparece no texto), os arquivos mensais (mês e órgão) em que ela aparece. Assim o
+#     navegador baixa só os arquivos que podem conter o termo pesquisado. As
+#     palavras presentes em boa parte do acervo ficam marcadas como "*" (não
+#     reduzem a busca). A leitura de cada mês é guardada em cache e só se
+#     refaz quando o arquivo muda.
 # --------------------------------------------------------------------------
-SUMULAS_FONTE = RAIZ / "site" / "sumulas-fonte.json"
+BUSCA_VERSAO = 2
+BUSCA_BASE = 2000
+BUSCA_FREQ = 0.5
+_RE_TOK = re.compile(r"[a-z0-9]+")
+
+
+def _norm_js(s: str) -> str:
+    """Mesma normalização do site: decompõe, retira os acentos e passa a minúsculas."""
+    return re.sub(r"[\u0300-\u036f]", "", unicodedata.normalize("NFD", s or "")).lower()
+
+
+def _chaves_busca(lista: list) -> list[str]:
+    vistos, chaves = set(), set()
+    for r in lista:
+        partes = [r.get(k) for k in ("em", "tese", "tj", "tema", "notas", "info")] + [" ".join(map(str, r.get("leg") or []))]
+        txt = _norm_js("\n".join(",".join(map(str, x)) if isinstance(x, list) else str(x or "") for x in partes))
+        for w in _RE_TOK.findall(txt):
+            if w in vistos:
+                continue
+            vistos.add(w)
+            if len(w) >= 3 and not any(c.isdigit() for c in w):
+                chaves.add(w)
+    return sorted(chaves)
+
+
+def _b36(n: int) -> str:
+    dig = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = dig[r] + out
+        if not n:
+            return out
+
+
+def gerar_indice_busca(meses_disp: list[str]) -> dict:
+    orgs = list(ORGAOS)
+    pasta_cache = CACHE / "busca"
+    pasta_cache.mkdir(parents=True, exist_ok=True)
+    inv: dict[str, list[int]] = {}
+    n_arq, lidos = 0, 0
+    for mes in sorted(meses_disp):
+        a, m = int(mes[:4]), int(mes[5:7])
+        base_id = ((a - BUSCA_BASE) * 12 + m - 1) * len(orgs)
+        arq_cache = pasta_cache / f"{mes}.json.gz"
+        try:
+            ant = json.loads(gzip.decompress(arq_cache.read_bytes())) if arq_cache.exists() else {}
+        except Exception:  # noqa: BLE001
+            ant = {}
+        if ant.get("_v") != BUSCA_VERSAO:
+            ant = {}
+        novo, mudou = {"_v": BUSCA_VERSAO}, False
+        for i, slug in enumerate(orgs):
+            arq = SITE_DATA / "acordaos" / mes / f"{slug}.json"
+            if not arq.exists():
+                continue
+            bruto = arq.read_bytes()
+            h = hashlib.md5(bruto).hexdigest()
+            if (ant.get(slug) or {}).get("h") == h:
+                chaves = ant[slug]["k"]
+            else:
+                chaves = _chaves_busca(json.loads(bruto))
+                mudou, lidos = True, lidos + 1
+            novo[slug] = {"h": h, "k": chaves}
+            sid = base_id + i
+            for k in chaves:
+                inv.setdefault(k, []).append(sid)
+            n_arq += 1
+        if mudou or set(novo) != set(ant):
+            arq_cache.write_bytes(gzip.compress(json.dumps(novo, ensure_ascii=False, separators=(",", ":")).encode(), compresslevel=6, mtime=0))
+    # Apaga o cache de meses que saíram do acervo.
+    for f in pasta_cache.glob("*.json.gz"):
+        if f.name[:7] not in meses_disp:
+            f.unlink()
+    limite = max(1, int(n_arq * BUSCA_FREQ))
+    por_pref: dict[str, dict] = {}
+    frequentes = 0
+    for k, ids in inv.items():
+        if len(ids) > limite:
+            v, frequentes = "*", frequentes + 1
+        else:
+            ids.sort()
+            v, ant_id = [], 0
+            for x in ids:
+                v.append(_b36(x - ant_id))
+                ant_id = x
+            v = ".".join(v)
+        por_pref.setdefault(k[:2], {})[k] = v
+    # Partes grandes são divididas pela letra seguinte, para o navegador baixar pouco por palavra.
+    fila, final = list(por_pref.items()), {}
+    while fila:
+        pref, d = fila.pop()
+        tam = sum(len(k) + len(v) + 6 for k, v in d.items())
+        if tam <= 120_000 or len(pref) >= 5:
+            final[pref] = d
+            continue
+        sub: dict[str, dict] = {}
+        for k, v in d.items():
+            sub.setdefault(k[: len(pref) + 1] if len(k) > len(pref) else pref + "_", {})[k] = v
+        fila.extend(sub.items())
+    por_pref = final
+    pasta = SITE_DATA / "busca"
+    pasta.mkdir(exist_ok=True)
+    for f in pasta.glob("*.json"):
+        if f.stem not in por_pref:
+            f.unlink()
+    total = 0
+    for pref, d in por_pref.items():
+        total += gravar_json(pasta / f"{pref}.json", d) or 0
+    log(f"Índice de busca: {len(inv)} palavras em {n_arq} arquivos ({lidos} relidos; {frequentes} frequentes); {len(por_pref)} partes.")
+    return {"v": BUSCA_VERSAO, "base": BUSCA_BASE, "orgs": orgs, "de": min(meses_disp, default=""), "ate": max(meses_disp, default=""), "arquivos": n_arq, "palavras": len(inv), "partes": sorted(por_pref)}
+
+
+# --------------------------------------------------------------------------
+# 7. Súmulas do STJ. Base: extração guardada em fontes/sumulas-fonte.json (com
+#    o ramo do direito de cada enunciado). A cada execução, confere o PDF
+#    oficial de verbetes (arquivo estático do SCON) e acrescenta enunciados
+#    novos e cancelamentos, guardados em .cache/sumulas-novas.json.
+# --------------------------------------------------------------------------
+SUMULAS_FONTE = RAIZ / "fontes" / "sumulas-fonte.json"
+SUMULAS_NOVAS = CACHE / "sumulas-novas.json"
 RAMO_AREA = [
     ("proc-penal", r"processual penal"), ("proc-civil", r"processual civil"), ("penal", r"penal"),
     ("tributario", r"tributario"), ("administrativo", r"administrativo"), ("bancario", r"bancario"),
@@ -1281,34 +1404,91 @@ RE_CIT_SUM = re.compile(r"\((?:S[ÚU]MULA \d+, )?(CORTE ESPECIAL|PRIMEIRA SE[ÇC
 ORG_SUM = {"CORTE ESPECIAL": "Corte Especial", "PRIMEIRA SECAO": "Primeira Seção", "SEGUNDA SECAO": "Segunda Seção", "TERCEIRA SECAO": "Terceira Seção"}
 
 
-def _coletar_sumulas_online() -> list[dict]:
+SUMULAS_PDF = "https://scon.stj.jus.br/docs_internet/jurisprudencia/tematica/download/SU/Verbetes/VerbetesSTJ.pdf"
+
+
+def _pdf_linhas(conteudo: bytes) -> list[tuple[float, str]]:
+    """Linhas de texto de um PDF, com a margem esquerda de cada uma."""
+    import pdfplumber  # dependência instalada no fluxo do GitHub Actions
     out = []
-    for i in range(1, 1001, 100):
-        url = f"https://scon.stj.jus.br/SCON/sumstj/toc.jsp?b=SUMU&numDocsPagina=100&l=100&i={i}&ordenacao=%40NUM&p=false&h=true&tipo_visualizacao="
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            html = r.read().decode(r.headers.get_content_charset() or "latin-1", "replace")
-        blocos = re.findall(r'class="numeroSumula">\s*(\d+)\s*<.*?class="ramoSumula">(.*?)</span>(.*?)</a>', html, re.S)
-        for n, ramo, txt in blocos:
-            limpo = lambda x: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", x)).strip()
-            out.append({"n": int(n), "ramo": limpo(ramo), "txt": limpo(txt)})
-        if len(blocos) < 100:
-            break
+    with pdfplumber.open(io.BytesIO(conteudo)) as pdf:
+        for pg in pdf.pages:
+            for ln in pg.extract_text_lines():
+                t = (ln.get("text") or "").strip()
+                if t:
+                    out.append((float(ln.get("x0") or 0), t))
     return out
+
+
+def _juntar(linhas: list[str]) -> str:
+    """Une linhas quebradas pela diagramação, preservando palavras hifenizadas."""
+    out = ""
+    for t in linhas:
+        if not out:
+            out = t
+        elif re.search(r"[A-Za-zÀ-ÿ]-$", out) and t[:1].islower():
+            out += t
+        else:
+            out += " " + t
+    return out
+
+
+def _coletar_sumulas_pdf() -> dict[int, dict]:
+    """Enunciados publicados no PDF oficial de verbetes (arquivo estático do SCON)."""
+    bruto = baixar(SUMULAS_PDF, tentativas=2, timeout=120)
+    if not bruto.startswith(b"%PDF"):
+        raise RuntimeError("resposta sem PDF")
+    out, atual = {}, None
+    for _, t in _pdf_linhas(bruto):
+        m = re.match(r"^\S?\s*S[ÚU]MULA (\d+)$", t)
+        if m:
+            atual = {"n": int(m.group(1)), "l": [], "canc": False}
+            out[atual["n"]] = atual
+            continue
+        if atual is None or t == "VEJA MAIS" or re.match(r"^scon\.stj\.jus\.br/", t) or t.startswith("Enunciados das") or t == "Súmulas do STJ":
+            continue
+        if t in ("(SÚMULA CANCELADA)", "(SÚMULA ALTERADA)"):
+            atual["canc"] = atual["canc"] or "CANCELADA" in t
+            continue
+        t = re.sub(r"^\(S[ÚU]MULA (?:ALTERADA|CANCELADA)\)\s*", "", t)
+        atual["l"].append(t)
+    return {n: {"n": n, "txt": re.sub(r"\s+", " ", _juntar(x["l"])).strip(), "canc": x["canc"]} for n, x in out.items() if x["l"]}
 
 
 def atualizar_sumulas() -> dict:
     fonte = ler_json(SUMULAS_FONTE, {})
-    brutas = fonte.get("sumulas", [])
+    brutas = [dict(x) for x in fonte.get("sumulas", [])]
     coletado = fonte.get("coletadoEm", "")
+    # Enunciados obtidos do PDF em execuções anteriores (guardados no cache do Actions).
+    extras = ler_json(SUMULAS_NOVAS, {})
+    ext = extras.get("sumulas", {}) if isinstance(extras, dict) else {}
+    por_n = {x.get("n"): x for x in brutas}
+    for k, x in ext.items():
+        por_n[int(k)] = {**x, "ramo": (por_n.get(int(k)) or {}).get("ramo") or x.get("ramo", "")}
+    coletado = max(coletado, extras.get("em", "") if isinstance(extras, dict) else "")
+    verificado = ""
     try:
-        novas = _coletar_sumulas_online()
-        confiaveis = sum(1 for x in novas if "julgad" in (x.get("txt") or "") or "DJ" in (x.get("txt") or ""))
-        if novas and len(novas) >= len(brutas) and confiaveis >= 0.9 * len(novas):
-            brutas, coletado = novas, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
-            log(f"Súmulas: {len(novas)} lidas da página oficial.")
+        pdf = _coletar_sumulas_pdf()
+        if len(pdf) < 0.9 * max(len(por_n), 1):
+            raise RuntimeError(f"apenas {len(pdf)} enunciados lidos")
+        novas, canceladas = 0, 0
+        for n, x in pdf.items():
+            ja = por_n.get(n)
+            if not ja:
+                por_n[n] = ext[str(n)] = {"n": n, "ramo": "", "txt": x["txt"]}
+                novas += 1
+            elif x["canc"] and "cancel" not in sem_acento(ja.get("txt") or "").lower():
+                ja["txt"] = x["txt"]
+                ext[str(n)] = ja
+                canceladas += 1
+        verificado = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        if novas or canceladas:
+            coletado = verificado
+            gravar_json(SUMULAS_NOVAS, {"em": verificado, "sumulas": ext})
+        log(f"Súmulas: PDF oficial conferido ({len(pdf)} enunciados; {novas} nova(s), {canceladas} cancelamento(s)).")
     except Exception as e:  # noqa: BLE001
-        log(f"Súmulas: página oficial indisponível ({e}); usando a extração de {coletado[:10] or 'arquivo local'}.")
+        log(f"Súmulas: PDF oficial indisponível ({e}); usando a extração de {coletado[:10] or 'arquivo local'}.")
+    brutas = sorted(por_n.values(), key=lambda x: -(x.get("n") or 0))
     lista = []
     for x in brutas:
         ramo, _, assunto = (x.get("ramo") or "").partition(" - ")
@@ -1338,6 +1518,8 @@ def atualizar_sumulas() -> dict:
                 break
         if "civil" in ar and ASSUNTO_FAMILIA.search(an):
             ar.append("familia")
+        if not ar:  # enunciado novo, ainda sem o ramo do direito atribuído pelo STJ
+            ar = _areas_por_termos(sem_acento(enunciado), ORG_NOME.get(sem_acento(org).upper(), ""))
         sa = subareas(f"{an} {sem_acento(enunciado)}", ar)
         lista.append(limpar_vazios({"n": x.get("n"), "ramo": ramo.title().replace(" Do ", " do ").replace(" Da ", " da ").replace(" E ", " e "),
             "ass": assunto.capitalize(), "t": enunciado, "nota": nota, "org": org, "julg": julg, "pub": pub, "sit": sit, "ar": ar, "sa": sa}))
@@ -1345,15 +1527,16 @@ def atualizar_sumulas() -> dict:
     gravar_json(SITE_DATA / "sumulas.json", lista)
     vig = sum(1 for s in lista if s.get("sit") != "cancelada")
     log(f"Súmulas: {len(lista)} ({vig} vigentes).")
-    return {"n": len(lista), "vigentes": vig, "coletadoEm": coletado}
+    return {"n": len(lista), "vigentes": vig, "coletadoEm": coletado, "verificadoEm": verificado, "ultima": max((s.get("n") or 0 for s in lista), default=0)}
 
 
 # --------------------------------------------------------------------------
 # 8. Informativo de Jurisprudência do STJ (curadoria oficial do Tribunal).
-#    Mesmo esquema das súmulas: tenta a página oficial e, se recusada, usa a
-#    extração guardada em site/informativos-fonte.json.
+#    Base: extrações guardadas em fontes/. A cada execução, procura as edições
+#    seguintes no PDF oficial (arquivo estático do SCON), converte as notas e
+#    guarda o resultado em .cache/informativos-novos.json.
 # --------------------------------------------------------------------------
-INFO_FONTE = RAIZ / "site" / "informativos-fonte.json"
+INFO_FONTE = RAIZ / "fontes" / "informativos-fonte.json"
 MESES_PT = {m: i + 1 for i, m in enumerate("janeiro fevereiro marco abril maio junho julho agosto setembro outubro novembro dezembro".split())}
 RAMO_INFO = [
     ("proc-penal", r"processual penal"), ("proc-civil", r"processual civil"), ("penal", r"direito penal"),
@@ -1383,16 +1566,145 @@ def _data_pt(txt: str) -> str:
     return ""
 
 
-def _coletar_informativos_online(desde: int) -> dict:
-    out = {}
-    for n in range(desde, desde + 12):
-        url = f"https://processo.stj.jus.br/jurisprudencia/externo/informativo/?acao=pesquisarumaedicao&livre=%27{n:04d}%27.cod."
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            html = r.read().decode(r.headers.get_content_charset() or "utf-8", "replace")
-        if "clsInformativoBlocoItem" not in html:
+INFO_PDF = "https://scon.stj.jus.br/docs_internet/informativos/PDF/Inf{:04d}.pdf"
+INFO_NOVOS = CACHE / "informativos-novos.json"
+_ROT_INFO = [("Processo", "PROCESSO"), ("Ramo do Direito", "RAMO DO DIREITO"), ("Tema", "TEMA")]
+_SEC_INFO = re.compile(r"^(?:RECURSOS? REPETITIVOS?.*|CORTE ESPECIAL|(?:PRIMEIRA|SEGUNDA|TERCEIRA) SE[ÇC][ÃA]O|(?:PRIMEIRA|SEGUNDA|TERCEIRA|QUARTA|QUINTA|SEXTA) TURMA|PROPOSTA DE .*|S[ÚU]MULAS?(?: .*)?|INCIDENTE DE .*|PLEN[ÁA]RIO|PRESID[ÊE]NCIA)$")
+_ADIC_INFO = {"LEGISLAÇÃO": "Legislação", "PRECEDENTES QUALIFICADOS": "Precedentes Qualificados", "SÚMULAS": "Súmulas",
+              "JURISPRUDÊNCIA EM TESES": "Jurisprudência em Teses", "DOUTRINA": "Doutrina", "ENUNCIADOS": "Enunciados"}
+
+
+def _ler_informativo_pdf(num: int, conteudo: bytes) -> dict | None:
+    """Converte o PDF oficial de uma edição do Informativo nas notas usadas pelo site."""
+    linhas = _pdf_linhas(conteudo)
+    if not linhas:
+        return None
+    cab, ini = None, 0
+    for ini, (_, t) in enumerate(linhas[:8]):
+        cab = re.search(r"(?:N[úu]mero|n\.)\s*(\d+)\s+(?:Bras[íi]lia,\s*)?(\d{1,2}º? de [a-zç]+ de \d{4})", t)
+        if cab:
             break
-        out[str(n)] = {"html": True}  # a extração detalhada é feita pelo navegador; aqui só se detecta edição nova
+    if not cab or int(cab.group(1)) != num:
+        return None
+    ruido = re.compile(r"^(?:Informativo|de Jurisprud[êe]ncia|(?:V[ÍI]DEO DO JULGAMENTO|[ÁA]UDIO DO TEXTO)(?:\s+(?:V[ÍI]DEO DO JULGAMENTO|[ÁA]UDIO DO TEXTO))*|Informativo de Jurisprud[êe]ncia n\. \d+ .*|N[úu]mero \d+ Bras[íi]lia,.*)$")
+    linhas = [linhas[ini]] + [(x, re.sub(r"\s*(?:V[ÍI]DEO DO JULGAMENTO|[ÁA]UDIO DO TEXTO)\s*", " ", t).strip()) for x, t in linhas[ini + 1:] if not ruido.match(t)]
+    linhas = [(x, t) for x, t in linhas if t]
+    notas, nota, campo, sec, sub = [], None, None, "", None
+
+    def fechar():
+        if not nota:
+            return
+        x = {"sec": nota["sec"]}
+        for k, _ in _ROT_INFO:
+            x[k] = _juntar(nota.get(k, []))
+        for k in ("destaque", "teor"):
+            pars, atual, ant = [], [], None
+            for x0, t in nota.get(k, []):
+                if atual and ant is not None and x0 > ant + 20:  # recuo de primeira linha: novo parágrafo
+                    pars.append(_juntar(atual))
+                    atual = []
+                atual.append(t)
+                ant = x0
+            if atual:
+                pars.append(_juntar(atual))
+            x[k] = "\n".join(pars)
+        x["adic"] = "\n".join(f"{r} {_juntar(v)}" for r, v in nota.get("adic", []) if v)
+        notas.append({k: v for k, v in x.items() if v})
+
+    def rotulo_proc(t):
+        return t == "PROCESSO" or (t.startswith("PROCESSO ") and bool(re.search(r"\d|Rel\.|segredo", t, re.I)))
+
+    def titulo(t):
+        return t == t.upper() and len(re.findall(r"[A-ZÀ-Ý]", t)) >= 5 and not t.startswith(("PROCESSO", "RAMO DO DIREITO", "TEMA ")) \
+            and t not in ("DESTAQUE", "INFORMAÇÕES DO INTEIRO TEOR", "INFORMAÇÕES ADICIONAIS", "SAIBA MAIS") and t not in _ADIC_INFO
+
+    pular = 0
+    for i, (x0, t) in enumerate(linhas[1:], 1):
+        if pular:
+            pular -= 1
+            continue
+        if t.startswith("Este periódico destaca"):
+            continue
+        prox = linhas[i + 1][1] if i + 1 < len(linhas) else ""
+        prox2 = linhas[i + 2][1] if i + 2 < len(linhas) else ""
+        # Depois de "Saiba mais" e das informações adicionais há listas em maiúsculas
+        # (ramos da Jurisprudência em Teses): ali só vale um nome de seção conhecido.
+        livre = campo not in ("saiba", "adic") and nota is not None
+        sec1 = titulo(t) and rotulo_proc(prox) and (livre or _SEC_INFO.match(t))
+        sec2 = titulo(t) and titulo(prox) and rotulo_proc(prox2) and (livre or (_SEC_INFO.match(f"{t} {prox}") and not _SEC_INFO.match(prox)))
+        if nota is None and not sec:
+            sec1 = sec1 or (titulo(t) and rotulo_proc(prox))
+        if sec1 or sec2:
+            fechar()
+            nota, campo, sec = None, None, t if sec1 else f"{t} {prox}"
+            pular = 0 if sec1 else 1
+            continue
+        if re.match(r"^S[ÚU]MULAS?$", t) and re.match(r"^S[ÚU]MULA N", prox):
+            fechar()
+            nota, campo, sec = None, None, t
+            continue
+        if sec.startswith(("SÚMULA", "SUMULA")) and re.match(r"^S[ÚU]MULA N\. ?\d+", t):
+            fechar()  # enunciado aprovado, revisado ou cancelado: o texto vem logo abaixo
+            nota, campo = {"sec": sec, "Tema": [t[:1] + t[1:].lower().replace("n. ", "n. ")]}, "destaque"
+            continue
+        if rotulo_proc(t):
+            fechar()
+            nota, campo = {"sec": sec}, "Processo"
+            resto = t[8:].strip()
+            if resto:
+                nota.setdefault(campo, []).append(resto)
+            continue
+        if nota is None:
+            continue
+        if campo in ("Processo", "Ramo do Direito") and t.startswith("RAMO DO DIREITO"):
+            campo = "Ramo do Direito"
+            nota.setdefault(campo, []).append(t[15:].strip())
+            continue
+        if campo in ("Processo", "Ramo do Direito") and (t.startswith("TEMA ") or t == "TEMA"):
+            campo = "Tema"
+            nota.setdefault(campo, []).append(t[4:].strip())
+            continue
+        if t == "DESTAQUE":
+            campo = "destaque"
+            continue
+        if t == "INFORMAÇÕES DO INTEIRO TEOR":
+            campo = "teor"
+            continue
+        if t == "INFORMAÇÕES ADICIONAIS":
+            campo, sub = "adic", None
+            continue
+        if t == "SAIBA MAIS":
+            campo = "saiba"
+            continue
+        if campo == "adic":
+            if t in _ADIC_INFO or (t == t.upper() and len(re.findall(r"[A-ZÀ-Ý]", t)) >= 5 and not re.search(r"\d", t)):
+                sub = [_ADIC_INFO.get(t) or t[:1] + t[1:].lower(), []]
+                nota.setdefault("adic", []).append(sub)
+            elif sub:
+                sub[1].append(t)
+            continue
+        if campo in ("destaque", "teor"):
+            nota.setdefault(campo, []).append((x0, t))
+        elif campo and campo != "saiba":
+            nota.setdefault(campo, []).append(t)
+    fechar()
+    if not notas:
+        return None
+    return {"tit": f"Informativo nº {num} {cab.group(2).strip()}.", "notas": notas}
+
+
+def _coletar_informativos_pdf(desde: int) -> dict:
+    """Busca as edições posteriores à última conhecida no PDF oficial (arquivo estático)."""
+    out = {}
+    for n in range(desde, desde + 8):
+        bruto = baixar(INFO_PDF.format(n), tentativas=2, timeout=120)
+        if not bruto.startswith(b"%PDF"):
+            break  # edição ainda não publicada: o servidor devolve arquivo vazio
+        ed = _ler_informativo_pdf(n, bruto)
+        if not ed:
+            log(f"Informativo: não foi possível ler o PDF da edição {n}.")
+            break
+        out[str(n)] = ed
     return out
 
 
@@ -1487,13 +1799,26 @@ def _nota_info(num: str, i: int, x: dict, data: str) -> tuple[dict | None, list]
 def atualizar_informativos() -> dict:
     fonte = ler_json(INFO_FONTE, {})
     eds = dict(fonte.get("edicoes", {}))
+    coletado, verificado = fonte.get("coletadoEm", ""), ""
+    # Edições lidas do PDF oficial em execuções anteriores (guardadas no cache do Actions).
+    extras = ler_json(INFO_NOVOS, {})
+    for k, v in (extras.get("edicoes") or {}).items():
+        eds.setdefault(k, v)
+    if extras.get("em"):
+        coletado = max(coletado, extras["em"])
     if eds:
         try:
-            novas = _coletar_informativos_online(max(int(k) for k in eds) + 1)
+            novas = _coletar_informativos_pdf(max(int(k) for k in eds) + 1)
+            verificado = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
             if novas:
-                log(f"Informativo: há {len(novas)} edição(ões) nova(s) no STJ ainda não extraída(s).")
+                eds.update(novas)
+                coletado = verificado
+                gravar_json(INFO_NOVOS, {"em": verificado, "edicoes": {**(extras.get("edicoes") or {}), **novas}})
+                log(f"Informativo: {len(novas)} edição(ões) nova(s) lida(s) do PDF oficial ({', '.join(novas)}).")
+            else:
+                log("Informativo: nenhuma edição nova no STJ.")
         except Exception as e:  # noqa: BLE001
-            log(f"Informativo: página oficial indisponível ({e}); usando a extração de {fonte.get('coletadoEm', '')[:10]}.")
+            log(f"Informativo: PDF oficial indisponível ({e}); usando a extração de {coletado[:10]}.")
     # Edições antigas, extraídas em lotes e guardadas fora do site publicado.
     for arq in sorted(INFO_FONTES_ANTIGAS.glob("*.json")) if INFO_FONTES_ANTIGAS.exists() else []:
         for k, v in ler_json(arq, {}).get("edicoes", {}).items():
@@ -1531,7 +1856,7 @@ def atualizar_informativos() -> dict:
     gravar_json(pasta / "indice.json", {"corte": corte, "eds": sorted(idx.values(), key=lambda e: -e[0]), "antigos": sorted(por_ano)})
     gravar_json(SITE_DATA / "informativos-teor.json", {k: v for x in recentes if (v := teores.get(x["id"])) for k in [x["id"]]})
     log(f"Informativo: {len(todas)} notas de {len(eds)} edições ({len(recentes)} no arquivo principal).")
-    return {"n": len(todas), "edicoes": len(eds), "ultima": ultima, "primeira": min((x["ed"] for x in todas), default=0), "coletadoEm": fonte.get("coletadoEm", "")}
+    return {"n": len(todas), "edicoes": len(eds), "ultima": ultima, "ultimaData": next((x.get("d", "") for x in todas if x["ed"] == ultima), ""), "primeira": min((x["ed"] for x in todas), default=0), "coletadoEm": coletado, "verificadoEm": verificado}
 
 
 # --------------------------------------------------------------------------
@@ -1576,7 +1901,8 @@ def atualizar_teses() -> dict:
         gravar_json(SITE_DATA / "teses.json", out)
     n = sum(len(x["teses"]) for x in out)
     log(f"Jurisprudência em Teses: {len(out)} edições, {n} teses.")
-    return {"edicoes": len(out), "teses": n, "coletadoEm": fonte.get("coletadoEm", "")}
+    return {"edicoes": len(out), "teses": n, "coletadoEm": fonte.get("coletadoEm", ""),
+            "ultima": out[0]["ed"] if out else 0, "ultimaData": out[0].get("disp", "") if out else ""}
 
 
 # Rótulos das submatérias, lidos pelo site.
@@ -1626,6 +1952,13 @@ def main():
     except Exception as e:  # noqa: BLE001
         erros.append(f"números: {e}")
         log("ERRO números:", e)
+
+    busca = {}
+    try:
+        busca = gerar_indice_busca(meses_disp)
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"índice de busca: {e}")
+        log("ERRO índice de busca:", e)
 
     temas = {}
     try:
@@ -1689,11 +2022,16 @@ def main():
             if arq.exists():
                 org[slug] = {"n": len(ler_json(arq, [])), "kb": round(arq.stat().st_size / 1024)}
         meses_info.append({"m": mes, "orgaos": org})
+    agora = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    for sec in (temas, radar, destaques, pautas, composicao):
+        if sec:
+            sec["em"] = agora
     manifesto = {
-        "atualizadoEm": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "atualizadoEm": agora,
         "orgaos": ORGAOS,
         "meses": meses_info,
         "ultimoArquivoEspelhos": ultimos or manifesto_ant.get("ultimoArquivoEspelhos", {}),
+        "espelhosEm": agora if not any(x.startswith("espelhos") for x in erros) else manifesto_ant.get("espelhosEm", ""),
         "temas": temas or manifesto_ant.get("temas", {}),
         "radar": radar or manifesto_ant.get("radar", {}),
         "destaques": destaques or manifesto_ant.get("destaques", {}),
@@ -1702,6 +2040,7 @@ def main():
         "informativos": informativos or manifesto_ant.get("informativos", {}),
         "teses": teses or manifesto_ant.get("teses", {}),
         "composicao": composicao or manifesto_ant.get("composicao", {}),
+        "busca": busca or manifesto_ant.get("busca", {}),
         "esquema": ESQUEMA,
         "erros": erros,
     }
