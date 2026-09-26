@@ -332,6 +332,7 @@ def foto_wikidata(nomes: list[str], cache: dict) -> dict | None:
 
 
 FOTOS_SITE = RAIZ / "site" / "img" / "ministros"
+FOTOS_CACHE = RAIZ / ".cache" / "fotos"
 
 
 def foto_local(foto: dict | None) -> dict | None:
@@ -340,14 +341,18 @@ def foto_local(foto: dict | None) -> dict | None:
         return foto
     import hashlib
     nome = hashlib.md5(foto["pagina"].encode()).hexdigest()[:12] + ".jpg"
-    arq = FOTOS_SITE / nome
+    arq, guardada = FOTOS_SITE / nome, FOTOS_CACHE / nome
     if not arq.exists():
         try:
-            bruto = baixar(re.sub(r"\?width=\d+", "", foto["url"]) + "?width=330", 60)
-            if bruto[:3] != b"\xff\xd8\xff" or len(bruto) > 400_000:
-                raise ValueError("resposta sem imagem JPEG")
+            if not guardada.exists():  # baixa uma única vez; depois vem do cache do Actions
+                time.sleep(1.0)
+                bruto = baixar(re.sub(r"\?width=\d+", "", foto["url"]) + "?width=330", 60)
+                if bruto[:3] != b"\xff\xd8\xff" or len(bruto) > 400_000:
+                    raise ValueError("resposta sem imagem JPEG")
+                FOTOS_CACHE.mkdir(parents=True, exist_ok=True)
+                guardada.write_bytes(bruto)
             FOTOS_SITE.mkdir(parents=True, exist_ok=True)
-            arq.write_bytes(bruto)
+            arq.write_bytes(guardada.read_bytes())
         except Exception as e:  # noqa: BLE001
             log(f"  miniatura de {foto['pagina'].rsplit(':', 1)[-1]}: {e}")
             return foto  # mantém o endereço original do Wikimedia Commons
