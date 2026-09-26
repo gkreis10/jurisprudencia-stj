@@ -3134,6 +3134,8 @@
 
   // ============================================================= PESQUISA
   async function vPesquisa(main, p, mesma) {
+    // Lista completa de relatores e classes (com os totais do acervo), carregada em segundo plano.
+    if (D.man.busca?.facetas && !D.facR) { facetaIB("r").then((d) => { if (d) D.facR = d; }); facetaIB("c").then((d) => { if (d) D.facC = d; }); }
     const F = AC.f = {
       p: p.get("p") || "todo", o: p.get("o") || "", a: p.get("a") || "", c: p.get("c") || "", rl: p.get("rl") || "", n: p.get("n") || "",
       s: p.get("s") || "auto", r: p.get("r") !== "0", x: p.get("x") === "1", t: p.get("t") === "1",
@@ -3164,11 +3166,11 @@
         { rot: "Matéria", tipo: "materia", get: () => AC.f.a, set: (v) => (AC.f.a = v) },
         { rot: "Órgão", tipo: "varios", vertical: true, get: () => AC.f.o, set: (v) => (AC.f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...Object.entries(D.orgaos).map(([k, v]) => ({ v: k, t: v }))] },
         { rot: "Classe", titulo: "Classe processual", tipo: "varios", busca: "Buscar classe. Ex.: REsp, AgInt, HC", get: () => AC.f.c, set: (v) => (AC.f.c = v),
-          opcoes: () => [{ v: "", t: "Todas as classes" }, ...[...AC.cls].sort((a, b) => b[1] - a[1]).slice(0, 120).map(([c, n]) => ({ v: c, t: c, n })), ...listaV(AC.f.c).filter((c) => !AC.cls.has(c)).map((c) => ({ v: c, t: c }))],
-          nota: "As classes listadas são as encontradas nas buscas já feitas, das mais frequentes às menos. REsp: recurso especial; AgInt: agravo interno; EREsp: embargos de divergência; HC: habeas corpus." },
+          opcoes: () => { const tot = D.facC ? new Map(Object.values(D.facC).map(([c, n]) => [c, n])) : AC.cls; return [{ v: "", t: "Todas as classes" }, ...[...tot].sort((a, b) => b[1] - a[1]).slice(0, 150).map(([c, n]) => ({ v: c, t: c, n })), ...listaV(AC.f.c).filter((c) => !tot.has(c)).map((c) => ({ v: c, t: c }))]; },
+          nota: "Classes do acervo, das mais frequentes às menos, com o total de acórdãos. REsp: recurso especial; AgInt: agravo interno; EREsp: embargos de divergência; HC: habeas corpus." },
         { rot: "Relator", titulo: "Relator(a)", tipo: "varios", vertical: true, busca: "Buscar ministro(a)", get: () => AC.f.rl, set: (v) => (AC.f.rl = v),
-          opcoes: () => [{ v: "", t: "Todos os relatores" }, ...[...AC.rels.keys(), ...listaV(AC.f.rl).filter((r) => ![...AC.rels.keys()].some((k) => norm(k) === norm(r)))].sort((a, b) => norm(a).localeCompare(norm(b))).map((r) => ({ v: r, t: relatorFmt(r), n: AC.rels.get(r) }))],
-          nota: "Relatores dos acórdãos encontrados nas buscas feitas; ao ampliar o período, a lista cresce." },
+          opcoes: () => { const tot = D.facR ? new Map(Object.values(D.facR).map(([r, n]) => [r, n])) : AC.rels; return [{ v: "", t: "Todos os relatores" }, ...[...tot.keys(), ...listaV(AC.f.rl).filter((r) => ![...tot.keys()].some((k) => norm(k) === norm(r)))].sort((a, b) => norm(a).localeCompare(norm(b))).map((r) => ({ v: r, t: relatorFmt(r), n: tot.get(r) }))]; },
+          nota: "Todos os relatores do acervo, inclusive ministros aposentados e desembargadores convocados, com o total de acórdãos de cada um." },
         { rot: "Processo", tipo: "texto", ph: "Número. Ex.: 2222623", get: () => AC.f.n, set: (v) => (AC.f.n = digitos(v)) },
         { rot: "Exibir", titulo: "Quais acórdãos exibir", tipo: "um", padrao: "", obrigatorio: true, rotAtual: () => "Exibir: sem rotina",
           get: () => (AC.f.t ? "tese" : AC.f.x ? "dest" : AC.f.r ? "" : "tudo"),
@@ -3237,11 +3239,26 @@
     }
   }
   // Devolve só os pares (mês, órgão) que podem conter o termo; sem índice, devolve todos.
-  async function filtrarPorIndice(cons, pares) {
+  // Filtros de relator, classe e matéria: arquivos mensais em que cada valor aparece.
+  const facetaIB = (t) => { const k = `_${t}`; if (!IB.has(k)) IB.set(k, getJSON(`data/busca/_${t}.json`).catch(() => null)); return IB.get(k); };
+  async function idsFacetasIB(f, meta) {
+    if (!meta.facetas) return null;
+    let acc = null;
+    const unir = (d, casa, pega) => { const u = new Set(); for (const k in d) if (casa(k)) for (const x of postIB(pega(d[k]))) u.add(x); return u; };
+    const rel = listaV(f.rl).map(norm), cls = listaV(f.c).map(norm), mat = listaMat(f.a);
+    if (rel.length) { const d = await facetaIB("r"); if (d) acc = interIB(acc, unir(d, (k) => rel.some((x) => k === x || k.includes(x)), (v) => v[2])); }
+    if (cls.length) { const d = await facetaIB("c"); if (d) acc = interIB(acc, unir(d, (k) => cls.includes(k), (v) => v[2])); }
+    if (mat.length) { const d = await facetaIB("m"); if (d) acc = interIB(acc, unir(d, (k) => mat.includes(k), (v) => v)); }
+    return acc;
+  }
+  async function filtrarPorIndice(cons, pares, f = {}) {
     const meta = D.man.busca;
-    if (cons.vazio || !meta?.partes?.length || meta.v !== 2) return pares;
-    let ids;
-    try { ids = await idsNoIB(cons.ast, meta); } catch { return pares; }
+    if (!meta?.partes?.length || meta.v !== 2) return pares;
+    let ids = null;
+    try {
+      if (!cons.vazio) ids = await idsNoIB(cons.ast, meta);
+      ids = interIB(ids, await idsFacetasIB(f, meta));
+    } catch { return pares; }
     if (!ids) return pares;
     const oi = new Map(meta.orgs.map((o, i) => [o, i]));
     return pares.filter(([m, o]) => {
@@ -3278,9 +3295,9 @@
     if (!ids) for (const m of meses) { const info = D.man.meses.find((x) => x.m === m); for (const o of orgs) if (info?.orgaos[o]) pares.push([m, o]); }
     const cons = Busca.compilar(f.q);
     const paresTodos = pares.length;
-    if (!ids && !cons.vazio && pares.length > 12) {
+    if (!ids && pares.length > 12 && (!cons.vazio || f.rl || f.c || f.a)) {
       $("#ac-info").textContent = "Consultando o índice…";
-      pares = await filtrarPorIndice(cons, pares);
+      pares = await filtrarPorIndice(cons, pares, f);
       if (tk !== AC.token) return;
     }
     const clsSel = listaV(f.c).map(norm), relSel = listaV(f.rl).map(norm);
@@ -3358,7 +3375,7 @@
         }
       };
       mostrar();
-      await Promise.all(Array.from({ length: Math.min(4, pares.length) }, trab));
+      await Promise.all(Array.from({ length: Math.min(6, pares.length) }, trab));
       if (tk !== AC.token) return;
     }
     prog.hidden = true;
@@ -3381,7 +3398,7 @@
     const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.innerHTML ? " e no DJEN" : ""}` : rotPeriodo(f.p, meses);
     const parcial = AC.parar === tk ? " · busca interrompida" : "";
     const corte = total > res.length && !cortado ? ` · exibindo os ${fmtInt(res.length)} ${ordem === "rel" ? "mais aderentes" : "mais recentes"}` : "";
-    const lidosIB = pares.length < paresTodos ? ` · ${fmtInt(pares.length)} de ${fmtInt(paresTodos)} arquivos mensais contêm os termos` : "";
+    const lidosIB = pares.length < paresTodos ? ` · ${fmtInt(pares.length)} de ${fmtInt(paresTodos)} arquivos mensais consultados` : "";
     if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: ainda sem ementa no acervo. Veja abaixo a publicação no DJEN.`;
     else if (cortado) $("#ac-info").innerHTML = `Exibindo os <b>${fmtInt(res.length)}</b> acórdãos ${ordem === "julg" ? "julgados mais recentemente" : "mais recentes"} (limite da consulta; use os filtros para refinar) · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} ${explicacaoHTML(cons)}`;
     else $("#ac-info").innerHTML = `<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
