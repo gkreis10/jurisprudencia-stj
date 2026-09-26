@@ -20,7 +20,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 ORIGEM, DESTINO = RAIZ / "site", RAIZ / "_site"
 MESES_EM_JSON = 3
 
-# Leitores de PDF e DOCX usados pelo "Verificar petição", servidos pelo próprio site (sem CDN).
+# Leitores de PDF e DOCX usados pelo "Verificar petição" e fontes do site, servidos pelo próprio site (sem CDN).
 # Vêm dos pacotes oficiais no registro do npm, em versões fixas, e só são publicados se o
 # hash SHA-384 conferir com o fixado aqui (o mesmo do atributo integrity em app.js).
 VENDOR = [
@@ -28,6 +28,15 @@ VENDOR = [
         "package/build/pdf.min.js": ("pdf.min.js", "/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e"),
         "package/build/pdf.worker.min.js": ("pdf.worker.min.js", "SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2"),
         "package/LICENSE": ("LICENSE-pdfjs.txt", None),
+    }),
+    # Fontes do site (Inter e Source Serif 4, licença SIL OFL), servidas sem depender do Google Fonts.
+    ("https://registry.npmjs.org/@fontsource-variable/inter/-/inter-5.3.0.tgz", {
+        "package/files/inter-latin-wght-normal.woff2": ("inter-latin-wght-normal.woff2", "l0ql7Q1zqvX5klAVRwYjcMVCkCxg5dMTdghsIlC3pYkX6wwEHerh2bP/4yAao3Im"),
+        "package/LICENSE": ("LICENSE-inter.txt", None),
+    }),
+    ("https://registry.npmjs.org/@fontsource-variable/source-serif-4/-/source-serif-4-5.3.0.tgz", {
+        "package/files/source-serif-4-latin-opsz-normal.woff2": ("source-serif-4-latin-opsz-normal.woff2", "evn7x+azr6PYq3DOgeObuTOkVKceROkR3IcrDIFMJS5hIy3mOsEj1SfRA80PvQ+7"),
+        "package/LICENSE": ("LICENSE-source-serif-4.txt", None),
     }),
     ("https://registry.npmjs.org/mammoth/-/mammoth-1.6.0.tgz", {
         "package/mammoth.browser.min.js": ("mammoth.browser.min.js", "nFoSjZIoH3CCp8W639jJyQkuPHinJ2NHe7on1xvlUA7SuGfJAfvMldrsoAVm6ECz"),

@@ -356,7 +356,7 @@ def foto_local(foto: dict | None) -> dict | None:
             arq.write_bytes(guardada.read_bytes())
         except Exception as e:  # noqa: BLE001
             log(f"  miniatura de {foto['pagina'].rsplit(':', 1)[-1]}: {e}")
-            return foto  # mantém o endereço original do Wikimedia Commons
+            return None  # sem foto: o site mostra as iniciais (não carrega imagens de outros endereços)
     return {**foto, "url": f"img/ministros/{nome}", "orig": foto["url"]}
 
 

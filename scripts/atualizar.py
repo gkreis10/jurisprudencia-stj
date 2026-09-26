@@ -1263,7 +1263,10 @@ def _frag(num: str) -> str:
 
 def gerar_numeros(meses_disp: list[str]) -> dict:
     """Índice por número (e por registro) fragmentado pelos dois últimos dígitos, para que o
-    navegador baixe só o pedaço de que precisa (cerca de 1% do índice) em vez do índice inteiro."""
+    navegador baixe só o pedaço de que precisa (cerca de 1% do índice) em vez do índice inteiro.
+    Cada linha: [número, registro, mês, órgão, id, classe, relator, julgamento, publicação]
+    (relator como posição na lista "r" do fragmento; datas como AAAAMMDD), para que o
+    "Verificar petição" confira os dados citados sem baixar os arquivos mensais."""
     meses = sorted(meses_disp)
     orgs = list(ORGAOS)
     por_n: dict[str, list] = {}
@@ -1276,7 +1279,9 @@ def gerar_numeros(meses_disp: list[str]) -> dict:
                 if not n:
                     continue
                 reg = re.sub(r"\D", "", str(r.get("reg") or ""))
-                por_n.setdefault(_frag(n), []).append([n, reg, mi, oi, r.get("id"), classe_base(r.get("cl"))])
+                por_n.setdefault(_frag(n), []).append([n, reg, mi, oi, r.get("id"), classe_base(r.get("cl")),
+                                                       str(r.get("rel") or "").strip(),
+                                                       (r.get("dd") or "").replace("-", ""), (r.get("dj") or "").replace("-", "")])
                 if reg:
                     por_r.setdefault(_frag(reg), []).append([reg, n])
                 total += 1
@@ -1284,11 +1289,16 @@ def gerar_numeros(meses_disp: list[str]) -> dict:
     if pasta.exists():
         shutil.rmtree(pasta)
     for k in (f"{i:02d}" for i in range(100)):
-        gravar_json(pasta / f"n{k}.json", {"m": meses, "o": orgs, "l": por_n.get(k, [])})
+        linhas = por_n.get(k, [])
+        rels = sorted({x[6] for x in linhas})
+        pos = {nome: i for i, nome in enumerate(rels)}
+        for x in linhas:
+            x[6] = pos[x[6]]
+        gravar_json(pasta / f"n{k}.json", {"m": meses, "o": orgs, "r": rels, "l": linhas})
         gravar_json(pasta / f"r{k}.json", {"l": sorted({tuple(x) for x in por_r.get(k, [])})})
     (SITE_DATA / "numeros.json").unlink(missing_ok=True)  # índice único antigo (32 MB)
     log(f"Números de processo indexados: {total} (100 fragmentos).")
-    return {"v": 2, "n": total}
+    return {"v": 3, "n": total}
 
 
 # --------------------------------------------------------------------------
@@ -1311,6 +1321,57 @@ def gerar_recentes(meses_disp: list[str]) -> int:
     gravar_json(SITE_DATA / "recentes.json", lista)
     log(f"Recentes da Pesquisa: {len(lista)} acórdãos ({', '.join(ultimos)}).")
     return len(lista)
+
+
+# --------------------------------------------------------------------------
+# 6a''. Resumo da página inicial: só o que o painel mostra (movimentações dos
+#       repetitivos, pautas relevantes e destaques do último mês), para que a
+#       abertura do site não dependa dos arquivos completos.
+# --------------------------------------------------------------------------
+def gerar_painel() -> int:
+    hoje = HOJE.isoformat()
+    desde = (HOJE - dt.timedelta(days=31)).isoformat()
+    temas = ler_json(SITE_DATA / "temas.json", [])
+    idx = {f"{x.get('tp')}-{x.get('n')}": x for x in temas}
+    evs = []
+    for x in temas:
+        for campo, k, txt in (("afet", "afet", "Afetado ao rito"), ("julg", "julg", "Julgado"), ("pub", "pub", "Acórdão publicado")):
+            if (x.get(campo) or "") >= desde:
+                evs.append({"d": x[campo], "k": k, "tp": x.get("tp"), "n": x.get("n"), "txt": txt})
+    for h in ler_json(SITE_DATA / "historico_temas.json", []):
+        if (h.get("d") or "") < desde or f"{h.get('tp')}-{h.get('n')}" not in idx:
+            continue
+        ev = h.get("ev")
+        txt = f"Situação: {h.get('de')} → {h.get('para')}" if ev == "situacao" else "Incluído na base" if ev == "novo" else "Tese firmada registrada" if ev == "tese" else "Tese alterada"
+        evs.append({"d": h["d"], "k": "mud", "tp": h.get("tp"), "n": h.get("n"), "txt": txt})
+    vistos, ev_ok = set(), []
+    for e in sorted(evs, key=lambda e: (e["d"], e["n"] or 0), reverse=True):
+        chave = (e["k"], e["tp"], e["n"], e["d"], e["txt"])
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        x = idx.get(f"{e['tp']}-{e['n']}", {})
+        e.update(limpar_vazios({"tese": (x.get("tese") or "")[:400], "q": (x.get("q") or "")[:400]}))
+        ev_ok.append(e)
+    lim = (HOJE + dt.timedelta(days=21)).isoformat()
+    pautas = [limpar_vazios({"d": p.get("d"), "o": p.get("o"), "p": p.get("p"), "pet": p.get("pet"), "rel": p.get("rel"), "temas": p.get("temas")})
+              for p in ler_json(SITE_DATA / "pautas.json", [])
+              if hoje <= (p.get("d") or "") <= lim and (p.get("temas") or re.search(r"secao|especial", p.get("o") or ""))]
+    dest = ler_json(SITE_DATA / "destaques.json", [])
+    mes = (dest[0].get("dj") or "")[:7] if dest else ""
+    do_mes, chaves = [], set()
+    for r in dest:
+        if not (r.get("dj") or "").startswith(mes):
+            continue
+        k = f"{r.get('o')}|{r.get('dd') or ''}|{(r.get('em') or r.get('h') or '')[:400]}"
+        if k in chaves:
+            continue
+        chaves.add(k)
+        do_mes.append(r)
+    top = sorted(do_mes, key=lambda r: -r.get("s", 0))[:3]
+    gravar_json(SITE_DATA / "painel.json", {"em": hoje, "ev": ev_ok, "pautas": pautas, "dest": {"mes": mes, "n": len(do_mes), "top": top}})
+    log(f"Resumo do painel: {len(ev_ok)} movimentações, {len(pautas)} pautas, {len(do_mes)} destaques ({mes}).")
+    return 1
 
 
 # --------------------------------------------------------------------------
@@ -2162,6 +2223,12 @@ def main():
 
     # Manifesto lido pelo site
     manifesto_ant = ler_json(SITE_DATA / "manifest.json", {})
+    painel = 0
+    try:
+        painel = gerar_painel()
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"painel: {e}")
+        log("ERRO painel:", e)
     meses_info = []
     for mes in sorted(meses_disp, reverse=True):
         org = {}
@@ -2190,6 +2257,7 @@ def main():
         "composicao": composicao or manifesto_ant.get("composicao", {}),
         "busca": busca or manifesto_ant.get("busca", {}),
         "numeros": numeros or manifesto_ant.get("numeros", {}),
+        "painel": painel,
         "esquema": ESQUEMA,
         "erros": erros,
     }
