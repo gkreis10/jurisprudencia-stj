@@ -218,8 +218,9 @@
     inedito: "Questão nova", modulacao: "Modulação de efeitos", distincao: "Distinção (distinguishing)", divergencia: "Divergência",
   };
   const nivelAc = (s) => (s >= 10 ? "alta" : s >= 6 ? "rel" : s >= 2 ? "acomp" : "");
-  const NIVEL_TX = { alta: "Alta relevância", rel: "Relevante", acomp: "Acompanhar" };
-  const seloNivel = (n) => (n ? `<span class="selo ${n}"><span class="ponto ${n}"></span>${NIVEL_TX[n]}</span>` : "");
+  const NIVEL_TX = { alta: "Sinal forte de relevância", rel: "Relevante", acomp: "Acompanhar" };
+  // Selo da classificação automática; o título explica a pontuação (não é a força vinculante do precedente).
+  const seloNivel = (n, r) => (n ? `<span class="selo ${n}"${r ? ` title="${esc(`Classificação automática do Radar: ${r.s ?? 0} pontos${(r.rz || []).filter((k) => MOTIVOS[k]).length ? ` (${(r.rz || []).filter((k) => MOTIVOS[k]).map((k) => MOTIVOS[k].toLowerCase()).join(", ")})` : ""}. Indica prioridade de leitura, não a força vinculante do precedente.`)}"` : ""}><span class="ponto ${n}"></span>${NIVEL_TX[n]}</span>` : "");
 
   function grupoSituacao(sit) {
     const s = norm(sit);
@@ -619,6 +620,28 @@
     if (!D.cache[nome]) D.cache[nome] = getJSON(`data/${nome}.json`).then((x) => (prep ? prep(x) : x)).catch((e) => { delete D.cache[nome]; throw e; });
     return D.cache[nome];
   }
+  // Índice de números de processo. Na versão fragmentada (manifest.numeros.v = 2), baixa só os
+  // fragmentos dos números pedidos (dois últimos dígitos), em vez do índice inteiro.
+  // Devolve { m, o, l } com as linhas [número, registro, mês, órgão, id] dos números ou registros pedidos.
+  async function numerosDe(nums = [], regs = []) {
+    nums = [...new Set(nums.map(digitos).filter(Boolean))]; regs = [...new Set(regs.map(digitos).filter(Boolean))];
+    if (!nums.length && !regs.length) return { m: [], o: [], l: [] };
+    if ((D.man.numeros?.v || 0) < 2) {
+      const ix = await carregar("numeros");
+      const sn = new Set(nums), sr = new Set(regs);
+      return { m: ix.m, o: ix.o, l: ix.l.filter((x) => sn.has(x[0]) || sr.has(x[1])) };
+    }
+    const frag = (n) => n.slice(-2).padStart(2, "0");
+    const sn = new Set(nums), sr = new Set(regs);
+    if (regs.length) {
+      const rs = await Promise.all([...new Set(regs.map(frag))].map((k) => carregar(`numeros/r${k}`)));
+      for (const r of rs) for (const [reg, n] of r.l) if (sr.has(reg)) sn.add(n);
+    }
+    const fs = await Promise.all([...new Set([...sn].map(frag))].map((k) => carregar(`numeros/n${k}`)));
+    const l = [];
+    for (const f of fs) for (const x of f.l) if (sn.has(x[0]) && (!sr.size || sr.has(x[1]) || nums.includes(x[0]))) l.push(x);
+    return { m: fs[0]?.m || [], o: fs[0]?.o || [], l };
+  }
   const temas = () => carregar("temas", async (t) => {
     const hist = await getJSON("data/historico_temas.json").catch(() => []);
     for (const x of t) {
@@ -661,28 +684,36 @@
 
   // Arquivos mensais de acórdãos: publicados compactados (.json.gz) para caber o acervo longo;
   // o navegador descompacta. Sem suporte a descompactação, usa o .json (mantido para os meses recentes).
-  async function getJSONgz(url) {
+  async function getJSONgz(url, signal) {
     if (typeof DecompressionStream !== "undefined") {
       try {
         // Meses antigos quase não mudam: aproveita o cache do navegador; os recentes são sempre conferidos.
         const mesArq = /acordaos\/(\d{4}-\d{2})\//.exec(url)?.[1] || "";
         const antigo = mesArq && D.man?.meses?.[3] && mesArq < D.man.meses[3].m;
-        const r = await fetch(`${url}.gz`, { cache: antigo ? "default" : "no-cache" });
+        const r = await fetch(`${url}.gz`, { cache: antigo ? "default" : "no-cache", signal });
         if (r.ok) {
           const buf = new Uint8Array(await r.arrayBuffer());
           const txt = buf[0] === 0x1f && buf[1] === 0x8b ? await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text() : new TextDecoder().decode(buf);
           return JSON.parse(txt);
         }
-      } catch { /* tenta o .json */ }
+      } catch (e) { if (signal?.aborted) throw e; /* tenta o .json */ }
     }
     return getJSON(url);
   }
-  const MAX_SHARDS = 260; // cerca de dois anos de arquivos na memória; os mais antigos saem primeiro
+  // Arquivos mensais mantidos na memória: limite pelo tamanho (menor em aparelhos com pouca memória);
+  // os usados há mais tempo saem primeiro.
+  const LIM_SHARDS_KB = ((navigator.deviceMemory || 8) <= 4 ? 60 : 160) * 1024;
+  let KB_SHARD = null;
+  const kbShard = (k) => {
+    if (!KB_SHARD) { KB_SHARD = new Map(); for (const x of D.man.meses) for (const [o, v] of Object.entries(x.orgaos)) KB_SHARD.set(`${x.m}/${o}`, v.kb || 0); }
+    return KB_SHARD.get(k) || 300;
+  };
   function shard(mes, slug) {
     const k = `${mes}/${slug}`;
     if (D.shards.has(k)) { const v = D.shards.get(k); D.shards.delete(k); D.shards.set(k, v); return v; }
     D.shards.set(k, getJSONgz(`data/acordaos/${mes}/${slug}.json`).catch((e) => { D.shards.delete(k); throw e; }));
-    while (D.shards.size > MAX_SHARDS) D.shards.delete(D.shards.keys().next().value);
+    let kb = 0; for (const x of D.shards.keys()) kb += kbShard(x);
+    while (kb > LIM_SHARDS_KB && D.shards.size > 1) { const x = D.shards.keys().next().value; kb -= kbShard(x); D.shards.delete(x); }
     return D.shards.get(k);
   }
   async function carregarShards(pares, onProg) {
@@ -828,7 +859,7 @@
     return `<li class="card item" data-id="${esc(r.id)}">
       <div class="item-cab"><button type="button" class="item-tit item-abrir" data-a="abrir" title="Abrir o julgado completo">${esc(r.cl)} ${fmtNumProc(r.n)}</button>
         <span class="meta"><span>${esc(D.orgaos[r.o] || "")}</span>${r.rel ? `<span>Rel. ${esc(relatorFmt(r.rel))}</span>` : ""}${r.dd ? `<span>Julg. ${fmtData(r.dd)}</span>` : ""}<span>Publ. ${fmtData(r.dj)}</span></span></div>
-      ${niv || motivos || areas ? `<div class="item-sel">${seloNivel(niv)}${motivos}${areas}</div>` : ""}
+      ${niv || motivos || areas ? `<div class="item-sel">${seloNivel(niv, r)}${motivos}${areas}</div>` : ""}
       ${blocoTese(r, termos, true)}
       <p class="verb">${destacar(esc(frase(cab)), termos)}</p>
       ${temCorpo ? `<div class="expansivel"><div><div class="texto-serif">${corpo.map((p) => `<p>${destacar(esc(p), termos)}</p>`).join("")}</div></div></div>` : ""}
@@ -875,7 +906,7 @@
     const extra = [["Relator(a)", r.rel ? relatorFmt(r.rel) : ""], ["Julgamento", fmtData(r.dd)], ["Publicação", `${(r.djt || "").split(/\s/)[0] || "DJ"} ${fmtData(r.dj)}`], ["Tema", r.tema], ["Notas", r.notas], ["Informações complementares", r.info], ["Referências legislativas", (r.leg || []).join("\n")]]
       .filter(([, v]) => v).map(([l, v]) => `<dt>${l}</dt><dd>${esc(v).replace(/\n/g, "<br>")}</dd>`).join("");
     abrirGaveta(`${D.orgaos[r.o] || ""}${r.dd ? " · julgado em " + fmtData(r.dd) : ""}`, `${r.cl} ${fmtNumProc(r.n)}`, `
-      <div class="item-sel">${seloNivel(nivelAc(r.s ?? 0))}${motivos}${areas}</div>
+      <div class="item-sel">${seloNivel(nivelAc(r.s ?? 0), r)}${motivos}${areas}</div>
       <div class="acoes" style="margin:4px 0 14px">
         <a class="btn btn-pri btn-peq" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>
         <a class="btn btn-claro btn-peq" href="${URLS.processo(r.reg)}" target="_blank" rel="noopener">Consulta processual</a>
@@ -944,7 +975,7 @@
         <form class="adicionar" id="org-nova" style="margin-top:10px"><input placeholder="Nova pasta. Ex.: Nulidade da busca domiciliar" aria-label="Nova pasta" maxlength="60"><button class="btn btn-pri" type="submit" aria-label="Criar pasta">${ico("mais1")}</button></form>
         <p class="nota">Um mesmo precedente pode ficar em mais de uma pasta.</p>
         <h3>Avaliação</h3>
-        <div class="segmentos org-aval" role="radiogroup">${[["", "Não avaliado"], ["fav", rotAval("fav", penal)], ["desf", rotAval("desf", penal)]].map(([v, t]) => `<button type="button" role="radio" data-org-aval="${v}" aria-selected="${(x.aval || "") === v}">${t}</button>`).join("")}</div>
+        <div class="segmentos org-aval" role="radiogroup" aria-label="Avaliação">${[["", "Não avaliado"], ["fav", rotAval("fav", penal)], ["desf", rotAval("desf", penal)]].map(([v, t]) => `<button type="button" role="radio" data-org-aval="${v}" aria-checked="${(x.aval || "") === v}">${t}</button>`).join("")}</div>
         <p class="nota">${penal ? "Indique se o precedente favorece ou prejudica a tese defensiva." : "Indique se o precedente favorece ou prejudica a tese que você sustenta."} A marcação é sua e fica só neste navegador.</p>
         <h3>Anotação</h3>
         <textarea id="org-nota" rows="4" placeholder="Por que este precedente importa, em que caso usar, ressalvas…">${esc(x.nota || "")}</textarea>
@@ -976,27 +1007,48 @@
       x.pastas = [...new Set([...(x.pastas || []), real])]; gravar(); desenhar();
     };
   }
-  function gerenciarPastas() {
-    abrirGaveta("Salvos", "Pastas e cópia de segurança", "");
+  // Cópia de segurança única: salvos, pastas, anotações, Meu radar e preferências.
+  function exportarTudo() {
+    const blob = new Blob([JSON.stringify({ tipo: "radar-stj-backup", versao: 2, exportadoEm: new Date().toISOString(), dados: P }, null, 1)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `radar-stj-copia-${hojeISO()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  // Importa somando ao que já existe (nada é apagado). Aceita também o arquivo antigo, só de salvos.
+  function importarTudo(o) {
+    const d = o?.tipo === "radar-stj-backup" ? o.dados : o?.tipo === "radar-stj-salvos" ? { salvos: o.salvos, pastas: o.pastas } : null;
+    if (!d || typeof d.salvos !== "object") throw new Error("inválido");
+    let n = 0;
+    for (const [k, v] of Object.entries(d.salvos || {})) { if (!P.salvos[k]) n++; P.salvos[k] = { ...(P.salvos[k] || {}), ...v, pastas: [...new Set([...(P.salvos[k]?.pastas || []), ...(v.pastas || [])])] }; }
+    for (const p of d.pastas || []) if (!pastas().includes(p)) pastas().push(p);
+    let r = 0;
+    for (const k of ["termos", "procs", "oabs"]) {
+      const ja = new Set((P[k] || []).map((x) => JSON.stringify(x)));
+      for (const x of d[k] || []) if (!ja.has(JSON.stringify(x))) { (P[k] = P[k] || []).push(x); r++; }
+    }
+    for (const [k, v] of Object.entries(d)) if (!["salvos", "pastas", "termos", "procs", "oabs", "vistoEm"].includes(k) && P[k] === undefined) P[k] = v;
+    salvarP(); avisarSalvos(); atualizarContadorRadar();
+    return { n, r };
+  }
+  const TXT_COPIA = "Tudo o que você guarda no site (salvos, pastas, anotações, termos, processos e OABs do Meu radar e preferências) fica apenas neste navegador: não vai para nenhum servidor e se perde se os dados do navegador forem apagados. Exporte uma cópia para guardar ou levar a outro aparelho; ao importar, o conteúdo é somado ao que já existe.";
+  function gerenciarPastas(soCopia = false) {
+    abrirGaveta(soCopia ? "Meu radar e salvos" : "Salvos", soCopia ? "Cópia de segurança" : "Pastas e cópia de segurança", "");
     const corpo = $("#gaveta-corpo");
     const uso = (p) => Object.values(P.salvos).filter((x) => (x.pastas || []).includes(p)).length;
     const desenhar = () => {
-      corpo.innerHTML = `${pastas().length ? `<ul class="lista-pastas">${pastas().map((p, i) => `<li><input value="${esc(p)}" data-pasta-nome="${i}" aria-label="Nome da pasta" maxlength="60"><span class="nota">${uso(p)} item(ns)</span><button type="button" class="btn-ico" data-pasta-apagar="${i}" title="Excluir pasta" aria-label="Excluir pasta">${ico("x")}</button></li>`).join("")}</ul>` : `<p class="nota">Nenhuma pasta criada.</p>`}
+      corpo.innerHTML = soCopia ? `<p class="nota">${TXT_COPIA}</p>
+        <div class="acoes"><button type="button" class="btn btn-claro btn-peq" data-salvos-exportar>${ico("arquivo")} Exportar cópia</button>
+          <label class="btn btn-claro btn-peq" style="cursor:pointer">${ico("mais1")} Importar arquivo<input type="file" accept=".json,application/json" data-salvos-importar hidden></label></div>` : `${pastas().length ? `<ul class="lista-pastas">${pastas().map((p, i) => `<li><input value="${esc(p)}" data-pasta-nome="${i}" aria-label="Nome da pasta" maxlength="60"><span class="nota">${uso(p)} item(ns)</span><button type="button" class="btn-ico" data-pasta-apagar="${i}" title="Excluir pasta" aria-label="Excluir pasta">${ico("x")}</button></li>`).join("")}</ul>` : `<p class="nota">Nenhuma pasta criada.</p>`}
         <form class="adicionar" id="pasta-nova" style="margin-top:12px"><input placeholder="Nova pasta" aria-label="Nova pasta" maxlength="60"><button class="btn btn-pri" type="submit" aria-label="Criar pasta">${ico("mais1")}</button></form>
         <p class="nota">Excluir uma pasta não apaga os itens salvos; eles só deixam de estar nela. Para renomear, edite o nome e saia do campo.</p>
         <h3>Cópia de segurança</h3>
-        <p class="nota">Os salvos, as pastas e as anotações ficam guardados neste navegador. Exporte um arquivo para levar a outro aparelho ou guardar uma cópia.</p>
-        <div class="acoes"><button type="button" class="btn btn-claro btn-peq" data-salvos-exportar>${ico("arquivo")} Exportar salvos</button>
+        <p class="nota">${TXT_COPIA}</p>
+        <div class="acoes"><button type="button" class="btn btn-claro btn-peq" data-salvos-exportar>${ico("arquivo")} Exportar cópia</button>
           <label class="btn btn-claro btn-peq" style="cursor:pointer">${ico("mais1")} Importar arquivo<input type="file" accept=".json,application/json" data-salvos-importar hidden></label></div>`;
     };
     desenhar();
     corpo.onclick = (e) => {
       const ap = e.target.closest("[data-pasta-apagar]");
       if (ap) { const p = pastas()[+ap.dataset.pastaApagar]; P.pastas = pastas().filter((x) => x !== p); for (const x of Object.values(P.salvos)) if (x.pastas) x.pastas = x.pastas.filter((y) => y !== p); salvarP(); avisarSalvos(); desenhar(); return; }
-      if (e.target.closest("[data-salvos-exportar]")) {
-        const blob = new Blob([JSON.stringify({ tipo: "radar-stj-salvos", versao: 1, exportadoEm: new Date().toISOString(), pastas: pastas(), salvos: P.salvos }, null, 1)], { type: "application/json" });
-        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `radar-stj-salvos-${hojeISO()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      }
+      if (e.target.closest("[data-salvos-exportar]")) exportarTudo();
     };
     corpo.onchange = async (e) => {
       const i = e.target.dataset?.pastaNome;
@@ -1008,12 +1060,8 @@
       }
       if (e.target.matches("[data-salvos-importar]") && e.target.files[0]) {
         try {
-          const o = JSON.parse(await e.target.files[0].text());
-          if (o.tipo !== "radar-stj-salvos" || typeof o.salvos !== "object") throw new Error();
-          let n = 0;
-          for (const [k, v] of Object.entries(o.salvos)) { if (!P.salvos[k]) n++; P.salvos[k] = { ...(P.salvos[k] || {}), ...v, pastas: [...new Set([...(P.salvos[k]?.pastas || []), ...(v.pastas || [])])] }; }
-          for (const p of o.pastas || []) if (!pastas().includes(p)) pastas().push(p);
-          salvarP(); avisarSalvos(); desenhar(); toast(`${n} item(ns) novo(s) importado(s).`);
+          const { n, r } = importarTudo(JSON.parse(await e.target.files[0].text()));
+          desenhar(); toast(`Importado: ${n} item(ns) salvo(s) novo(s)${r ? ` e ${r} item(ns) do Meu radar` : ""}.`);
         } catch { toast("Arquivo inválido: use um arquivo exportado pelo Radar STJ."); }
       }
     };
@@ -1021,8 +1069,11 @@
 
   // =============================================================== gaveta
   let focoAnterior = null;
+  // Fundo inerte enquanto a gaveta (diálogo) está aberta: o foco do teclado não sai dela.
+  const fundoInerte = (sim) => $$(".lateral, .conteudo, .barra-inf").forEach((el) => { el.inert = sim; if (sim) el.setAttribute("aria-hidden", "true"); else el.removeAttribute("aria-hidden"); });
   function abrirGaveta(sobre, titulo, html) {
-    focoAnterior = document.activeElement;
+    if ($("#gaveta").hidden) focoAnterior = document.activeElement;
+    fundoInerte(true);
     $("#gaveta-sobre").textContent = sobre; $("#gaveta-tit").textContent = titulo; $("#gaveta-corpo").innerHTML = html;
     $("#gaveta-corpo").onclick = null; $("#gaveta-corpo").oninput = null; $("#gaveta-corpo").onsubmit = null; $("#gaveta-corpo").onchange = null;
     const g = $("#gaveta"), v = $("#veu");
@@ -1038,7 +1089,8 @@
     g.classList.remove("vis"); v.classList.remove("vis");
     setTimeout(() => { g.hidden = true; v.hidden = true; }, 220);
     document.body.style.overflow = "";
-    focoAnterior?.focus?.();
+    fundoInerte(false);
+    focoAnterior?.focus?.({ preventScroll: true });
   }
 
   async function abrirTema(tp, n) {
@@ -1590,6 +1642,32 @@
       <p class="nota">A seleção é automática, para orientar a leitura; confira sempre o inteiro teor antes de citar.</p>`),
   };
   // Verificar petição: abre o acórdão do acervo localizado pelo número do processo.
+  // Abas (role="tab"): lista com role="tablist", só a aba ativa na ordem do Tab, setas para trocar.
+  function corrigirAbas() {
+    const listas = new Set($$('[role="tab"]').map((t) => t.parentElement).filter(Boolean));
+    for (const l of listas) {
+      if (l.getAttribute("role") !== "tablist") l.setAttribute("role", "tablist");
+      const abas = $$(':scope > [role="tab"]', l);
+      const sel = abas.find((t) => t.getAttribute("aria-selected") === "true") || abas[0];
+      for (const t of abas) t.tabIndex = t === sel ? 0 : -1;
+    }
+  }
+  let abasPend = false;
+  new MutationObserver(() => { if (!abasPend) { abasPend = true; requestAnimationFrame(() => { abasPend = false; corrigirAbas(); }); } })
+    .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-selected"] });
+  document.addEventListener("keydown", (e) => {
+    const t = e.target.closest?.('[role="tab"]'); if (!t || !["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;
+    const abas = $$(':scope > [role="tab"]', t.parentElement), i = abas.indexOf(t);
+    const j = e.key === "Home" ? 0 : e.key === "End" ? abas.length - 1 : (i + (e.key === "ArrowRight" ? 1 : -1) + abas.length) % abas.length;
+    e.preventDefault(); abas[j].focus(); abas[j].click();
+  });
+  // Imagens que falham (sem manipuladores inline, por causa da política de segurança de conteúdo).
+  document.addEventListener("error", (e) => {
+    const im = e.target; if (!(im instanceof HTMLImageElement)) return;
+    if (im.dataset.erroIni !== undefined) { const sp = document.createElement("span"); sp.className = "av av-ini"; sp.textContent = im.dataset.erroIni; sp.style.cssText = `width:${im.dataset.tam}px;height:${im.dataset.tam}px`; im.replaceWith(sp); }
+    else if (im.dataset.erroRemover) im.closest(im.dataset.erroRemover)?.remove();
+  }, true);
+  document.addEventListener("click", (e) => { if (e.target.closest("[data-recarregar]")) location.reload(); });
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-vf-ac]"); if (!b) return; const [id, m, o, cl, n] = b.dataset.vfAc.split("|"); abrirAcordao({ id, m, o, cl, n }); });
   // Precedente citado em pauta ou em outra lista: abre o detalhe na gaveta, sem trocar de aba.
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-abrir-precedente]"); if (!b) return; e.preventDefault(); const [tp, n] = b.dataset.abrirPrecedente.split("|"); abrirTema(tp, +n); });
@@ -1882,7 +1960,7 @@
   });
   const iniciais = (nome) => String(nome || "").split(/\s+/).filter((w) => w.length > 2 && !/^(de|da|do|dos|das)$/i.test(w)).map((w) => w[0]).filter((c, i, a) => i === 0 || i === a.length - 1).join("").toUpperCase();
   const avatarMin = (m, tam = 48) => m.foto
-    ? `<img class="av" src="${esc(m.foto.url)}" alt="" width="${tam}" height="${tam}" loading="lazy" style="width:${tam}px;height:${tam}px" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'av av-ini',textContent:'${iniciais(m.nome)}',style:'width:${tam}px;height:${tam}px'}))">`
+    ? `<img class="av" src="${esc(m.foto.url)}" alt="" width="${tam}" height="${tam}" loading="lazy" style="width:${tam}px;height:${tam}px" data-erro-ini="${esc(iniciais(m.nome))}" data-tam="${tam}">`
     : `<span class="av av-ini" style="width:${tam}px;height:${tam}px;font-size:${Math.round(tam * 0.36)}px">${iniciais(m.nome)}</span>`;
   const ROT_ORG_CURTO = { "corte-especial": "Corte Especial", "primeira-secao": "1ª Seção", "segunda-secao": "2ª Seção", "terceira-secao": "3ª Seção", "primeira-turma": "1ª Turma", "segunda-turma": "2ª Turma", "terceira-turma": "3ª Turma", "quarta-turma": "4ª Turma", "quinta-turma": "5ª Turma", "sexta-turma": "6ª Turma" };
   const tratamento = (m) => (m.tipo === "convocado" ? (m.genero === "f" ? "Desembargadora convocada" : "Desembargador convocado") : m.genero === "f" ? "Ministra" : "Ministro");
@@ -1996,7 +2074,7 @@
     const rel = m.curto.replace(/\s*\(.*\)/, "");
     abrirGaveta(m.tipo === "convocado" ? tratamento(m) : `${tratamento(m)} do STJ`, m.curto, `
       <div class="cp-perfil-cab">
-        ${m.foto ? `<figure class="cp-foto"><img src="${esc(m.foto.url)}" alt="${esc(m.nome)}" width="132" height="132" onerror="this.closest('figure').remove()"><figcaption><a href="${esc(m.foto.pagina)}" target="_blank" rel="noopener">Foto: ${esc(m.foto.credito)}</a></figcaption></figure>` : avatarMin(m, 96)}
+        ${m.foto ? `<figure class="cp-foto"><img src="${esc(m.foto.url)}" alt="${esc(m.nome)}" width="132" height="132" data-erro-remover="figure"><figcaption><a href="${esc(m.foto.pagina)}" target="_blank" rel="noopener">Foto: ${esc(m.foto.credito)}</a></figcaption></figure>` : avatarMin(m, 96)}
         <div>
           <p class="cp-nome">${esc(m.nome)}</p>
           ${(m.funcoes || []).map((f) => `<span class="selo pri" style="margin:0 6px 6px 0">${esc(f)}</span>`).join("")}${m.obs ? `<span class="selo">${esc(m.obs)}</span>` : ""}
@@ -2064,19 +2142,25 @@
     history.replaceState(null, "", `#${v}${s ? "?" + s : ""}`);
   }
   let viewAtual = null;
+  let jaRoteou = false;
   async function rotear() {
+    const ativo = document.activeElement;
+    const veioDoMenu = !ativo || ativo === document.body || !!ativo.closest?.(".lateral, .barra-inf, #gaveta, .rodape");
     fecharGaveta(); fecharPopF();
     if (D.saiFeed) { D.saiFeed(); D.saiFeed = null; }
     const { v, p } = lerHash();
     if (v !== "pesquisa") AC.token++; // interrompe uma busca longa em andamento ao sair da Pesquisa
     const def = VIEWS.find((x) => x.id === v);
-    $$("[data-v]").forEach((a) => a.classList.toggle("ativa", a.dataset.v === v));
+    $$("[data-v]").forEach((a) => { a.classList.toggle("ativa", a.dataset.v === v); if (a.dataset.v === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
     $("#topo-titulo").innerHTML = `${esc(def.tit)}${AJUDA_VIEW[def.id] ? ` <button type="button" class="topo-ajuda" data-topo-ajuda="${def.id}" title="Como funciona esta página" aria-label="Como funciona esta página">?</button>` : ""}`;
     $("#topo-sobre").textContent = def.sobre;
     document.title = `${def.tit} · Radar STJ`;
     const main = $("#view");
     const mesma = viewAtual === v;
     viewAtual = v;
+    // Ao trocar de seção pelo menu, o foco vai para o título da nova seção (leitores de tela e teclado).
+    if (!mesma && jaRoteou && veioDoMenu) $("#topo-titulo").focus({ preventScroll: true });
+    jaRoteou = true;
     if (!mesma) {
       main.innerHTML = esqueleto();
       main.classList.remove("view-entra"); void main.offsetWidth; main.classList.add("view-entra");
@@ -2087,7 +2171,7 @@
     catch (e) {
       console.error(e);
       if (viewAtual !== v) return; // erro de uma tela que o usuário já deixou
-      main.innerHTML = `<div class="card vazio"><div class="vazio-ico">${ico("alerta")}</div><h3>Não foi possível carregar os dados</h3><p>${esc(e.message)}</p><button class="btn btn-claro" onclick="location.reload()">Tentar de novo</button></div>`;
+      main.innerHTML = `<div class="card vazio" role="alert"><div class="vazio-ico">${ico("alerta")}</div><h3>Não foi possível carregar os dados</h3><p>${esc(e.message)}</p><button class="btn btn-claro" data-recarregar>Tentar de novo</button></div>`;
     }
   }
   const esqueleto = () => `<div class="lista">${Array.from({ length: 3 }, () => `<div class="card item"><div class="esq" style="height:14px;width:40%"></div><div class="esq" style="height:12px;width:90%;margin-top:14px"></div><div class="esq" style="height:12px;width:75%;margin-top:8px"></div></div>`).join("")}</div>`;
@@ -2194,8 +2278,8 @@
   async function promoverSalvosDjen() {
     const ds = Object.entries(P.salvos).filter(([k]) => k.startsWith("d:"));
     if (!ds.length) return 0;
-    const ix = await carregar("numeros").catch(() => null); if (!ix) return 0;
-    const porReg = new Map(); for (const x of ix.l) if (!porReg.has(x[1])) porReg.set(x[1], []); 
+    const ix = await numerosDe([], ds.map(([, o]) => o.reg || "")).catch(() => null); if (!ix) return 0;
+    const porReg = new Map(); for (const x of ix.l) if (!porReg.has(x[1])) porReg.set(x[1], []);
     for (const x of ix.l) porReg.get(x[1]).push(x);
     let n = 0;
     for (const [k, o] of ds) {
@@ -2325,7 +2409,8 @@
               <p class="nota">Mostra seus processos nas próximas pautas.</p></div>
           </div>
           <div class="sugestoes" id="rd-sug"></div>
-          <button type="button" class="btn btn-fant btn-peq" id="rd-link" style="margin-top:10px">${ico("link")} Copiar link para usar em outro aparelho</button>
+          <div class="acoes" style="margin-top:10px"><button type="button" class="btn btn-fant btn-peq" id="rd-link" title="Quem receber o link verá os termos, processos e OABs que você acompanha.">${ico("link")} Copiar link para usar em outro aparelho</button>
+            <button type="button" class="btn btn-fant btn-peq" id="rd-copia">${ico("arquivo")} Cópia de segurança</button></div>
         </div></div>
       </div>
       <div class="barra-filtros" style="justify-content:space-between;margin-top:20px">
@@ -2364,9 +2449,10 @@
       const b = e.target.closest("[data-rm]"); if (!b) return;
       const [k, i] = b.dataset.rm.split("|"); P[k].splice(+i, 1); salvarP(); redesenharTags(); render(); atualizarContadorRadar();
     });
+    $("#rd-copia").addEventListener("click", () => gerenciarPastas(true));
     $("#rd-link").addEventListener("click", () => {
       const cod = btoa(unescape(encodeURIComponent(JSON.stringify({ termos: P.termos, procs: P.procs, oabs: P.oabs }))));
-      copiar(`${location.origin}${location.pathname}#radar?importar=${encodeURIComponent(cod)}`, "Link do radar copiado.");
+      copiar(`${location.origin}${location.pathname}#radar?importar=${encodeURIComponent(cod)}`, "Link copiado. Quem o receber verá o que você acompanha.");
     });
     $$("[data-aba]", main).forEach((b) => b.addEventListener("click", () => { gravarHash("radar", { aba: b.dataset.aba }); vRadar(main, new URLSearchParams(`aba=${b.dataset.aba}`)); }));
     let contNv = {}, contTp = {}, contAr = {};
@@ -2734,6 +2820,9 @@
     soltarAltura();
     if (!POPF.el || POPF.el.hidden) return;
     POPF.el.classList.remove("vis"); POPF.veu.classList.remove("vis"); POPF.raiz = null; POPF.i = -1; POPF.aberta = "";
+    const at = document.activeElement;
+    if (POPF.foco?.isConnected && (!at || at === document.body || POPF.el.contains(at))) POPF.foco.focus({ preventScroll: true });
+    POPF.foco = null;
     setTimeout(() => { if (!POPF.el.classList.contains("vis")) { POPF.el.hidden = true; POPF.veu.hidden = true; } }, 200);
   }
   // Filtros de escolha múltipla guardados como texto: "a|b|c".
@@ -2802,6 +2891,8 @@
       POPF.el.classList.toggle("largo", d.tipo === "materia");
       if (!folha && botao) { const r = botao.getBoundingClientRect(), w = d.tipo === "materia" ? 676 : 416; POPF.el.style.left = `${Math.max(12, Math.min(r.left, innerWidth - w))}px`; POPF.el.style.top = `${r.bottom + 8}px`; }
       else { POPF.el.style.left = ""; POPF.el.style.top = ""; }
+      if (botao && POPF.el.hidden) POPF.foco = botao; // o foco volta ao botão do filtro quando o painel fecha
+      POPF.el.setAttribute("aria-label", d.titulo || d.rot || "Filtro");
       POPF.el.hidden = false; POPF.veu.hidden = !folha;
       requestAnimationFrame(() => { POPF.el.classList.add("vis"); POPF.veu.classList.add("vis"); });
       POPF.el.onclick = (e) => {
@@ -2900,7 +2991,7 @@
   });
   async function abrirInformativo(x) {
     const teor = (await teorInfo(x).catch(() => ({})))[x.id] || [];
-    const ix = x.p?.length ? await carregar("numeros").catch(() => null) : null;
+    const ix = x.p?.length ? await numerosDe(x.p.map((p) => p.n)).catch(() => null) : null;
     const noAcervo = ix ? ix.l.find((y) => x.p.some((p) => p.n === y[0])) : null;
     abrirGaveta(`Informativo de Jurisprudência n. ${x.ed}${x.d ? " · " + fmtData(x.d) : ""}`, x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}` : "Nota do Informativo", `
       <div class="item-sel">${seloMat(x.ar, x.sa, 3)}<span class="selo">${esc(x.sec || "")}</span></div>
@@ -3121,8 +3212,8 @@
         nota: "A seleção automática cobre os três meses mais recentes do acervo. Para períodos anteriores, use a Pesquisa." },
       { rot: "Órgão", tipo: "um", get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, { v: "sup", t: "Corte Especial e Seções" }, { v: "turmas", t: "Turmas" }],
         nota: "A Corte Especial e as Seções uniformizam a jurisprudência do Tribunal; as Turmas julgam a maior parte dos recursos." },
-      { rot: "Relevância", tipo: "um", get: () => f.n, set: (v) => (f.n = v), opcoes: () => [{ v: "", t: "Relevantes e alta", ponto: "rel" }, { v: "alta", t: "Só alta relevância", curto: "Alta relevância", ponto: "alta" }],
-        nota: "Alta relevância: 10 pontos ou mais na classificação automática (veja Sobre)." },
+      { rot: "Relevância", tipo: "um", get: () => f.n, set: (v) => (f.n = v), opcoes: () => [{ v: "", t: "Relevantes e alta", ponto: "rel" }, { v: "alta", t: "Só sinal forte de relevância", curto: "Sinal forte", ponto: "alta" }],
+        nota: "Sinal forte de relevância: 10 pontos ou mais na classificação automática (veja Sobre). A pontuação indica prioridade de leitura, não a força vinculante do precedente." },
       { rot: "Só com tese", tipo: "toggle", get: () => f.t, set: (v) => (f.t = v), dica: "Mostra apenas acórdãos com tese jurídica ou tese de julgamento destacada na ementa." },
       defOrdem(() => f.s, (v) => (f.s = v), [{ v: "rel", t: "Mais relevantes" }, { v: "data", t: "Publicação mais recente" }, { v: "julg", t: "Julgamento mais recente" }]),
     ], aplicar);
@@ -3144,11 +3235,12 @@
       const meses = D.man.meses;
       main.innerHTML = `
         <div id="ac-f">
-          ${campoBusca("ac-q", 'Termos ou número do processo. Ex.: "prova oral" e nulidade · REsp 2.231.419')}
+          <div class="busca-linha">${campoBusca("ac-q", 'Termos ou número do processo. Ex.: "prova oral" e nulidade · REsp 2.231.419')}<button type="button" class="btn btn-pri" id="ac-ir">${ico("pesquisa")}<span>Pesquisar</span></button></div>
           <div class="fd-filtros filtros-lista" id="ac-pil"></div>
         </div>
         <div class="barra-res"><p id="ac-info" aria-live="polite"></p><div class="progresso" id="ac-prog" hidden><i></i></div>
           <button type="button" class="btn btn-fant btn-peq" id="ac-link">${ico("link")} Copiar link</button></div>
+        <p class="cobertura" id="ac-cob">${coberturaHTML()}</p>
         <div id="ac-extra"></div>
         <ol class="lista" id="ac-lista"></ol>
         <div id="ac-pag"></div>`;
@@ -3181,7 +3273,9 @@
         defOrdem(() => AC.f.s, (v) => (AC.f.s = v), [{ v: "auto", t: "Automática" }, { v: "rel", t: "Mais relevantes" }, { v: "data", t: "Publicação mais recente" }, { v: "julg", t: "Julgamento mais recente" }],
           "Automática: com termos de busca, os mais aderentes primeiro; sem termos, os publicados mais recentemente."),
       ], () => buscar());
-      $("#ac-q").addEventListener("input", debounce(() => buscar(), 300));
+      $("#ac-q").addEventListener("input", debounce(() => buscar(), 400));
+      $("#ac-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); buscar(); } });
+      $("#ac-ir").addEventListener("click", () => buscar());
       $("#ac-link").addEventListener("click", () => copiar(location.href, "Link copiado."));
       ligarCards($("#ac-lista"));
       ligarAjuda($("#ac-f"), $("#ac-q"), () => buscar());
@@ -3270,6 +3364,7 @@
   const rotPeriodo = (p, meses) => (p === "todo" ? "todo o acervo" : /^desde:/.test(p) ? `desde ${p.slice(6)}` : /^a:\d{4}$/.test(p) ? `ano de ${p.slice(2)}` : meses.length === 1 ? fmtMesL(meses[0]) : meses.length ? `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}` : "período sem acórdãos");
   async function buscar() {
     const tk = ++AC.token;
+    $("#ac-lista")?.setAttribute("aria-busy", "true");
     const f = { ...AC.f, q: $("#ac-q").value, c: (AC.f.c || "").trim(), rl: (AC.f.rl || "").trim(), n: digitos(AC.f.n) };
     gravarHash("pesquisa", { ...f, p: f.p === "todo" ? "" : f.p, s: f.s === "auto" ? "" : f.s, r: f.r ? "" : "0", x: f.x, t: f.t });
     const todos = D.man.meses.map((m) => m.m);
@@ -3283,9 +3378,9 @@
     const orgs = f.o ? listaV(f.o) : Object.keys(D.orgaos);
     let pares = [], ids = null;
     if (f.n) {
-      const ix = await carregar("numeros").catch(() => null);
+      const ix = await numerosDe([f.n], f.n.length >= 10 ? [f.n] : []).catch(() => null);
       if (ix) {
-        const hit = ix.l.filter((x) => x[0] === f.n || x[1] === f.n || (f.n.length >= 6 && x[0].includes(f.n)));
+        const hit = ix.l;
         ids = new Set(hit.map((x) => String(x[4])));
         const vistos = new Set();
         for (const x of hit) { const k = `${ix.m[x[2]]}|${ix.o[x[3]]}`; if (!vistos.has(k) && temV(f.o, ix.o[x[3]])) { vistos.add(k); pares.push([ix.m[x[2]], ix.o[x[3]]]); } }
@@ -3294,6 +3389,28 @@
     }
     if (!ids) for (const m of meses) { const info = D.man.meses.find((x) => x.m === m); for (const o of orgs) if (info?.orgaos[o]) pares.push([m, o]); }
     const cons = Busca.compilar(f.q);
+    AC.ctrl?.abort(); const ctrl = AC.ctrl = new AbortController();
+    const prog0 = $("#ac-prog"); prog0.hidden = true; $("#ac-extra").innerHTML = "";
+    // Poucas letras: espera o usuário completar o termo.
+    if (!cons.vazio && !f.n && f.q.replace(/[^\p{L}\p{N}]/gu, "").length < 3) {
+      $("#ac-info").textContent = "Digite ao menos três letras para pesquisar.";
+      $("#ac-lista").removeAttribute("aria-busy");
+      return;
+    }
+    // Sem termo nem filtro: mostra os acórdãos mais recentes de cada órgão (arquivo pequeno), sem
+    // baixar os arquivos mensais. A consulta ao acervo começa quando houver termo ou filtro.
+    const inicial = cons.vazio && !f.n && !f.a && !f.c && !f.rl && !f.x && !f.t && f.r && (f.s === "auto" || f.s === "data") && (f.p === "todo" || /^u\d+$/.test(f.p));
+    if (inicial) {
+      const rec = await carregar("recentes").catch(() => null);
+      if (tk !== AC.token) return;
+      if (rec) {
+        const lista = rec.filter((r) => temV(f.o, r.o)).sort((a, b) => (b.dj || "").localeCompare(a.dj || "") || (b.s ?? 0) - (a.s ?? 0));
+        AC.lista = agrupar(lista.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = [];
+        $("#ac-info").innerHTML = `Acórdãos publicados mais recentemente${f.o ? " nos órgãos escolhidos" : ""}. Digite termos ou use os filtros para pesquisar em ${esc(rotPeriodo(f.p, meses))}.`;
+        renderLista(true);
+        return;
+      }
+    }
     const paresTodos = pares.length;
     if (!ids && pares.length > 12 && (!cons.vazio || f.rl || f.c || f.a)) {
       $("#ac-info").textContent = "Consultando o índice…";
@@ -3367,7 +3484,7 @@
           if (ordem !== "rel" && res.length >= MAX_RES) { cortado = true; break; }
           const [m, o] = pares[i++]; mesAt = m;
           let l = [];
-          try { l = D.shards.has(`${m}/${o}`) ? await shard(m, o) : await getJSONgz(`data/acordaos/${m}/${o}.json`); } catch { /* arquivo indisponível */ }
+          try { l = D.shards.has(`${m}/${o}`) ? await shard(m, o) : await getJSONgz(`data/acordaos/${m}/${o}.json`, ctrl.signal); } catch { /* arquivo indisponível ou busca cancelada */ }
           if (tk !== AC.token) return;
           consumir(l); feitos++;
           if (feitos % 10 === 0) mostrar();
@@ -3407,6 +3524,7 @@
   const pgAc = paginador("ac", () => renderLista(false), "#ac-lista");
   function renderLista(reset) {
     const ul = $("#ac-lista");
+    ul.removeAttribute("aria-busy");
     if (reset) pgAc.pag = 1;
     ul.innerHTML = pgAc.fatia(AC.lista).map((r) => cardAcordao(r, { termos: AC.termos })).join("");
     $("#ac-pag").innerHTML = pgAc.html(AC.lista.length);
@@ -3956,33 +4074,44 @@
     return pesos.map((d, i) => { let s = 0; for (const [w, p] of q) { const x = d.v.get(w); if (x) s += x * p; } return { t: docs[i], s: s / (d.n * qn) }; })
       .filter((x) => x.s > 0.12 && x.t._g !== "cancelado").sort((a, b) => b.s - a.s).slice(0, k);
   }
-  function carregarScript(src) {
-    return new Promise((ok, erro) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => erro(new Error("Falha ao carregar " + src)); document.head.appendChild(s); });
+  // Bibliotecas de leitura de PDF e DOCX hospedadas no próprio site (versões fixas, conferidas pelo hash):
+  // nenhum código de terceiros é carregado durante a análise do documento.
+  const VENDOR = {
+    pdf: { src: "vendor/pdf.min.js", sri: "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" },
+    pdfWorker: "vendor/pdf.worker.min.js",
+    mammoth: { src: "vendor/mammoth.browser.min.js", sri: "sha384-nFoSjZIoH3CCp8W639jJyQkuPHinJ2NHe7on1xvlUA7SuGfJAfvMldrsoAVm6ECz" },
+  };
+  function carregarScript({ src, sri }) {
+    return new Promise((ok, erro) => { const s = document.createElement("script"); s.src = src; if (sri) { s.integrity = sri; s.crossOrigin = "anonymous"; } s.onload = ok; s.onerror = () => erro(new Error("Não foi possível carregar o leitor de arquivos. Cole o texto no campo abaixo.")); document.head.appendChild(s); });
   }
+  const VF = { txt: "", pags: null }; // texto lido do PDF e início de cada página, para indicar a página das citações
   async function lerArquivo(arq) {
     const nome = arq.name.toLowerCase();
+    VF.txt = ""; VF.pags = null;
     if (/\.(txt|md)$/.test(nome)) return arq.text();
     if (nome.endsWith(".pdf")) {
-      if (!window.pdfjsLib) await carregarScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      const pdf = await window.pdfjsLib.getDocument({ data: await arq.arrayBuffer() }).promise;
-      let txt = "";
-      for (let i = 1; i <= pdf.numPages; i++) { const pg = await pdf.getPage(i); const c = await pg.getTextContent(); txt += c.items.map((x) => x.str).join(" ") + "\n"; }
+      if (!window.pdfjsLib) await carregarScript(VENDOR.pdf);
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = VENDOR.pdfWorker;
+      const pdf = await window.pdfjsLib.getDocument({ data: await arq.arrayBuffer(), isEvalSupported: false }).promise;
+      let txt = ""; const pags = [];
+      for (let i = 1; i <= pdf.numPages; i++) { const pg = await pdf.getPage(i); const c = await pg.getTextContent(); pags.push(txt.length); txt += c.items.map((x) => x.str).join(" ") + "\n"; }
+      VF.txt = txt; VF.pags = pags;
       return txt;
     }
     if (nome.endsWith(".docx")) {
-      if (!window.mammoth) await carregarScript("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js");
+      if (!window.mammoth) await carregarScript(VENDOR.mammoth);
       const r = await window.mammoth.extractRawText({ arrayBuffer: await arq.arrayBuffer() });
       return r.value;
     }
     throw new Error("Formato não suportado. Use PDF, DOCX, TXT ou MD.");
   }
+  const URL_PROC_STJ = (cl, n) => `https://processo.stj.jus.br/processo/pesquisa/?tipoPesquisa=tipoPesquisaGenerica&termo=${encodeURIComponent(`${String(cl).trim().split(/\s+/).pop()} ${n}`)}`;
   async function vVerificar(main) {
     main.innerHTML = `
       <div class="verif-grade">
         <section class="card card-pad">
           <h2 style="margin:0 0 4px;font:700 19px/1.3 var(--serif)">Cole o texto ou envie o arquivo</h2>
-          <p class="nota" style="color:var(--tx-3);font-size:13.5px;margin:0 0 12px">O arquivo é lido no seu navegador e não é enviado a nenhum servidor.</p>
+          <p class="nota" style="color:var(--tx-3);font-size:13.5px;margin:0 0 12px">O arquivo é lido no seu navegador e não é enviado a nenhum servidor. Os leitores de PDF e DOCX ficam no próprio site: nenhum código externo é carregado durante a análise.</p>
           <div class="solta" id="vf-solta">${ico("arquivo")}<div style="margin-top:6px">Arraste um PDF, DOCX, TXT ou MD, ou <label style="color:var(--pri);font-weight:600;cursor:pointer">escolha um arquivo<input type="file" id="vf-arq" accept=".pdf,.docx,.txt,.md" hidden></label></div><div id="vf-nome" class="meta" style="justify-content:center;margin-top:6px"></div></div>
           <textarea id="vf-txt" rows="14" style="margin-top:12px" placeholder="Ou cole aqui o texto da petição, do recurso ou do parecer…"></textarea>
           <div class="acoes"><button class="btn btn-pri" id="vf-ok">${ico("verificar")} Verificar citações</button><button class="btn btn-fant" id="vf-limpar">Limpar</button></div>
@@ -4008,42 +4137,65 @@
     const res = $("#vf-res");
     if (txt.trim().length < 40) { toast("Cole um texto um pouco maior."); return; }
     res.innerHTML = esqueleto();
-    const [t, pt, pl, ix, dj, nums] = await Promise.all([temas(), procTemas(), pautas(), indice(), djen(), carregar("numeros").catch(() => null)]);
-    // Índice de números: todos os acórdãos do acervo, por número do processo.
-    const porNumero = new Map();
-    if (nums) for (const x of nums.l) { if (!porNumero.has(x[0])) porNumero.set(x[0], []); porNumero.get(x[0]).push(x); }
-    // Temas citados
-    const citTemas = new Map();
+    res.setAttribute("aria-busy", "true");
+    // Páginas do PDF lido (se o texto não foi alterado depois da leitura).
+    const pags = VF.txt === txt ? VF.pags : null;
+    const pagina = (i) => { if (!pags) return 0; let p = 1; while (p < pags.length && pags[p] <= i) p++; return p; };
+    const trechoDe = (i, len) => {
+      const ini = Math.max(0, i - 70), fim = Math.min(txt.length, i + len + 70);
+      return `${ini > 0 ? "…" : ""}${esc(txt.slice(ini, i))}<mark>${esc(txt.slice(i, i + len))}</mark>${esc(txt.slice(i + len, fim))}${fim < txt.length ? "…" : ""}`.replace(/\s+/g, " ");
+    };
+    const ocorr = (mapa, k, dados, i, len) => { if (!mapa.has(k)) mapa.set(k, { ...dados, oc: [] }); mapa.get(k).oc.push({ i, len, pg: pagina(i) }); };
+    // Onde a citação aparece: primeiro trecho e, havendo mais, as páginas (PDF) ou o número de ocorrências.
+    const ondeHTML = (c) => {
+      const pgs = [...new Set(c.oc.map((o) => o.pg).filter(Boolean))];
+      const onde = pgs.length ? `${pgs.length > 1 ? "Páginas" : "Página"} ${pgs.join(", ")}` : "";
+      const vezes = c.oc.length > 1 ? `citado ${c.oc.length} vezes` : "";
+      return `<details class="cit-onde"><summary>${[onde, vezes].filter(Boolean).join(" · ") || "Ver trecho"}</summary>${c.oc.slice(0, 6).map((o) => `<p>${o.pg ? `<b>p. ${o.pg}</b> · ` : ""}${trechoDe(o.i, o.len)}</p>`).join("")}${c.oc.length > 6 ? `<p class="nota">e mais ${c.oc.length - 6}.</p>` : ""}</details>`;
+    };
+
+    // 1. Citações no texto (todas as ocorrências).
+    const citTemas = new Map(), temasOutros = new Map();
     const reT = /\b(tema|temas|controv[ée]rsia|iac)\s+(?:repetitivo\s+|n[º°o.]*\s*|de\s+n[º°o.]*\s*)*(\d{1,3}(?:\.\d{3})+|\d+)(?![\d])(?:\s*(?:\/|do|da)\s*(stj|stf|superior tribunal de justi[çc]a|supremo))?/gi;
     let m;
     while ((m = reT.exec(txt))) {
       const tipo = /^controv/i.test(m[1]) ? "Controvérsia" : /^iac/i.test(m[1]) ? "IAC" : "Tema";
       const n = +m[2].replace(/\./g, ""); const corte = norm(m[3] || "");
       const depois = txt.slice(m.index + m[0].length, m.index + m[0].length + 40);
-      if (/stf|supremo/.test(corte) || /^\s*(da repercuss|de repercuss|do stf|do supremo)/i.test(depois)) continue;
-      const k = `${tipo}-${n}`; if (!citTemas.has(k)) citTemas.set(k, { tipo, n, trecho: txt.slice(Math.max(0, m.index - 60), m.index + 90) });
+      if (/stf|supremo/.test(corte) || /^\s*(da repercuss|de repercuss|do stf|do supremo)/i.test(depois)) { ocorr(temasOutros, `STF-${n}`, { rot: `Tema ${n}/STF` }, m.index, m[0].length); continue; }
+      ocorr(citTemas, `${tipo}-${n}`, { tipo, n }, m.index, m[0].length);
     }
-    // Precedentes citados
     const citProc = new Map();
     const reP = /\b((?:(?:AgInt|AgRg|EDcl|EREsp|EAREsp)\s+(?:no|nos|na|em)\s+)*(?:REsp|AREsp|EREsp|EAREsp|RMS|HC|RHC|CC|MS|Rcl|AR|AgInt|AgRg))\s*(?:n[º°o.]*\s*)?(\d{1,3}(?:\.\d{3})+|\d{4,7})(?:\s*\/\s*([A-Z]{2}))?/g;
-    while ((m = reP.exec(txt))) { const nd = digitos(m[2]); if (nd.length < 4) continue; const k = nd; if (!citProc.has(k)) citProc.set(k, { cl: m[1].replace(/\s+/g, " "), n: nd, uf: m[3] || "" }); }
-    // Súmulas
-    const citSum = new Map();
-    const reS = /\bs[úu]mulas?\s+(?:vinculante\s+)?(?:n[º°o.]*\s*)?(\d+)(?![\d])(?:\s*(?:\/|do|da)\s*(stj|stf))?/gi;
-    while ((m = reS.exec(txt))) { const tr = (m[2] || "").toUpperCase() || "—"; const k = `${m[1]}/${tr}`; if (!citSum.has(k)) citSum.set(k, { n: m[1], tr }); }
+    while ((m = reP.exec(txt))) { const nd = digitos(m[2]); if (nd.length < 4) continue; ocorr(citProc, nd, { cl: m[1].replace(/\s+/g, " "), n: nd, uf: m[3] || "" }, m.index, m[0].length); }
+    const citSum = new Map(), sumOutras = new Map();
+    const reS = /\bs[úu]mulas?\s+(vinculante\s+)?(?:n[º°o.]*\s*)?(\d+)(?![\d])(?:\s*(?:\/|do|da)\s*(stj|stf|tst|tse))?/gi;
+    while ((m = reS.exec(txt))) {
+      const tr = m[1] ? "STF" : (m[3] || "").toUpperCase();
+      if (tr && tr !== "STJ") ocorr(sumOutras, `${m[1] ? "SV " : ""}${m[2]}/${tr}`, { rot: `Súmula ${m[1] ? "Vinculante " : ""}${m[2]}/${tr}` }, m.index, m[0].length);
+      else ocorr(citSum, m[2], { n: +m[2], semTrib: !tr }, m.index, m[0].length);
+    }
+
+    // 2. Bases necessárias (o índice de números só é baixado se houver processo citado).
+    const LIM = 120;
+    const procs = [...citProc.values()].slice(0, LIM);
+    const [t, pt, pl, ix, dj, nums, sums] = await Promise.all([temas(), procTemas(), pautas(), indice(), djen(),
+      procs.length ? numerosDe(procs.map((c) => c.n)).catch(() => null) : null, citSum.size ? sumulas().catch(() => []) : []]);
+    const porNumero = new Map();
+    if (nums) for (const x of nums.l) { if (!porNumero.has(x[0])) porNumero.set(x[0], []); porNumero.get(x[0]).push(x); }
 
     const alertas = [];
     const linhasTema = [...citTemas.values()].map((c) => {
       const x = t.idx.get(`${c.tipo}-${c.n}`);
-      if (!x) return `<div class="cit"><span class="cit-tit">${c.tipo} ${c.n}</span><span class="selo canc">Não localizado</span><div class="cit-txt">Não consta da base de precedentes do STJ. Confira se o número está correto ou se o tema é de outro tribunal.</div></div>`;
+      if (!x) return `<div class="cit"><span class="cit-tit">${c.tipo} ${c.n}</span><span class="selo canc">Não encontrado nesta base</span><div class="cit-txt">Não consta da lista de precedentes qualificados do STJ. Confira se o número está correto ou se o tema é de outro tribunal.</div>${ondeHTML(c)}</div>`;
       let nota = "", selo = seloSit(x.sit);
       if (x._g === "cancelado") { nota = `<b>Atenção:</b> a situação atual é “${esc(x.sit)}”. Revise o uso deste precedente.`; alertas.push(`${c.tipo} ${c.n} está ${x.sit.toLowerCase()}`); }
       else if (x._teseAguarda) nota = `Julgado; ${esc(x._teseAguarda.charAt(0).toLowerCase() + x._teseAguarda.slice(1))}`;
       else if (x._g === "andamento") { nota = `Ainda sem tese firmada.${/suspens/i.test(x.info || "") ? " <b>Há determinação de suspensão</b> de processos." : ""}`; }
       else if (x.tese) nota = `<b>Tese:</b> ${esc(x.tese)}`;
-      return `<div class="cit" data-tema="${esc(x.tp)}|${x.n}"><span class="cit-tit"><button type="button" class="link-acao" data-abrir-tema>${esc(x.tp)} ${x.n}</button></span>${selo}<div class="cit-txt">${nota}</div></div>`;
+      return `<div class="cit" data-tema="${esc(x.tp)}|${x.n}"><span class="cit-tit"><button type="button" class="link-acao" data-abrir-tema>${esc(x.tp)} ${x.n}</button></span>${selo}<div class="cit-txt">${nota}</div>${ondeHTML(c)}</div>`;
     });
-    const linhasProc = [...citProc.values()].slice(0, 40).map((c) => {
+    const linhasProc = procs.map((c) => {
       const vinc = pt.porNum.get(c.n) || [];
       const pauta = pl.filter((p) => digitos(p.p) === c.n);
       const ac = ix.find((r) => r.n === c.n);
@@ -4052,29 +4204,70 @@
       const notas = [];
       for (const v of vinc) { const x = t.idx.get(`${v.tp}-${v.n}`); notas.push(`${v.lc ? "Leading case" : "Processo vinculado"} ${v.tp === "Controvérsia" ? "à" : "ao"} <button type="button" class="link-acao" data-tema-direto="${esc(v.tp)}|${v.n}">${esc(v.tp)} ${v.n}</button>${x ? ` (${esc(x.sit)})` : ""}`); }
       for (const p of pauta) notas.push(`<b>Em pauta</b> em ${fmtData(p.d)} · ${esc(D.orgaos[p.o] || "")}${p.pet ? " (" + esc(p.pet) + ")" : ""}`);
-      if (noAcervo.length) notas.push(`<b>${noAcervo.length} acórdão(s) no acervo</b> neste processo: ${noAcervo.slice(0, 4).map((a) => `<button type="button" class="link-acao" data-vf-ac="${esc(a.id)}|${a.m}|${a.o}|${esc(c.cl)}|${c.n}">${esc(D.orgaos[a.o] || a.o)}, ${fmtMes(a.m)}</button>`).join(" · ")}${noAcervo.length > 4 ? ` · <a class="link-acao" href="#pesquisa?q=${c.n}">ver todos</a>` : ""}. A citação pode se referir a um recurso interno (agravo, embargos) julgado em outra data.`);
+      if (noAcervo.length) notas.push(`<b>${noAcervo.length} acórdão(s) no acervo</b> neste processo: ${noAcervo.slice(0, 4).map((a) => `<button type="button" class="link-acao" data-vf-ac="${esc(a.id)}|${a.m}|${a.o}|${esc(c.cl)}|${c.n}">${esc(D.orgaos[a.o] || a.o)}, ${fmtMes(a.m)}</button>`).join(" · ")}${noAcervo.length > 4 ? ` · <a class="link-acao" href="#pesquisa?q=${c.n}">ver todos</a>` : ""}`);
       else if (ac) notas.push(`Acórdão publicado em ${fmtData(ac.dj)} · ${esc(D.orgaos[ac.o] || "")}`);
       if (pub && !ac && !noAcervo.length) notas.push(`Acórdão publicado no DJEN em ${fmtData(pub.d)}, ainda sem ementa no acervo`);
-      return `<div class="cit"><span class="cit-tit">${esc(c.cl)} ${fmtNumProc(c.n)}${c.uf ? "/" + esc(c.uf) : ""}</span>${notas.length ? '<span class="selo pri">Localizado</span>' : '<span class="selo">Não localizado no site</span>'}<div class="cit-txt">${notas.join("<br>") || "Não consta do acervo do site (acórdãos desde 2000), das pautas nem dos precedentes qualificados. O acervo reúne os espelhos de acórdãos que o STJ divulga em dados abertos, que não abrangem decisões monocráticas nem todos os acórdãos. Isso não indica erro na citação; confira no site do STJ."}</div></div>`;
+      const stj = `<a class="link-acao" href="${URL_PROC_STJ(c.cl, c.n)}" target="_blank" rel="noopener">consultar no site do STJ ${ico("externo")}</a>`;
+      return `<div class="cit"><span class="cit-tit">${esc(c.cl)} ${fmtNumProc(c.n)}${c.uf ? "/" + esc(c.uf) : ""}</span>${notas.length ? '<span class="selo pri">Encontrado</span>' : '<span class="selo">Não encontrado nesta base</span>'}<div class="cit-txt">${notas.join("<br>") || `Não consta do acervo do site, das pautas nem dos precedentes qualificados. O acervo reúne apenas os acórdãos colegiados publicados nos Dados Abertos do STJ, sem decisões monocráticas; isso não significa que o processo não exista. ${stj}`}</div>${ondeHTML(c)}</div>`;
     });
+    const porSum = new Map((sums || []).map((s) => [s.n, s]));
+    const linhasSum = [...citSum.values()].map((c) => {
+      const s = porSum.get(c.n);
+      const obs = c.semTrib ? `<p class="nota">Tribunal não indicado no texto; conferida como súmula do STJ.</p>` : "";
+      if (!s) return `<div class="cit"><span class="cit-tit">Súmula ${c.n}</span><span class="selo canc">Não encontrada nesta base</span><div class="cit-txt">Não há súmula do STJ com esse número.${c.semTrib ? " Pode ser de outro tribunal." : ""}</div>${ondeHTML(c)}</div>`;
+      const sit = s.sit === "cancelada" ? '<span class="selo canc">Cancelada</span>' : s.sit === "alterada" ? '<span class="selo rel">Alterada</span>' : '<span class="selo ok">Vigente</span>';
+      if (s.sit !== "vigente" && !c.semTrib) alertas.push(`Súmula ${c.n}/STJ ${s.sit === "cancelada" ? "foi cancelada" : "teve a redação alterada"}`);
+      else if (s.sit !== "vigente") alertas.push(`Súmula ${c.n} (se do STJ) ${s.sit === "cancelada" ? "foi cancelada" : "teve a redação alterada"}`);
+      return `<div class="cit"><span class="cit-tit"><button type="button" class="link-acao" data-vf-sum="${s.n}">Súmula ${s.n}/STJ</button></span>${sit}<div class="cit-txt">${esc(s.t)}${obs}</div>${ondeHTML(c)}</div>`;
+    });
+    const outros = [...temasOutros.values(), ...sumOutras.values()];
     const sem = await temasSemelhantes(txt, 6);
     const jaCit = new Set(citTemas.keys());
     const sugest = sem.filter((x) => !jaCit.has(`${x.t.tp}-${x.t.n}`));
+    const nada = !citTemas.size && !citProc.size && !citSum.size;
+    const semAlerta = !nada && !alertas.length;
+    res.removeAttribute("aria-busy");
     res.innerHTML = `
       <div class="card card-pad">
         <div class="stats" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:0">
           <div class="stat" style="cursor:default"><span><b>${citTemas.size}</b><span>tema(s) citado(s)</span></span></div>
           <div class="stat" style="cursor:default"><span><b>${citProc.size}</b><span>precedente(s) citado(s)</span></span></div>
-          <div class="stat" style="cursor:default"><span><b>${citSum.size}</b><span>súmula(s) citada(s)</span></span></div>
+          <div class="stat" style="cursor:default"><span><b>${citSum.size}</b><span>súmula(s) do STJ citada(s)</span></span></div>
         </div>
-        ${alertas.length ? `<p class="aviso" style="margin-top:12px">${ico("alerta")}<span><b>Pontos de atenção:</b> ${alertas.map(esc).join("; ")}.</span></p>` : ""}
+        ${alertas.length ? `<p class="aviso" role="alert" style="margin-top:12px">${ico("alerta")}<span><b>Pontos de atenção:</b> ${alertas.map(esc).join("; ")}.</span></p>` : ""}
+        ${semAlerta ? `<p class="aviso ok" style="margin-top:12px">${ico("verificar")}<span><b>Nenhum ponto de atenção encontrado</b> nos temas e súmulas do STJ citados. Os precedentes não encontrados nesta base continuam a merecer conferência no site do STJ.</span></p>` : ""}
+        ${nada ? `<p class="nota" style="margin-top:12px">Nenhuma citação de tema, processo ou súmula do STJ foi identificada no texto. A verificação reconhece formas como “Tema 1.234”, “REsp 2.231.419/SP” e “Súmula 7/STJ”.</p>` : ""}
+        ${citProc.size > LIM ? `<p class="aviso" style="margin-top:12px">${ico("alerta")}<span>O texto cita ${citProc.size} processos; foram conferidos os ${LIM} primeiros.</span></p>` : ""}
       </div>
-      <div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 6px">Temas citados</h3>${linhasTema.join("") || '<p class="nota">Nenhum tema identificado no texto.</p>'}</div>
+      <div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 6px">Temas citados</h3>${linhasTema.join("") || '<p class="nota">Nenhum tema do STJ identificado no texto.</p>'}</div>
       <div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 6px">Precedentes citados</h3>${linhasProc.join("") || '<p class="nota">Nenhum número de processo identificado.</p>'}</div>
-      ${citSum.size ? `<div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 6px">Súmulas citadas</h3><p class="nota" style="margin-bottom:8px">A base aberta do STJ não traz as súmulas; confira a redação e a vigência no site do tribunal.</p><div class="chips">${[...citSum.values()].map((s) => `<span class="selo">Súmula ${esc(s.n)}${s.tr !== "—" ? "/" + esc(s.tr) : ""}</span>`).join("")}</div></div>` : ""}
+      ${citSum.size ? `<div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 6px">Súmulas do STJ citadas</h3>${linhasSum.join("")}</div>` : ""}
+      ${outros.length ? `<div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 2px">Citações de outros tribunais</h3><p class="nota" style="margin-bottom:8px">Identificadas no texto, mas não conferidas: esta base cobre apenas o STJ.</p><div class="chips">${outros.map((o) => `<span class="selo">${esc(o.rot)}${o.oc.length > 1 ? ` · ${o.oc.length}×` : ""}</span>`).join("")}</div></div>` : ""}
       <div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 2px">Precedentes qualificados com assunto parecido</h3><p class="nota" style="margin-bottom:6px">Sugestões automáticas por semelhança de palavras, que não foram citadas no texto. Confira a pertinência.</p>
-        ${sugest.length ? sugest.map((x) => `<div class="cit" data-tema="${esc(x.t.tp)}|${x.t.n}"><span class="cit-tit"><button type="button" class="link-acao" data-abrir-tema>${esc(x.t.tp)} ${x.t.n}</button></span>${seloSit(x.t.sit)}<div class="cit-txt">${esc(x.t.tese ? "Tese: " + x.t.tese : x.t.q)}</div></div>`).join("") : '<p class="nota">Nenhuma sugestão com semelhança suficiente.</p>'}</div>`;
+        ${sugest.length ? sugest.map((x) => `<div class="cit" data-tema="${esc(x.t.tp)}|${x.t.n}"><span class="cit-tit"><button type="button" class="link-acao" data-abrir-tema>${esc(x.t.tp)} ${x.t.n}</button></span>${seloSit(x.t.sit)}<div class="cit-txt">${esc(x.t.tese ? "Tese: " + x.t.tese : x.t.q)}</div></div>`).join("") : '<p class="nota">Nenhuma sugestão com semelhança suficiente.</p>'}</div>
+      <div class="acoes" style="margin-top:12px"><button type="button" class="btn btn-claro btn-peq" id="vf-copiar">${ico("copiar")} Copiar relatório</button></div>`;
     $$("[data-tema-direto]", res).forEach((b) => b.addEventListener("click", () => { const [tp, n] = b.dataset.temaDireto.split("|"); abrirTema(tp, +n); }));
+    $$("[data-vf-sum]", res).forEach((b) => b.addEventListener("click", () => abrirSumula(+b.dataset.vfSum)));
+    $("#vf-copiar").addEventListener("click", () => copiar(relatorioTexto(res), "Relatório copiado."));
+  }
+  // Relatório em texto simples (para colar em e-mail ou no processo interno).
+  function relatorioTexto(res) {
+    const L = [`Verificação de citações · Radar STJ · ${fmtData(hojeISO())}`, ""];
+    for (const card of $$(".card", res)) {
+      const h = $("h3", card)?.textContent;
+      if (h?.startsWith("Precedentes qualificados com")) continue;
+      if (h) L.push(h.toUpperCase());
+      for (const c of $$(".cit", card)) {
+        const tit = $(".cit-tit", c)?.textContent.trim(), selo = $(".selo", c)?.textContent.trim(), onde = $(".cit-onde summary", c)?.textContent.trim();
+        const txtc = $(".cit-txt", c)?.innerText.replace(/consultar no site do STJ/g, "").replace(/\s+/g, " ").trim();
+        L.push(`- ${tit}${selo ? ` [${selo}]` : ""}${onde && onde !== "Ver trecho" ? ` (${onde})` : ""}${txtc ? `: ${txtc}` : ""}`);
+      }
+      if (h) for (const x of $$(".chips .selo", card)) L.push(`- ${x.textContent.trim()}`);
+      if (!h) for (const p of $$(".aviso, .stat", card)) L.push(p.innerText.replace(/\s+/g, " ").trim());
+      L.push("");
+    }
+    L.push("Base: acórdãos colegiados dos Dados Abertos do STJ, precedentes qualificados e súmulas do STJ. Não inclui decisões monocráticas.");
+    return L.join("\n");
   }
 
   // ================================================================= SOBRE
@@ -4094,13 +4287,13 @@
       <h3 style="font-family:var(--ui)">Como a relevância é calculada</h3>
       <p>Cada acórdão recebe uma pontuação automática. Somam pontos o julgamento pela Corte Especial (+5) ou por Seção (+4), a tese jurídica registrada (+6), a afetação ao rito repetitivo (+6), os embargos de divergência (+4), o tema repetitivo (+3) e as menções a superação ou mudança de entendimento e a questão nova (+4), a modulação e a distinção (+3) e a divergência (+2). Perdem pontos os agravos internos e os embargos de declaração (−1) e os fundamentos de rotina, como Súmula 7, Súmulas 283/284 do STF, embargos rejeitados e reexame de provas (até −4).</p>
       <p>No Atualize-se entram apenas julgados com uma tese legível: a tese jurídica ou os itens da tese de julgamento com conteúdo próprio. Ficam de fora os embargos de declaração, os agravos em recurso extraordinário, os recursos não conhecidos ou desprovidos sem tese e os julgados de repetitivo cuja tese já aparece como “tese firmada”. Esses acórdãos continuam nos Destaques e na Pesquisa. A tese de julgamento de cada acórdão é lida item por item. Saem da fila os julgados em que todos os itens apenas aplicam óbices ou entendimentos consolidados (Súmulas 5, 7, 83, 182, 211, 282 e 284, prequestionamento, embargos de declaração, prisão preventiva por fundamentação usual, dosimetria), e perdem posição os que repetem em série a mesma tese. Quando só parte dos itens tem conteúdo próprio, o cartão mostra apenas esses itens; a tese completa continua na ementa.</p>
-      <p>Com 10 pontos ou mais, o acórdão é de <b>alta relevância</b>; de 6 a 9, <b>relevante</b>; de 2 a 5, marcado para <b>acompanhar</b>. A área do direito é identificada pelas palavras da verbetação. É uma triagem para orientar a leitura, e não uma avaliação jurídica.</p>
+      <p>Com 10 pontos ou mais, o acórdão recebe o selo <b>sinal forte de relevância</b>; de 6 a 9, <b>relevante</b>; de 2 a 5, marcado para <b>acompanhar</b>. A pontuação indica prioridade de leitura, e não a força vinculante do precedente; passe o cursor sobre o selo para ver os pontos de cada acórdão. A área do direito é identificada pelas palavras da verbetação. É uma triagem para orientar a leitura, e não uma avaliação jurídica.</p>
       <h3 style="font-family:var(--ui)">Como ler as cores</h3>
       <p>As cores têm sempre o mesmo significado em todas as telas.</p>
       <div class="legenda-cores">
         <p><span class="selo ok">Verde</span> tese firmada e tema julgado</p>
         <p><span class="selo rel">Âmbar</span> tema afetado ou em andamento e relevância média</p>
-        <p><span class="selo alta">Vermelho</span> o que pede atenção agora: em pauta, alta relevância</p>
+        <p><span class="selo alta">Vermelho</span> o que pede atenção agora: em pauta, sinal forte de relevância</p>
         <p><span class="selo acomp">Azul-claro</span> acórdão de repetitivo publicado e itens para acompanhar</p>
         <p><span class="selo pri">Azul</span> julgados das Turmas e Seções e marcas de relevância</p>
         <p>Cada matéria tem a sua própria cor: ${Object.keys(AREAS).map((k) => seloArea(k)).join(" ")}</p>
@@ -4108,7 +4301,7 @@
       <h3 style="font-family:var(--ui)">Matérias e assuntos específicos</h3>
       <p>Cada julgado, tema, súmula, nota e tese recebe uma matéria geral (Civil, Processo Civil, Penal, Tributário etc.) e, quando possível, até três assuntos específicos. Os assuntos seguem a organização da lei de regência: no Civil, a do Código Civil (parte geral, obrigações, contratos, responsabilidade civil e direito das coisas); em Família e Sucessões, os livros IV e V do Código; no Processo Civil, as partes do CPC (parte geral, conhecimento, execução e recursos). No filtro Matéria, escolha a matéria à esquerda e o assunto à direita; no celular, toque na matéria e use “Matérias” para voltar. A classificação é automática, feita pelos termos da ementa, e pode conter imprecisões.</p>
       <h3 style="font-family:var(--ui)">Busca por número de processo</h3>
-      <p>Na Pesquisa, o número pode ser digitado no próprio campo de busca, com ou sem a classe e os pontos (“REsp 2.231.419/SP”, “resp 2231419” ou “2231419”). O site procura em todo o acervo e, se o acórdão ainda não estiver no arquivo mensal do STJ, mostra a publicação no DJEN e a sessão em pauta, quando houver.</p>
+      <p>Na Pesquisa, o número pode ser digitado no próprio campo de busca, com ou sem a classe e os pontos (“REsp 2.231.419/SP”, “resp 2231419” ou “2231419”). O site procura em todo o acervo e, se o acórdão ainda não estiver no arquivo mensal do STJ, mostra a publicação no DJEN e a sessão em pauta, quando houver. Também aceita o número de registro (12 dígitos). O número deve estar completo.</p>
       <h3 style="font-family:var(--ui)">Salvos</h3>
       <p>Acórdãos, publicações do DJEN, temas, notas do Informativo, teses e pautas podem ser salvos pelo marcador e ficam na aba Salvos, no menu à esquerda. Lá é possível separá-los em pastas (por tese, cliente ou processo; um item pode estar em várias), marcá-los como favoráveis ou desfavoráveis (no penal, à defesa), anotá-los, filtrá-los por tipo e matéria, buscar nas anotações e copiar as citações de uma pasta de uma só vez. Um acórdão salvo a partir do DJEN passa a exibir a ementa completa assim que o STJ divulgar o arquivo mensal. Os salvos ficam guardados neste navegador.</p>
       <h3 style="font-family:var(--ui)">Informativo do STJ</h3>
@@ -4121,8 +4314,9 @@
       <p>Na aba Súmulas e teses, a Jurisprudência em Teses reúne todas as edições publicadas pelo STJ, cada uma dedicada a um assunto, com as teses consolidadas e os precedentes que as sustentam (até oito acórdãos por tese, com a indicação do total na edição oficial). O STJ não publica arquivo aberto das edições; por isso as edições novas e as atualizadas são coletadas pelo navegador uma vez por semana, às segundas-feiras, e a data da última coleta aparece em “Situação da base”. É possível buscar por palavras, filtrar por matéria, período de disponibilização ou número da edição e ordenar por edição, assunto, matéria ou número de precedentes.</p>
       <h3 style="font-family:var(--ui)">Súmulas</h3>
       <p>A aba Súmulas reúne todos os enunciados do STJ, conferidos diariamente no arquivo oficial de verbetes do Tribunal, com a situação (vigente, cancelada ou com redação alterada), o órgão que aprovou, as datas de julgamento e de publicação e a matéria.</p>
-      <h3 style="font-family:var(--ui)">Privacidade</h3>
-      <p>O seu radar (assuntos, processos e OAB) e os itens salvos ficam apenas no seu navegador. A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor.</p>
+      <h3 style="font-family:var(--ui)">Privacidade e segurança</h3>
+      <p>O seu radar (assuntos, processos e OAB), os itens salvos, as pastas e as anotações ficam apenas no seu navegador e se perdem se os dados do navegador forem apagados; use a cópia de segurança (em Salvos ou no Meu radar) para guardá-los ou levá-los a outro aparelho. O link do Meu radar leva os termos, processos e OABs acompanhados: quem o receber poderá vê-los.</p>
+      <p>A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor. Os leitores de PDF (PDF.js) e de DOCX (Mammoth) ficam hospedados no próprio site, em versões fixas conferidas pelo hash, e a política de segurança da página impede que ela carregue código de outros endereços ou envie dados para eles.</p>
       <h3 style="font-family:var(--ui)" id="sobre-fontes">Situação da base</h3>
       <p>Última execução da rotina: ${new Date(m.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. A rotina roda duas vezes por dia; cada fonte tem o próprio ritmo de publicação no STJ.</p>
       ${tabelaFontes(m)}
@@ -4136,6 +4330,13 @@
 
   // Situação de cada fonte: data do dado mais recente e da última verificação bem-sucedida.
   // "Defasada" quando a verificação automática falha há alguns dias ou o dado envelheceu além do normal.
+  // Cobertura da base, exibida junto dos resultados da Pesquisa.
+  function coberturaHTML() {
+    const ms = D.man.meses.map((x) => x.m).sort();
+    const esp = situacaoFontes(D.man)[0];
+    const verif = esp.verif ? fmtData(esp.verif.slice(0, 10)) : "—";
+    return `${ico("sobre")}<span>Acórdãos colegiados publicados nos Dados Abertos do STJ, de ${ms.length ? fmtMesL(ms[0]) : "—"} a ${ms.length ? fmtMesL(ms[ms.length - 1]) : "—"}. Não inclui decisões monocráticas. Base verificada em ${verif}.${esp.defasada ? ` <a href="#sobre?s=fontes" class="defas">A fonte está com atraso.</a>` : ""}</span>`;
+  }
   function situacaoFontes(m) {
     const dias = (iso) => (iso ? (Date.now() - new Date(iso.length === 10 ? `${iso}T12:00:00-03:00` : iso)) / 864e5 : Infinity);
     const ymd = (s) => (/^\d{8}$/.test(s || "") ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : s || "");
@@ -4181,6 +4382,8 @@
     const q = new Date(D.man.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const defas = situacaoFontes(D.man).filter((x) => x.defasada);
     $("#lat-atualizado").innerHTML = `Verificado em ${esc(q)}${defas.length ? `<a class="lat-defas" href="#sobre?s=fontes" title="${esc(defas.map((x) => x.nome).join(", "))}">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a class="lat-fontes" href="#sobre?s=fontes">ver cada fonte</a>`}`;
+    // No celular a barra lateral não aparece: a situação da base vai também para o rodapé.
+    $("#rod-atualizado").innerHTML = `Base verificada em ${esc(q)} · ${defas.length ? `<a class="defas" href="#sobre?s=fontes">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a href="#sobre?s=fontes">situação de cada fonte</a>`}.`;
     window.addEventListener("hashchange", rotear);
     await rotear();
     atualizarContadorRadar();

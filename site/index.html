@@ -2,6 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'; img-src 'self' data: https://upload.wikimedia.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Radar STJ · Jurisprudência</title>
 <meta name="description" content="O que mudou no STJ: repetitivos, acórdãos relevantes, pautas e verificação de citações, com dados abertos oficiais atualizados diariamente.">
@@ -32,7 +34,7 @@
     <div class="topo-in">
       <div class="topo-tit">
         <p class="sobretitulo" id="topo-sobre">Radar STJ</p>
-        <h1 id="topo-titulo">Carregando…</h1>
+        <h1 id="topo-titulo" tabindex="-1">Carregando…</h1>
       </div>
       <button type="button" class="btn btn-claro topo-busca" id="topo-busca" aria-label="Pesquisar (atalho: /)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -41,7 +43,7 @@
     </div>
   </header>
   <main id="view" class="view" tabindex="-1"></main>
-  <footer class="rodape">Fonte: Portal de Dados Abertos do Superior Tribunal de Justiça. Projeto independente, sem vínculo com o STJ. A relevância é calculada automaticamente; confira sempre o inteiro teor oficial.</footer>
+  <footer class="rodape">Fonte: Portal de Dados Abertos do Superior Tribunal de Justiça. Projeto independente, sem vínculo com o STJ. A relevância é calculada automaticamente; confira sempre o inteiro teor oficial. <span id="rod-atualizado"></span></footer>
 </div>
 
 <nav class="barra-inf" id="barra-inf" aria-label="Navegação"></nav>
