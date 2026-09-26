@@ -77,6 +77,10 @@
     semana: '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8 14h8M8 17.5h5"/>',
     sumulas: '<path d="M5 4h11l3 3v13H5z"/><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4.5"/>',
     ordem: '<path d="M7 4v16M4 17l3 3 3-3M14 6h7M14 12h5M14 18h3"/>',
+    pasta: '<path d="M3.5 6.5a1.5 1.5 0 0 1 1.5-1.5h4.2l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v9.3A1.5 1.5 0 0 1 19 19.5H5a1.5 1.5 0 0 1-1.5-1.5z"/>',
+    polegar: '<path d="M7 11v9H4v-9zM7 11l4-7c1.3 0 2.2 1 2 2.3L12.5 10H19a1.8 1.8 0 0 1 1.8 2.1l-1.2 6.4A2 2 0 0 1 17.6 20H7"/>',
+    "polegar-b": '<path d="M7 13V4H4v9zM7 13l4 7c1.3 0 2.2-1 2-2.3L12.5 14H19a1.8 1.8 0 0 0 1.8-2.1l-1.2-6.4A2 2 0 0 0 17.6 4H7"/>',
+    circulo: '<circle cx="12" cy="12" r="7.5"/>',
     link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   };
   const ico = (k, cls = "") => `<svg viewBox="0 0 24 24" aria-hidden="true" class="${cls}">${I[k] || ""}</svg>`;
@@ -897,7 +901,7 @@
       toast("Removido dos salvos.", { rot: "Desfazer", fn: () => { P.salvos[chave] = antes; salvarP(); if (botao) botao.setAttribute("aria-pressed", "true"); avisarSalvos(); } });
     } else {
       P.salvos[chave] = { ...obj, salvoEm: hojeISO() };
-      toast("Salvo em Meu radar → Salvos.", { rot: "Escolher pasta", fn: () => organizarSalvo(chave) });
+      toast(pastas().length ? "Salvo. Quer colocá-lo numa pasta?" : "Salvo na aba Salvos.", { rot: pastas().length ? "Escolher pasta" : "Criar pasta", fn: () => organizarSalvo(chave) });
     }
     salvarP(); avisarSalvos();
     if (botao) { botao.setAttribute("aria-pressed", String(!!P.salvos[chave])); }
@@ -906,7 +910,7 @@
   // ======================================================= organização dos salvos
   // Pastas (por tema, cliente ou processo), avaliação do precedente e anotação livre.
   const pastas = () => (P.pastas = P.pastas || []);
-  const avisarSalvos = () => document.dispatchEvent(new Event("salvos-mudou"));
+  const avisarSalvos = () => { document.dispatchEvent(new Event("salvos-mudou")); atualizarContadorSalvos(); };
   const ehPenal = (ar) => (ar || []).some((a) => a === "penal" || a === "proc-penal");
   const rotAval = (v, penal) => (v === "fav" ? "Favorável" : v === "desf" ? "Desfavorável" : "") + (v && penal ? " à defesa" : "");
   function tituloSalvo(x, k) {
@@ -966,7 +970,7 @@
     };
   }
   function gerenciarPastas() {
-    abrirGaveta("Salvos", "Pastas", "");
+    abrirGaveta("Salvos", "Pastas e cópia de segurança", "");
     const corpo = $("#gaveta-corpo");
     const uso = (p) => Object.values(P.salvos).filter((x) => (x.pastas || []).includes(p)).length;
     const desenhar = () => {
@@ -1549,6 +1553,15 @@
         <li>Trunque com $: <b>prescri$</b>. Para um tema específico: <b>tema 1234</b>.</li>
       </ul>
       <p class="nota">Os dados ficam guardados neste navegador. O link “Copiar link para usar em outro aparelho” leva a mesma configuração para o celular ou outro computador.</p>`),
+    salvos: () => ajuda("Como usar os Salvos", `
+      <p class="texto-serif">Os Salvos são a sua biblioteca de precedentes. Tudo o que você marca com o marcador, em qualquer tela, aparece aqui.</p>
+      <ul class="lista-ajuda">
+        <li><b>Pastas</b>: crie uma pasta por tese, cliente ou processo (botão “+” ao lado de “Pastas”) e use “Colocar em pasta” em cada item. Um mesmo precedente pode estar em várias pastas; excluir uma pasta não apaga os itens.</li>
+        <li><b>Avaliação</b>: marque o precedente como favorável ou desfavorável à tese que você sustenta. Nas matérias penais, a marcação é em relação à defesa. Os filtros à esquerda separam os favoráveis dos desfavoráveis.</li>
+        <li><b>Anotação</b>: registre por que o precedente importa, em que caso usar ou alguma ressalva. A busca no alto também procura nas anotações.</li>
+        <li><b>Copiar citações</b>: copia, de uma vez, as citações dos itens exibidos (por exemplo, os favoráveis de uma pasta), prontas para a petição.</li>
+      </ul>
+      <p class="nota">Os salvos ficam guardados neste navegador. Em “Cópia de segurança” você exporta um arquivo para guardar ou levar a outro aparelho.</p>`),
     atualize: () => abrirGaveta("Como funciona", "O que é o Atualize-se", `
       <p class="texto-serif">O Atualize-se é a leitura rápida do dia: uma novidade do STJ por cartão, com a tese em poucas linhas, para você se manter em dia em alguns minutos.</p>
       <h3>O que entra</h3>
@@ -1998,6 +2011,7 @@
     { id: "atualize", tit: "Atualize-se", sobre: "Leitura do dia", ico: "raio", fn: vAtualize, cont2: true },
     { id: "semana", tit: "Resumo da semana", sobre: "O que mudou em 7 dias", ico: "semana", fn: vSemana },
     { id: "radar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true },
+    { id: "salvos", tit: "Salvos", sobre: "Pastas, avaliações e anotações", ico: "salvar", fn: vSalvos, cont3: true },
     { id: "destaques", tit: "Destaques", sobre: "Acórdãos relevantes", ico: "destaques", fn: vDestaques },
     { id: "pesquisa", tit: "Pesquisa de acórdãos", sobre: "Acervo de acórdãos", ico: "pesquisa", fn: vPesquisa },
     { id: "repetitivos", tit: "Precedentes qualificados", sobre: "Repetitivos, IAC e controvérsias", ico: "repetitivos", fn: vRepetitivos },
@@ -2008,7 +2022,7 @@
     { id: "sobre", tit: "Sobre o Radar STJ", sobre: "Fontes e método", ico: "sobre", fn: vSobre },
   ];
   function montarNav() {
-    $("#menu").innerHTML = VIEWS.map((v, i) => `${i === 10 ? '<div class="sep"></div>' : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.tit === "Precedentes qualificados" ? "Repetitivos" : v.tit === "Pesquisa de acórdãos" ? "Pesquisa" : v.tit === "Pautas e publicações" ? "Pautas" : v.tit === "Visão geral" ? "Visão geral" : v.tit === "Sobre o Radar STJ" ? "Sobre" : v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("");
+    $("#menu").innerHTML = VIEWS.map((v, i) => `${v.id === "verificar" ? '<div class="sep"></div>' : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.tit === "Precedentes qualificados" ? "Repetitivos" : v.tit === "Pesquisa de acórdãos" ? "Pesquisa" : v.tit === "Pautas e publicações" ? "Pautas" : v.tit === "Visão geral" ? "Visão geral" : v.tit === "Sobre o Radar STJ" ? "Sobre" : v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}${v.cont3 ? '<span class="cont-n cont-salvos" hidden></span>' : ""}</a>`).join("");
     const inf = [["painel", "Início"], ["atualize", "Atualize-se"], ["radar", "Radar"], ["pesquisa", "Pesquisa"]];
     $("#barra-inf").innerHTML = inf.map(([id, l]) => `<a href="#${id}" data-v="${id}">${ico(VIEWS.find((v) => v.id === id).ico)}<span>${l}</span>${id === "radar" ? '<span class="cont cont-radar" hidden></span>' : ""}${id === "atualize" ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("")
       + `<button type="button" id="inf-mais" aria-haspopup="dialog">${ico("mais")}<span>Mais</span></button>`;
@@ -2048,6 +2062,7 @@
       main.classList.remove("view-entra"); void main.offsetWidth; main.classList.add("view-entra");
       window.scrollTo({ top: 0 });
     }
+    if (!mesma) main.onclick = main.onsubmit = main.oninput = main.onchange = null;
     try { await def.fn(main, p, mesma); }
     catch (e) {
       console.error(e);
@@ -2267,7 +2282,8 @@
       } catch { toast("Não foi possível importar o link."); }
       gravarHash("radar", {});
     }
-    const aba = ["novidades", "assunto", "salvos"].includes(p.get("aba")) ? p.get("aba") : (P.termos.length ? "assunto" : "novidades");
+    if (p.get("aba") === "salvos") { location.replace("#salvos"); return; } // endereço antigo: os salvos têm aba própria
+    const aba = ["novidades", "assunto"].includes(p.get("aba")) ? p.get("aba") : (P.termos.length ? "assunto" : "novidades");
     const F = { nivel: "", tipo: "", area: "", termo: "", s: "pri" };
     const vazioRadar = !P.termos.length && !P.procs.length && !P.oabs.length;
     main.innerHTML = `
@@ -2296,7 +2312,6 @@
         <div class="segmentos" role="tablist">
           <button type="button" role="tab" data-aba="assunto" aria-selected="${aba === "assunto"}">Panorama por assunto</button>
           <button type="button" role="tab" data-aba="novidades" aria-selected="${aba === "novidades"}">Novidades</button>
-          <button type="button" role="tab" data-aba="salvos" aria-selected="${aba === "salvos"}">Salvos (${Object.keys(P.salvos).length})</button>
         </div>
         <button type="button" class="btn btn-fant btn-peq" id="rd-visto" hidden>Marcar tudo como visto</button>
       </div>
@@ -2351,7 +2366,6 @@
     const pgRd = paginador("rd", () => desenhar(), "#rd-corpo");
     async function render() {
       const corpo = $("#rd-corpo", main);
-      if (aba === "salvos") { $("#rd-pil", main).hidden = true; $("#rd-visto", main).hidden = true; return renderSalvos(corpo); }
       if (aba === "assunto") { $("#rd-pil", main).hidden = true; $("#rd-visto", main).hidden = true; return renderPanorama(corpo); }
       if (!P.termos.length && !P.procs.length && !P.oabs.length) {
         $("#rd-pil", main).hidden = true; $("#rd-visto", main).hidden = true;
@@ -2449,68 +2463,195 @@
       });
       const ul = $("#pan-ac", corpo); if (ul) ligarCards(ul);
     }
-    async function renderSalvos(corpo) {
-      if (!Object.keys(P.salvos).length) { corpo.innerHTML = vazio("salvar", "Nenhum item salvo", "Use o marcador nos acórdãos, temas, notas do Informativo, pautas e publicações do DJEN para guardar o que você quer acompanhar."); return; }
-      corpo.innerHTML = esqueleto();
-      await promoverSalvosDjen();
-      const s = Object.entries(P.salvos).map(([k, x]) => ({ ...x, _k: k })).sort((a, b) => (b.salvoEm || "").localeCompare(a.salvoEm || ""));
-      const [t, inf, jt] = await Promise.all([temas(), informativos().catch(() => ({ idx: new Map() })), s.some((x) => x._k.startsWith("j:")) ? tesesJT().catch(() => ({ idx: new Map() })) : { idx: new Map() }]);
-      const TIPOS_S = [["a", "Acórdãos"], ["d", "Aguardando ementa"], ["t", "Repetitivos"], ["j", "Jurisprudência em Teses"], ["i", "Informativo"], ["p", "Pautas"]];
-      const tipoDe = (x) => x.k || x._k[0];
-      const cont = {}; s.forEach((x) => (cont[tipoDe(x)] = (cont[tipoDe(x)] || 0) + 1));
-      const F = { tp: "", pasta: "", aval: "" };
-      const ars = new Map(); // matérias de cada salvo (para saber se é penal)
-      const html = (x) => {
-        const k = tipoDe(x);
-        let li = "", ar = x.ar || [];
-        if (k === "t") { const o = t.idx.get(`${x.tp}-${x.n}`); li = o ? linhaTema(o) : ""; ar = o?.ar || []; }
-        else if (k === "i") { const o = inf.idx.get(x.id); li = o ? cardInformativo(o) : ""; ar = o?.ar || []; }
-        else if (k === "d") li = cardDjen(x);
-        else if (k === "j") { const o = jt.idx.get(x.id); li = o ? `<li class="card jt-salva"><ol class="jt-teses plano">${linhaTeseJT(o, [], true)}</ol></li>` : ""; ar = o?.ar || []; }
-        else if (k === "p") li = cardPauta(x);
-        else li = cardAcordao({ ...x, em: "", h: x.h });
-        if (!li) return "";
-        ars.set(x._k, ar);
-        const penal = ehPenal(ar);
-        const barra = `<div class="salvo-org">
-            ${(x.pastas || []).map((p) => `<span class="tag-pasta">${ico("arquivo")}${esc(p)}</span>`).join("")}
-            ${x.aval ? `<span class="selo ${x.aval === "fav" ? "ok" : "alta"}">${rotAval(x.aval, penal)}</span>` : ""}
-            ${x.nota ? `<p class="salvo-nota">${esc(x.nota)}</p>` : ""}
-            <button type="button" class="link-acao dir" data-organizar="${esc(x._k)}">${(x.pastas || []).length || x.aval || x.nota ? "Editar pasta e avaliação" : "Pasta, avaliação e anotação"}</button></div>`;
-        return li.replace(/<\/li>\s*$/, `${barra}</li>`);
-      };
-      const desenharS = () => {
-        const s2 = Object.entries(P.salvos).map(([k, x]) => ({ ...x, _k: k })).sort((a, b) => (b.salvoEm || "").localeCompare(a.salvoEm || ""));
-        if (!s2.length) { corpo.innerHTML = vazio("salvar", "Nenhum item salvo", "Use o marcador nos acórdãos, temas, notas do Informativo, pautas e publicações do DJEN para guardar o que você quer acompanhar."); return; }
-        const naPasta = (x) => !F.pasta || (F.pasta === "_sem" ? !(x.pastas || []).length : (x.pastas || []).includes(F.pasta));
-        const cont = {}, contP = { _sem: 0 }, contA = { fav: 0, desf: 0, "": 0 };
-        s2.forEach((x) => { if (naPasta(x) && (!F.aval || (x.aval || "") === F.aval)) cont[tipoDe(x)] = (cont[tipoDe(x)] || 0) + 1; });
-        s2.forEach((x) => { if (!(x.pastas || []).length) contP._sem++; for (const p of x.pastas || []) contP[p] = (contP[p] || 0) + 1; });
-        s2.filter(naPasta).forEach((x) => (contA[x.aval || ""] = (contA[x.aval || ""] || 0) + 1));
-        const vis = s2.filter((x) => naPasta(x) && (!F.tp || tipoDe(x) === F.tp) && (!F.aval || (x.aval || "") === F.aval));
-        const chip = (dim, v, rot, n) => `<button type="button" class="chip" data-sf="${dim}|${esc(v)}" aria-pressed="${F[dim] === v}">${esc(rot)}${n != null ? ` <span class="n">${fmtInt(n)}</span>` : ""}</button>`;
-        corpo.innerHTML = `
-          <div class="salvos-barra">
-            <div class="chips salvos-pastas">${chip("pasta", "", "Todas as pastas", s2.length)}${pastas().map((p) => chip("pasta", p, p, contP[p] || 0)).join("")}${pastas().length ? chip("pasta", "_sem", "Sem pasta", contP._sem) : ""}
-              <button type="button" class="chip chip-acao" data-pastas-gerir>${ico("mais1")} ${pastas().length ? "Gerenciar pastas" : "Criar pastas"}</button></div>
-            <div class="chips salvos-tipos">${chip("tp", "", "Todos os tipos")}${TIPOS_S.filter(([k]) => cont[k]).map(([k, r]) => chip("tp", k, r, cont[k])).join("")}
-              <span class="sep-chips"></span>${chip("aval", "", "Qualquer avaliação")}${chip("aval", "fav", "Favoráveis", contA.fav)}${chip("aval", "desf", "Desfavoráveis", contA.desf)}</div>
-          </div>
-          ${cont.d ? `<p class="nota" style="margin:8px 0 0">Os acórdãos salvos a partir do DJEN passam para “Acórdãos”, com a ementa, assim que o STJ divulgar o arquivo mensal.</p>` : ""}
-          ${vis.length ? `<ol class="lista" id="rd-salvos">${vis.map(html).join("")}</ol>` : vazio("salvar", "Nada neste filtro", F.pasta && F.pasta !== "_sem" ? "Esta pasta está vazia. Abra um item salvo e use “Pasta, avaliação e anotação” para incluí-lo." : "Troque os filtros acima.")}`;
-        const ul = $("#rd-salvos", corpo); if (ul) ligarCards(ul);
-      };
-      corpo.onclick = (e) => {
-        const f = e.target.closest("[data-sf]");
-        if (f) { const [dim, ...v] = f.dataset.sf.split("|"); F[dim] = v.join("|"); desenharS(); return; }
-        const o = e.target.closest("[data-organizar]"); if (o) { organizarSalvo(o.dataset.organizar); return; }
-        if (e.target.closest("[data-pastas-gerir]")) gerenciarPastas();
-      };
-      const aoMudar = () => { if (!document.contains(corpo) || !$("#rd-salvos, .salvos-barra", corpo)) { document.removeEventListener("salvos-mudou", aoMudar); return; } desenharS(); };
-      document.addEventListener("salvos-mudou", aoMudar);
-      desenharS();
-    }
     render();
+  }
+
+  // ================================================================== SALVOS
+  // Biblioteca pessoal: pastas à esquerda (por tema, cliente ou processo) e, à direita, os itens
+  // da pasta com filtros por tipo, matéria e avaliação, busca nas anotações e cópia das citações.
+  const TIPOS_S = [["a", "Acórdãos"], ["d", "Aguardando ementa"], ["t", "Repetitivos e IAC"], ["j", "Jurisprudência em Teses"], ["i", "Informativo"], ["p", "Pautas"]];
+  const SV = { pasta: "", tp: "", aval: "", ar: "", q: "", ord: "rec" };
+  const tipoSalvo = (x, k) => x.k || k[0];
+  const dataSalvo = (x) => x.dj || x.dd || x.d || x.disp || x.salvoEm || "";
+  function atualizarContadorSalvos() {
+    const n = Object.keys(P.salvos).length;
+    $$(".cont-salvos").forEach((el) => { el.textContent = n > 999 ? "999+" : n; el.hidden = !n; });
+  }
+  async function vSalvos(main, p) {
+    if (p.has("pasta")) SV.pasta = p.get("pasta");
+    main.innerHTML = esqueleto();
+    await promoverSalvosDjen();
+    const temJ = Object.keys(P.salvos).some((k) => k.startsWith("j:"));
+    const [t, inf, jt] = await Promise.all([temas().catch(() => ({ idx: new Map() })), informativos().catch(() => ({ idx: new Map() })), temJ ? tesesJT().catch(() => ({ idx: new Map() })) : { idx: new Map() }]);
+    if (viewAtual !== "salvos") return;
+    const pg = paginador("sv", () => desenharLista(), "#sv-lista");
+    main.innerHTML = `<div class="sv${P.svCompacto ? " sv-compacto" : ""}">
+      <aside class="sv-lado card" id="sv-lado" aria-label="Pastas"></aside>
+      <section class="sv-principal"><div id="sv-cab"></div><div id="sv-filtros"></div><div id="sv-lista"></div><div id="sv-pag"></div></section></div>`;
+    const lado = $("#sv-lado", main), cab = $("#sv-cab", main), filtros = $("#sv-filtros", main), lista = $("#sv-lista", main);
+
+    // Dados de cada salvo: cartão, matérias e texto para a busca.
+    let itens = [];
+    const montar = () => {
+      itens = Object.entries(P.salvos).map(([k, x]) => {
+        const tp = tipoSalvo(x, k);
+        let li = "", ar = x.ar || [], ref = "", extra = "";
+        if (tp === "t") { const o = t.idx.get(`${x.tp}-${x.n}`); li = o ? linhaTema(o) : ""; ar = o?.ar || []; extra = `${o?.tese || ""} ${o?.q || ""}`; ref = `${o?.tese ? `“${o.tese.trim().replace(/\.$/, "")}” ` : ""}(STJ, ${x.tp === "Tema" ? "Tema repetitivo" : x.tp} n. ${fmtNumProc(x.n)}.)`; }
+        else if (tp === "i") { const o = inf.idx.get(x.id); li = o ? cardInformativo(o) : ""; ar = o?.ar || []; extra = `${o?.tema || ""} ${o?.t || ""}`; ref = o ? citInfo(o) : ""; }
+        else if (tp === "d") { li = cardDjen(x); ref = `${x.p || ""}`; }
+        else if (tp === "j") { const o = jt.idx.get(x.id); li = o ? `<li class="card jt-salva"><ol class="jt-teses plano">${linhaTeseJT(o, [], true)}</ol></li>` : ""; ar = o?.ar || []; extra = o?.t || ""; ref = o ? `“${o.t.trim().replace(/\.$/, "")}” (STJ, Jurisprudência em Teses, edição n. ${o.ed}, tese n. ${o.n}.)` : ""; }
+        else if (tp === "p") { li = cardPauta(x); ref = `${x.p || ""}`; }
+        else { li = cardAcordao({ ...x, em: "", h: x.h }); extra = `${x.h || ""} ${x.tese || ""} ${x.tj || ""}`; ref = citavel(x) ? citacao(x) : `${x.cl} ${fmtNumProc(x.n)}`; }
+        return { k, x, tp, li, ar, ref, txt: norm(`${tituloSalvo(x, k)} ${extra} ${x.nota || ""} ${(x.pastas || []).join(" ")}`) };
+      }).filter((i) => i.li);
+    };
+    const naPasta = (i) => !SV.pasta || (SV.pasta === "_sem" ? !(i.x.pastas || []).length : (i.x.pastas || []).includes(SV.pasta));
+    const passa = (i, ignora = "") => naPasta(i)
+      && (ignora === "tp" || !SV.tp || i.tp === SV.tp)
+      && (ignora === "aval" || !SV.aval || (i.x.aval || "_") === SV.aval)
+      && (ignora === "ar" || !SV.ar || i.ar.includes(SV.ar))
+      && (!SV.q || norm(SV.q).split(/\s+/).every((w) => i.txt.includes(w)));
+    const visiveis = () => itens.filter((i) => passa(i)).sort(SV.ord === "data" ? (a, b) => dataSalvo(b.x).localeCompare(dataSalvo(a.x)) : (a, b) => (b.x.salvoEm || "").localeCompare(a.x.salvoEm || ""));
+    const nomePasta = () => (SV.pasta === "_sem" ? "Sem pasta" : SV.pasta || "Todos os salvos");
+
+    function desenharLado() {
+      const cont = (f) => itens.filter(f).length;
+      const btn = (attr, val, icone, rot, n, atual) => `<button type="button" class="sv-it" ${attr}="${esc(val)}"${atual ? ' aria-current="true"' : ""}>${ico(icone)}<span class="sv-rot">${esc(rot)}</span><span class="n">${fmtInt(n)}</span></button>`;
+      const ps = [...pastas()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+      lado.innerHTML = `<nav class="sv-nav">
+          ${btn("data-sv-pasta", "", "salvar", "Todos os salvos", itens.length, !SV.pasta)}
+          ${btn("data-sv-pasta", "_sem", "arquivo", "Sem pasta", cont((i) => !(i.x.pastas || []).length), SV.pasta === "_sem")}
+          <div class="sv-grupo"><span>Pastas</span><button type="button" class="btn-ico" data-sv-nova title="Nova pasta" aria-label="Nova pasta">${ico("mais1")}</button></div>
+          <form class="sv-nova" id="sv-nova" hidden><input placeholder="Nome da pasta" aria-label="Nome da nova pasta" maxlength="60"><button class="btn btn-pri btn-peq" type="submit">Criar</button></form>
+          ${ps.map((pn) => btn("data-sv-pasta", pn, "pasta", pn, cont((i) => (i.x.pastas || []).includes(pn)), SV.pasta === pn)).join("") || `<p class="nota sv-dica">Crie pastas por tese, cliente ou processo. Um precedente pode ficar em mais de uma.</p>`}
+          <div class="sv-grupo"><span>Avaliação</span></div>
+          ${btn("data-sv-aval", "fav", "polegar", "Favoráveis", cont((i) => naPasta(i) && i.x.aval === "fav"), SV.aval === "fav")}
+          ${btn("data-sv-aval", "desf", "polegar-b", "Desfavoráveis", cont((i) => naPasta(i) && i.x.aval === "desf"), SV.aval === "desf")}
+          ${btn("data-sv-aval", "_", "circulo", "Não avaliados", cont((i) => naPasta(i) && !i.x.aval), SV.aval === "_")}
+        </nav>
+        <div class="sv-rodape"><button type="button" class="link-acao" data-sv-backup>${ico("arquivo")} Cópia de segurança</button></div>`;
+    }
+    function desenharCab() {
+      const vis = visiveis();
+      const ehPasta = SV.pasta && SV.pasta !== "_sem";
+      cab.innerHTML = `<div class="sv-cab">
+          <div><h2>${esc(nomePasta())}</h2><p class="nota">${fmtInt(vis.length)} ${vis.length === 1 ? "item" : "itens"}${SV.tp || SV.aval || SV.ar || SV.q ? " no filtro" : ""}</p></div>
+          <div class="acoes">
+            ${vis.length ? `<button type="button" class="btn btn-fant btn-peq" data-sv-compacto aria-pressed="${!!P.svCompacto}" title="Alterna entre a lista resumida e os cartões completos">${P.svCompacto ? "Ver completo" : "Ver resumido"}</button>` : ""}
+            ${vis.length > 1 ? `<label class="sv-ord" title="Ordenar">${ico("ordem")}<select id="sv-ord" aria-label="Ordenar"><option value="rec"${SV.ord === "rec" ? " selected" : ""}>Salvos por último</option><option value="data"${SV.ord === "data" ? " selected" : ""}>Data da decisão</option></select></label>` : ""}
+            ${vis.some((i) => i.ref) ? `<button type="button" class="btn btn-claro btn-peq" data-sv-citar title="Copia as citações dos itens exibidos, uma por parágrafo">${ico("citar")} Copiar citações</button>` : ""}
+            ${ehPasta ? `<button type="button" class="btn btn-fant btn-peq" data-sv-renomear>Renomear</button><button type="button" class="btn btn-fant btn-peq" data-sv-excluir>Excluir pasta</button>` : `<button type="button" class="btn btn-fant btn-peq sv-so-movel" data-sv-backup>Cópia de segurança</button>`}
+          </div></div>`;
+    }
+    function desenharFiltros() {
+      const base = itens.filter((i) => passa(i, "tp"));
+      const contT = {}; base.forEach((i) => (contT[i.tp] = (contT[i.tp] || 0) + 1));
+      const baseA = itens.filter((i) => passa(i, "ar"));
+      const contA = {}; baseA.forEach((i) => i.ar.forEach((a) => (contA[a] = (contA[a] || 0) + 1)));
+      const tipos = TIPOS_S.filter(([k]) => contT[k] || SV.tp === k);
+      const areas = Object.keys(AREAS).filter((a) => contA[a] || SV.ar === a);
+      filtros.innerHTML = `<div class="sv-filtros">
+          <div class="campo-busca sv-busca">${ico("pesquisa")}<input type="search" id="sv-q" placeholder="Buscar nos salvos e nas suas anotações" value="${esc(SV.q)}" aria-label="Buscar nos salvos"></div>
+          ${tipos.length > 1 || SV.tp ? `<div class="chips">${`<button type="button" class="chip" data-sv-tp="" aria-pressed="${!SV.tp}">Todos</button>`}${tipos.map(([k, r]) => `<button type="button" class="chip" data-sv-tp="${k}" aria-pressed="${SV.tp === k}">${r} <span class="n">${fmtInt(contT[k] || 0)}</span></button>`).join("")}</div>` : ""}
+          ${areas.length > 1 || SV.ar ? `<div class="chips sv-areas">${areas.map((a) => `<button type="button" class="chip area" style="--h:${AREA_COR[a] ?? 222}" data-sv-ar="${a}" aria-pressed="${SV.ar === a}"><i></i>${esc(AREAS[a] || a)} <span class="n">${fmtInt(contA[a] || 0)}</span></button>`).join("")}</div>` : ""}
+        </div>`;
+    }
+    function barra(i) {
+      const x = i.x, penal = ehPenal(i.ar);
+      return `<div class="salvo-org" data-sv-k="${esc(i.k)}">
+          <div class="sv-org-l">
+            ${(x.pastas || []).map((pn) => `<button type="button" class="tag-pasta" data-sv-pasta="${esc(pn)}" title="Abrir a pasta">${ico("pasta")}${esc(pn)}</button>`).join("")}
+            <button type="button" class="tag-pasta tag-add" data-organizar="${esc(i.k)}">${ico("mais1")}${(x.pastas || []).length ? "Pasta" : "Colocar em pasta"}</button>
+          </div>
+          <div class="sv-aval" role="group" aria-label="Avaliação">
+            <button type="button" data-sv-av="fav" aria-pressed="${x.aval === "fav"}" title="${penal ? "Favorável à defesa" : "Favorável à tese que você sustenta"}">${ico("polegar")}${rotAval("fav", penal)}</button>
+            <button type="button" data-sv-av="desf" aria-pressed="${x.aval === "desf"}" title="${penal ? "Desfavorável à defesa" : "Desfavorável à tese que você sustenta"}">${ico("polegar-b")}${rotAval("desf", penal)}</button>
+          </div>
+          ${x.nota ? `<button type="button" class="salvo-nota" data-organizar="${esc(i.k)}" title="Editar anotação">${esc(x.nota)}</button>` : `<button type="button" class="link-acao sv-anotar" data-organizar="${esc(i.k)}">Anotar</button>`}
+        </div>`;
+    }
+    function desenharLista() {
+      const vis = visiveis();
+      if (!itens.length) {
+        lista.innerHTML = vazio("salvar", "Nenhum item salvo", "Use o marcador nos acórdãos, temas, notas do Informativo, teses, pautas e publicações do DJEN. Os itens aparecem aqui, onde você pode separá-los em pastas, avaliá-los e anotá-los.");
+        $("#sv-pag", main).innerHTML = ""; return;
+      }
+      if (!vis.length) {
+        const pastaVazia = SV.pasta && SV.pasta !== "_sem" && !itens.some(naPasta);
+        lista.innerHTML = vazio(pastaVazia ? "pasta" : "filtro", pastaVazia ? "Pasta vazia" : "Nada neste filtro", pastaVazia ? "Em “Todos os salvos”, use “Colocar em pasta” no item desejado." : "Limpe a busca ou troque os filtros.", `<button type="button" class="btn btn-claro btn-peq" data-sv-limpar>${pastaVazia ? "Ver todos os salvos" : "Limpar filtros"}</button>`);
+        $("#sv-pag", main).innerHTML = ""; return;
+      }
+      const dj = vis.some((i) => i.tp === "d") ? `<p class="nota" style="margin:0 0 8px">Os acórdãos salvos a partir do DJEN passam a exibir a ementa assim que o STJ divulgar o arquivo mensal.</p>` : "";
+      lista.innerHTML = `${dj}<ol class="lista" id="sv-ol">${pg.fatia(vis).map((i) => i.li.replace(/<\/li>\s*$/, `${barra(i)}</li>`)).join("")}</ol>`;
+      $("#sv-pag", main).innerHTML = pg.html(vis.length);
+      ligarCards($("#sv-ol", lista));
+    }
+    const tudo = (reset = true) => { montar(); if (reset) pg.pag = 1; desenharLado(); desenharCab(); desenharFiltros(); desenharLista(); gravarHash("salvos", { pasta: SV.pasta }); };
+    const parcial = () => { pg.pag = 1; desenharCab(); desenharLista(); desenharLado(); };
+
+    main.onclick = async (e) => {
+      const el = (sel) => e.target.closest(sel);
+      let b;
+      if ((b = el("[data-sv-pasta]"))) { SV.pasta = b.dataset.svPasta; SV.tp = ""; SV.ar = ""; tudo(); scrollTo({ top: 0, behavior: "smooth" }); return; }
+      if ((b = el("[data-sv-aval]"))) { SV.aval = SV.aval === b.dataset.svAval ? "" : b.dataset.svAval; tudo(); return; }
+      if ((b = el("[data-sv-tp]"))) { SV.tp = b.dataset.svTp; desenharFiltros(); parcial(); return; }
+      if ((b = el("[data-sv-ar]"))) { SV.ar = SV.ar === b.dataset.svAr ? "" : b.dataset.svAr; desenharFiltros(); parcial(); return; }
+      if (el("[data-sv-limpar]")) { if (SV.pasta && !itens.some(naPasta)) SV.pasta = ""; Object.assign(SV, { tp: "", aval: "", ar: "", q: "" }); tudo(); return; }
+      if ((b = el("[data-sv-av]"))) {
+        const k = b.closest("[data-sv-k]").dataset.svK, x = P.salvos[k]; if (!x) return;
+        x.aval = x.aval === b.dataset.svAv ? undefined : b.dataset.svAv; salvarP();
+        $$("[data-sv-av]", b.parentElement).forEach((o) => o.setAttribute("aria-pressed", String(o.dataset.svAv === x.aval)));
+        montar(); desenharLado(); desenharCab(); return;
+      }
+      if ((b = el("[data-organizar]"))) { organizarSalvo(b.dataset.organizar); return; }
+      if (el("[data-sv-compacto]")) { P.svCompacto = !P.svCompacto || undefined; salvarP(); main.querySelector(".sv").classList.toggle("sv-compacto", !!P.svCompacto); desenharCab(); return; }
+      if (el("[data-sv-nova]")) { const f = $("#sv-nova", lado); f.hidden = !f.hidden; if (!f.hidden) $("input", f).focus(); return; }
+      if (el("[data-sv-backup]")) { gerenciarPastas(); return; }
+      if (el("[data-sv-citar]")) {
+        const refs = visiveis().map((i) => i.ref).filter(Boolean);
+        copiar(refs.join("\n\n"), `${refs.length} citaç${refs.length === 1 ? "ão copiada" : "ões copiadas"}.`); return;
+      }
+      if (el("[data-sv-renomear]")) {
+        const h2 = $("h2", cab);
+        h2.outerHTML = `<form class="sv-ren" id="sv-ren"><input value="${esc(SV.pasta)}" maxlength="60" aria-label="Novo nome da pasta"><button class="btn btn-pri btn-peq" type="submit">Salvar</button><button class="btn btn-fant btn-peq" type="button" data-sv-ren-cancelar>Cancelar</button></form>`;
+        const inp = $("#sv-ren input", cab); inp.focus(); inp.select(); return;
+      }
+      if (el("[data-sv-ren-cancelar]")) { desenharCab(); return; }
+      if (el("[data-sv-excluir]")) {
+        const nome = SV.pasta, antes = { pastas: [...pastas()], salvos: Object.fromEntries(Object.entries(P.salvos).map(([k, x]) => [k, [...(x.pastas || [])]])) };
+        P.pastas = pastas().filter((x) => x !== nome);
+        for (const x of Object.values(P.salvos)) if (x.pastas) x.pastas = x.pastas.filter((y) => y !== nome);
+        SV.pasta = ""; salvarP(); tudo();
+        toast(`Pasta “${nome}” excluída. Os itens continuam salvos.`, { rot: "Desfazer", fn: () => { P.pastas = antes.pastas; for (const [k, l] of Object.entries(antes.salvos)) if (P.salvos[k]) P.salvos[k].pastas = l; SV.pasta = nome; salvarP(); avisarSalvos(); } });
+      }
+    };
+    main.onsubmit = (e) => {
+      if (e.target.id === "sv-ren") {
+        e.preventDefault();
+        const velho = SV.pasta, novo = $("input", e.target).value.trim().replace(/\s+/g, " ");
+        if (!novo || novo === velho) { desenharCab(); return; }
+        if (pastas().some((x) => x !== velho && norm(x) === norm(novo))) { toast("Já existe uma pasta com esse nome."); return; }
+        P.pastas = pastas().map((x) => (x === velho ? novo : x));
+        for (const x of Object.values(P.salvos)) if (x.pastas) x.pastas = x.pastas.map((y) => (y === velho ? novo : y));
+        SV.pasta = novo; salvarP(); tudo(); return;
+      }
+      if (e.target.id !== "sv-nova") return;
+      e.preventDefault();
+      const nome = $("input", e.target).value.trim().replace(/\s+/g, " "); if (!nome) return;
+      const existente = pastas().find((x) => norm(x) === norm(nome));
+      if (!existente) pastas().push(nome);
+      SV.pasta = existente || nome; salvarP(); tudo();
+      toast(`Pasta “${SV.pasta}” pronta. Use “Colocar em pasta” nos itens para incluí-los.`);
+    };
+    main.oninput = (e) => {
+      if (e.target.id !== "sv-q") return;
+      SV.q = e.target.value; clearTimeout(vSalvos.t);
+      vSalvos.t = setTimeout(() => { desenharCab(); desenharLista(); }, 180);
+    };
+    main.onchange = (e) => { if (e.target.id === "sv-ord") { SV.ord = e.target.value; pg.pag = 1; desenharLista(); } };
+    const aoMudar = () => { if (viewAtual !== "salvos" || !document.contains(lado)) { document.removeEventListener("salvos-mudou", aoMudar); return; } if (SV.pasta && SV.pasta !== "_sem" && !pastas().includes(SV.pasta)) SV.pasta = ""; tudo(false); };
+    document.addEventListener("salvos-mudou", aoMudar);
+    tudo(false);
   }
 
   // ================================================= paginação
@@ -3931,7 +4072,7 @@
       <h3 style="font-family:var(--ui)">Busca por número de processo</h3>
       <p>Na Pesquisa, o número pode ser digitado no próprio campo de busca, com ou sem a classe e os pontos (“REsp 2.231.419/SP”, “resp 2231419” ou “2231419”). O site procura em todo o acervo e, se o acórdão ainda não estiver no arquivo mensal do STJ, mostra a publicação no DJEN e a sessão em pauta, quando houver.</p>
       <h3 style="font-family:var(--ui)">Salvos</h3>
-      <p>Acórdãos, publicações do DJEN, temas, notas do Informativo, teses e pautas podem ser salvos pelo marcador e ficam em Meu radar → Salvos, separados por tipo. Um acórdão salvo a partir do DJEN passa a exibir a ementa completa assim que o STJ divulgar o arquivo mensal. Os salvos ficam guardados neste navegador.</p>
+      <p>Acórdãos, publicações do DJEN, temas, notas do Informativo, teses e pautas podem ser salvos pelo marcador e ficam na aba Salvos, no menu à esquerda. Lá é possível separá-los em pastas (por tese, cliente ou processo; um item pode estar em várias), marcá-los como favoráveis ou desfavoráveis (no penal, à defesa), anotá-los, filtrá-los por tipo e matéria, buscar nas anotações e copiar as citações de uma pasta de uma só vez. Um acórdão salvo a partir do DJEN passa a exibir a ementa completa assim que o STJ divulgar o arquivo mensal. Os salvos ficam guardados neste navegador.</p>
       <h3 style="font-family:var(--ui)">Informativo do STJ</h3>
       <p>A aba Destaques abre com o Informativo de Jurisprudência, publicado pelo próprio STJ com as teses selecionadas pela novidade e pela repercussão. Cada nota traz o tema, o destaque (a tese) e o processo; as mais recentes também entram no Atualize-se e no Meu radar. A “Seleção automática” continua disponível na segunda aba. O acervo vai desde as primeiras edições: as últimas edições abrem de imediato e, ao buscar em todas as edições ou escolher uma data ou edição antiga, o site carrega as demais por ano. Nas edições antigas, anteriores ao formato atual, o texto é a nota narrativa original e a matéria é deduzida pelos termos da nota. As edições novas são lidas automaticamente do PDF oficial de cada edição, publicado pelo STJ.</p>
       <h3 style="font-family:var(--ui)">Resumo da semana</h3>
@@ -4006,6 +4147,7 @@
     await rotear();
     atualizarContadorRadar();
     atualizarContadorFeed();
+    atualizarContadorSalvos();
   }
   function irParaBusca() {
     const campo = $("#view input[type=search]");

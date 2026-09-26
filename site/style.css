@@ -1125,3 +1125,81 @@ svg.gira { transform: rotate(180deg); }
 .tabela-rolagem { overflow-x: auto; }
 .lateral-rodape small a { display: block; color: var(--nav-tx-2); text-decoration: underline; text-underline-offset: 2px; }
 .lateral-rodape small a.lat-defas { color: #f2b36b; }
+
+/* ============ Salvos: pastas à esquerda, itens à direita */
+.sv { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 22px; align-items: start; }
+.sv > * { min-width: 0; }
+.menu .cont-n { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--nav-tx-2); font-variant-numeric: tabular-nums; }
+.menu a.ativa .cont-n { color: var(--tx-3); }
+.sv-lado { position: sticky; top: 88px; padding: 10px; max-height: calc(100vh - 110px); overflow-y: auto; }
+.sv-nav { display: flex; flex-direction: column; gap: 2px; }
+.sv-it { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; color: var(--tx-2); font: 500 14px var(--ui); text-align: left; padding: 8px 10px; border-radius: 9px; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
+.sv-it svg { width: 17px; height: 17px; flex: none; color: var(--tx-3); }
+.sv-it .sv-rot { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-it .n { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--tx-3); }
+.sv-it:hover { background: var(--sup-3); color: var(--tx); }
+.sv-it[aria-current="true"] { background: var(--pri-bg); color: var(--pri); font-weight: 650; }
+.sv-it[aria-current="true"] svg, .sv-it[aria-current="true"] .n { color: var(--pri); }
+.sv-it[data-sv-aval="fav"] svg { color: var(--ok); }
+.sv-it[data-sv-aval="desf"] svg { color: var(--alta); }
+.sv-grupo { display: flex; align-items: center; justify-content: space-between; margin: 14px 10px 4px; font: 700 11.5px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--tx-3); }
+.sv-grupo .btn-ico { width: 26px; height: 26px; }
+.sv-nova { display: flex; gap: 6px; padding: 4px 4px 8px; }
+.sv-nova input { flex: 1; min-width: 0; height: 34px; border-radius: 8px; border: 1px solid var(--linha-2); background: var(--sup); color: var(--tx); padding: 0 9px; font: inherit; font-size: 13.5px; }
+.sv-dica { margin: 2px 10px 6px; font-size: 12.5px; }
+.sv-rodape { border-top: 1px solid var(--linha); margin-top: 10px; padding: 10px 10px 2px; }
+.sv-rodape .link-acao { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.sv-rodape svg { width: 15px; height: 15px; }
+.sv-cab { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.sv-cab h2 { margin: 0; font: 700 22px var(--ui); letter-spacing: -.01em; color: var(--tx); }
+.sv-cab .nota { margin: 2px 0 0; }
+.sv-cab .acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+.sv-ren { display: flex; gap: 6px; align-items: center; }
+.sv-ren input { height: 38px; min-width: 240px; border-radius: 9px; border: 1px solid var(--linha-2); background: var(--sup); color: var(--tx); padding: 0 10px; font: 600 16px var(--ui); }
+.sv-filtros { display: grid; gap: 10px; margin-bottom: 14px; }
+.sv-busca input { width: 100%; }
+.sv-linha { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sv-ord { display: inline-flex; align-items: center; gap: 6px; color: var(--tx-3); }
+.sv-ord svg { width: 16px; height: 16px; }
+.sv-ord select { border: 1px solid var(--linha-2); background: var(--sup); color: var(--tx); border-radius: 9px; height: 34px; padding: 0 8px; font: 500 13.5px var(--ui); }
+.salvo-org { gap: 8px 12px; }
+.sv-org-l { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0; }
+button.tag-pasta { border: 0; cursor: pointer; font-family: var(--ui); }
+button.tag-pasta:hover { filter: brightness(.96); }
+.tag-add { background: transparent !important; color: var(--tx-3) !important; border: 1px dashed var(--linha-2) !important; }
+.tag-add:hover { color: var(--pri) !important; border-color: var(--pri) !important; }
+.sv-aval { display: inline-flex; gap: 4px; }
+.sv-aval button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--linha-2); background: var(--sup); color: var(--tx-2); font: 600 12px var(--ui); padding: 4px 9px; border-radius: 99px; cursor: pointer; transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease; }
+.sv-aval button svg { width: 14px; height: 14px; }
+.sv-aval button[data-sv-av="fav"][aria-pressed="true"] { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+.sv-aval button[data-sv-av="desf"][aria-pressed="true"] { background: var(--alta-bg); color: var(--alta); border-color: var(--alta); }
+button.salvo-nota { display: block; width: 100%; text-align: left; cursor: pointer; font-family: inherit; border-top: 0; border-right: 0; border-bottom: 0; }
+button.salvo-nota:hover { background: var(--sup-3); }
+.sv-anotar { font-size: 13px; }
+.sv-so-movel { display: none !important; }
+@media (max-width: 860px) {
+  .sv { grid-template-columns: 1fr; gap: 12px; }
+  .sv-lado { position: static; max-height: none; padding: 6px; overflow-x: auto; }
+  .sv-nav { flex-direction: row; flex-wrap: nowrap; gap: 4px; }
+  .sv-it { width: auto; flex: none; white-space: nowrap; border: 1px solid var(--linha); padding: 6px 10px; }
+  .sv-it .sv-rot { overflow: visible; }
+  .sv-grupo { margin: 0 4px; flex: none; }
+  .sv-grupo span { display: none; }
+  .sv-dica { display: none; }
+  .sv-nova { flex: none; padding: 0; }
+  .sv-rodape { display: none; }
+  .sv-ren input { min-width: 0; width: 100%; }
+  .sv-so-movel { display: inline-flex !important; }
+  .sv-filtros .chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  .sv-filtros .chip { flex: none; }
+  .sv-cab h2 { font-size: 19px; }
+}
+/* Selo de matéria com assuntos longos: quebra a linha em vez de alargar a página no celular. */
+.selo.area { max-width: 100%; white-space: normal; line-height: 1.25; flex-wrap: wrap; }
+/* Salvos em lista resumida: tese e texto em poucas linhas, sem ementa, questão ou detalhes. */
+.sv-compacto #sv-ol .expansivel, .sv-compacto #sv-ol .duplic, .sv-compacto #sv-ol .questao, .sv-compacto #sv-ol .nota-proc, .sv-compacto #sv-ol .nota-mais { display: none; }
+.sv-compacto #sv-ol .tese p:not(:first-of-type) { display: none; }
+.sv-compacto #sv-ol .tese p, .sv-compacto #sv-ol .verb, .sv-compacto #sv-ol .texto-serif, .sv-compacto #sv-ol .jt-texto, .sv-compacto #sv-ol .nota-tese { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sv-compacto #sv-ol .nota-tema { font-size: 15px; }
+.sv-compacto #sv-ol > li { padding-top: 14px; padding-bottom: 12px; }
+.sv-compacto #sv-ol p.questao { display: none; }
