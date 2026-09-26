@@ -5,7 +5,8 @@ Fontes oficiais do STJ (www.stj.jus.br):
   - Ministros em atividade e currículos (verMinistrosSTJ / verCurriculoMinistro);
   - Contatos das unidades (contatosUnidades.json).
 Quando o portal do STJ recusa o acesso automatizado, usa a última extração guardada em
-fontes/composicao/ (feita pelo navegador). Fotos: Wikimedia Commons, via Wikidata, com crédito,
+fontes/composicao/ (feita pelo navegador); a lista de ministros e os currículos são conferidos
+toda semana pelo navegador (scripts/coletar-ministros.js → fontes/composicao/ministros-atualizacoes.json). Fotos: Wikimedia Commons, via Wikidata, com crédito,
 hospedadas como miniaturas em site/img/ministros.
 """
 from __future__ import annotations
@@ -363,6 +364,15 @@ def foto_local(foto: dict | None) -> dict | None:
 def atualizar_composicao() -> dict:
     FONTE.mkdir(parents=True, exist_ok=True)
     fonte = json.loads((FONTE / "stj-composicao.json").read_text(encoding="utf-8")) if (FONTE / "stj-composicao.json").exists() else {}
+    # Conferência semanal feita pelo navegador (scripts/coletar-ministros.js): lista atual de
+    # ministros e currículos que mudaram desde a extração base.
+    atu = FONTE / "ministros-atualizacoes.json"
+    if atu.exists():
+        a = json.loads(atu.read_text(encoding="utf-8"))
+        if len(a.get("ministros") or []) >= 25:
+            fonte["ministros"] = a["ministros"]
+        fonte["curriculos"] = {**(fonte.get("curriculos") or {}), **(a.get("curriculos") or {})}
+        log(f"Composição: lista de ministros e currículos conferidos em {a.get('coletadoEm', '?')}.")
     pdf = FONTE / "Composicao-do-STJ.pdf"
     origem = "extração guardada"
     try:
