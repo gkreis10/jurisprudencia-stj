@@ -235,10 +235,25 @@
     iac: "IAC / PUIL", tese: "Tese firmada", repetitivo: "Recurso repetitivo", mudanca: "Sinal de mudança de entendimento",
     inedito: "Questão nova", modulacao: "Modulação de efeitos", distincao: "Distinção (distinguishing)", divergencia: "Divergência",
   };
+  // O que cada marca significa (texto do cursor e da ajuda).
+  const MOTIVOS_DICA = {
+    afetacao: "O STJ decidiu (ou propôs) julgar a questão pelo rito dos recursos repetitivos: a tese que vier a ser firmada valerá para todos os casos iguais, e os processos sobre o tema podem ficar suspensos.",
+    repetitivo: "Julgado ligado a um tema de recurso repetitivo: aplica ou firma tese de observância obrigatória (art. 927, III, do CPC).",
+    mudanca: "A ementa fala em superação ou mudança de entendimento (overruling): o julgado pode ter alterado a jurisprudência anterior.",
+    inedito: "A ementa diz tratar de questão nova, ainda sem precedentes no STJ.",
+    modulacao: "A ementa trata de modulação de efeitos: o tribunal definiu a partir de quando o entendimento vale.",
+    distincao: "A ementa fala em distinção (distinguishing): o julgado explica por que um precedente não se aplica ao caso, por serem os fatos diferentes.",
+    divergencia: "A ementa fala em divergência jurisprudencial (dissídio ou embargos de divergência). Muitas vezes é só para dizer que a divergência não foi demonstrada.",
+  };
+  // No cartão, só as marcas objetivas que não repetem o título; as que vêm das palavras da ementa
+  // ficam na página do julgado, com a explicação.
+  const MOTIVOS_CARTAO = ["afetacao", "repetitivo"], MOTIVOS_TEXTO = ["mudanca", "inedito", "modulacao", "distincao", "divergencia"];
+  const seloMotivo = (k) => `<span class="selo pri" title="${esc(MOTIVOS_DICA[k] || "")}">${esc(MOTIVOS[k])}</span>`;
   const nivelAc = (s) => (s >= 10 ? "alta" : s >= 6 ? "rel" : s >= 2 ? "acomp" : "");
   const NIVEL_TX = { alta: "Sinal forte de relevância", rel: "Relevante", acomp: "Acompanhar" };
   // Selo da classificação automática; o título explica a pontuação (não é a força vinculante do precedente).
-  const seloNivel = (n, r) => (n ? `<span class="selo ${n}"${r ? ` title="${esc(`Classificação automática do Radar: ${r.s ?? 0} pontos${(r.rz || []).filter((k) => MOTIVOS[k]).length ? ` (${(r.rz || []).filter((k) => MOTIVOS[k]).map((k) => MOTIVOS[k].toLowerCase()).join(", ")})` : ""}. Indica prioridade de leitura, não a força vinculante do precedente.`)}"` : ""}><span class="ponto ${n}"></span>${NIVEL_TX[n]}</span>` : "");
+  // Só o nível mais alto aparece como selo; "relevante" e "acompanhar" continuam valendo para ordenar e filtrar.
+  const seloNivel = (n, r) => (n === "alta" ? `<span class="selo ${n}"${r ? ` title="${esc(`Classificação automática do Radar: ${r.s ?? 0} pontos${(r.rz || []).filter((k) => MOTIVOS[k]).length ? ` (${(r.rz || []).filter((k) => MOTIVOS[k]).map((k) => MOTIVOS[k].toLowerCase()).join(", ")})` : ""}. Indica prioridade de leitura, não a força vinculante do precedente.`)}"` : ""}><span class="ponto ${n}"></span>${NIVEL_TX[n]}</span>` : "");
 
   function grupoSituacao(sit) {
     const s = norm(sit);
@@ -362,9 +377,14 @@
         if (s === "-") { out.push({ t: "op", v: "NAO" }); continue; }
         if (s.startsWith("=") && s.length > 1) { ex = true; s = s.slice(1); }
         if (s.startsWith('"')) {
-          const palavras = norm(s.replace(/"/g, "")).split(/[^a-z0-9$]+/).filter(Boolean);
+          const palavras = norm(s.replace(/"/g, "")).split(/[^a-z0-9$*]+/).filter(Boolean).map((p) => p.replace(/\*/g, "$"));
           if (palavras.length) out.push(ex ? { t: "frase", v: palavras, ex } : { t: "frase", v: palavras });
           continue;
+        }
+        // "tema 1365" e "súmula 7" (como se costuma escrever) valem como tema:1365 e sumula:7.
+        const ant = out[out.length - 1];
+        if (/^\d{1,3}(?:\.\d{3})*$|^\d{1,5}$/.test(s) && ant?.t === "termo" && !ant.ex && (ant.v === "tema" || ant.v === "sumula")) {
+          out.pop(); out.push({ t: ant.v === "tema" ? "tema" : "sum", v: +s.replace(/\D/g, "") }); continue;
         }
         const nm = /^(\d{1,3}(?:\.\d{3})+|\d{4,})(?:[-/][a-z]{2})?$/i.exec(s);
         if (nm) { out.push({ t: "termo", v: nm[1].replace(/\D/g, ""), num: true }); continue; }
@@ -516,7 +536,7 @@
       const f = (x, topo) => {
         switch (x.t) {
           case "termo": if (x.num) return `o número ${fmtNumProc(x.v)}`; return x.v.endsWith("$") ? `palavras começadas por “${x.v.slice(0, -1)}”` : `“${x.v}”`;
-          case "frase": return `a expressão exata “${x.v.join(" ")}”`;
+          case "frase": return `a expressão exata “${x.v.map((w) => w.replace(/\$$/, "*")).join(" ")}”`;
           case "tema": return `menção ao tema ${x.v}`;
           case "sum": return `menção à Súmula ${x.v}/STJ`;
           case "e": { const s = x.a.map((y) => f(y)).join(" e "); return topo ? s : `(${s})`; }
@@ -598,25 +618,23 @@
   }
   const AJUDA_BUSCA = `
     <div class="ajuda-busca">
-      <p><b>Como pesquisar.</b> As palavras são buscadas inteiras (<code>oral</code> não encontra “corporal”), no singular e no plural, e com os sinônimos jurídicos mais comuns: <code>dano moral</code> também encontra “dano extrapatrimonial”.</p>
-      <table>
-        <tr><td><code>prova oral</code></td><td>as duas palavras, em qualquer lugar (E implícito)</td></tr>
-        <tr><td><code>"prova oral"</code></td><td>expressão exata</td></tr>
-        <tr><td><code>dano e moral</code></td><td>as duas palavras</td></tr>
-        <tr><td><code>guarda ou visitas</code></td><td>uma ou outra</td></tr>
-        <tr><td><code>alimentos não gravídicos</code> · <code>-gravídicos</code></td><td>exclui a palavra</td></tr>
-        <tr><td><code>(usucapião ou posse) e rural</code></td><td>agrupa com parênteses</td></tr>
-        <tr><td><code>prescri$</code></td><td>prescrição, prescricional, prescrito…</td></tr>
-        <tr><td><code>dano adj moral</code> · <code>adj2</code></td><td>na ordem, até 1 (ou 2) palavras de distância</td></tr>
-        <tr><td><code>juros prox5 mora</code></td><td>perto, em qualquer ordem, até 5 palavras</td></tr>
-        <tr><td><code>tema:1365</code></td><td>acórdãos que mencionam o tema</td></tr>
-        <tr><td><code>2.219.808</code> · <code>2219808</code></td><td>número de processo, com ou sem pontos</td></tr>
-        <tr><td><code>=dano</code> · <code>="plano de saúde"</code></td><td>só o termo exato, sem plural nem sinônimos</td></tr>
-      </table>
-      <div class="chips" style="margin-top:8px">
+      <p class="ab-intro"><b>Comece simples.</b> Escreva as palavras como falaria: <code>prescrição intercorrente</code>. Vêm os julgados que têm as duas palavras, em qualquer ordem, também no plural e com os sinônimos jurídicos mais comuns (<code>dano moral</code> também encontra “dano extrapatrimonial”). Acentos e maiúsculas não fazem diferença. Se vier resultado demais, use os recursos abaixo.</p>
+      <ol class="ab-passos">
+        <li><b>Expressão exata.</b> Coloque entre aspas: <code>"bem de família"</code> traz só as palavras juntas, nessa ordem.</li>
+        <li><b>Uma coisa ou outra.</b> Use <code>ou</code>: <code>guarda ou visitas</code>.</li>
+        <li><b>Excluir um assunto.</b> Use <code>não</code>, ou um hífen colado na palavra: <code>alimentos não gravídicos</code> ou <code>alimentos -gravídicos</code>.</li>
+        <li><b>Todas as formas de uma palavra.</b> Escreva o começo e um asterisco: <code>prescri*</code> encontra prescrição, prescricional, prescritível, prescrito. O cifrão, usado na pesquisa do próprio STJ, funciona igual (<code>prescri$</code>).</li>
+        <li><b>Combinar.</b> Parênteses agrupam as alternativas: <code>(usucapião ou posse) e rural</code>.</li>
+        <li><b>Palavras próximas.</b> <code>adj</code> quer dizer “logo depois”: <code>dano adj moral</code> exige “moral” logo após “dano” (<code>adj2</code> admite uma palavra no meio). <code>prox</code> quer dizer “perto, em qualquer ordem”: <code>juros prox5 mora</code> aceita até cinco palavras entre elas.</li>
+        <li><b>Sem plural nem sinônimos.</b> Ponha o sinal de igual antes: <code>=dano</code> ou <code>="plano de saúde"</code>.</li>
+        <li><b>Tema, súmula ou processo.</b> <code>tema 1365</code> e <code>súmula 7</code> trazem os julgados que os citam. Para um processo, digite o número, com ou sem pontos e classe: <code>REsp 2.219.808</code>.</li>
+      </ol>
+      <p class="nota">Abaixo do campo aparece “Buscando…”, com a pesquisa como o site a entendeu. Toque num exemplo para experimentar:</p>
+      <div class="chips">
         <button type="button" class="chip" aria-pressed="false" data-ex='"prova oral"'>"prova oral"</button>
-        <button type="button" class="chip" aria-pressed="false" data-ex="(plano de saúde) e (rol ou cobertura) não odontológico">plano de saúde…</button>
-        <button type="button" class="chip" aria-pressed="false" data-ex="prescri$ adj2 intercorrente">prescri$ adj2 intercorrente</button>
+        <button type="button" class="chip" aria-pressed="false" data-ex='"plano de saúde" e (rol ou cobertura)'>"plano de saúde" e (rol ou cobertura)</button>
+        <button type="button" class="chip" aria-pressed="false" data-ex="prescri* e intercorrente">prescri* e intercorrente</button>
+        <button type="button" class="chip" aria-pressed="false" data-ex="tema 1365">tema 1365</button>
       </div>
     </div>`;
   function ligarAjuda(raiz, campo, aplicar) {
@@ -912,9 +930,9 @@
     const termos = opts.termos || [];
     const em = r.em || r.h || "";
     const [cab, ...corpo] = em.split("\n");
-    const niv = nivelAc(r.s ?? 0);
+    const niv = nivelAc(r.s ?? 0) === "alta" ? "alta" : "";
     const salvo = !!P.salvos[`a:${r.id}`];
-    const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).slice(0, 2).map((k) => `<span class="selo pri">${esc(MOTIVOS[k])}</span>`).join("");
+    const motivos = (r.rz || []).filter((k) => MOTIVOS_CARTAO.includes(k)).slice(0, 1).map(seloMotivo).join("");
     const areas = seloMat(r.ar, r.sa);
     const temCorpo = corpo.length > 0;
     const dups = r._dup?.length ? `<p class="duplic" title="${esc(r._dup.map((d) => `${d.cl} ${fmtNumProc(d.n)}`).join(", "))}">+ ${r._dup.length} processo(s) com a mesma ementa</p>` : "";
@@ -963,7 +981,8 @@
     REG_AC.set(String(r.id), r);
     const [cab, ...corpo] = (r.em || "").split("\n");
     const salvo = !!P.salvos[`a:${r.id}`];
-    const motivos = (r.rz || []).filter((k) => MOTIVOS[k]).map((k) => `<span class="selo pri">${esc(MOTIVOS[k])}</span>`).join("");
+    const motivos = (r.rz || []).filter((k) => MOTIVOS_CARTAO.includes(k)).map(seloMotivo).join("");
+    const mencoes = (r.rz || []).filter((k) => MOTIVOS_TEXTO.includes(k));
     const areas = seloMat(r.ar, r.sa, 3);
     const extra = [["Relator(a)", r.rel ? relatorFmt(r.rel) : ""], ["Julgamento", fmtData(r.dd)], ["Publicação", `${(r.djt || "").split(/\s/)[0] || "DJ"} ${fmtData(r.dj)}`], ["Tema", r.tema], ["Notas", r.notas], ["Informações complementares", r.info], ["Referências legislativas", (r.leg || []).join("\n")]]
       .filter(([, v]) => v).map(([l, v]) => `<dt>${l}</dt><dd>${esc(v).replace(/\n/g, "<br>")}</dd>`).join("");
@@ -982,6 +1001,7 @@
       <p class="verb">${esc(frase(cab))}</p>
       <div class="texto-serif" style="margin-top:10px">${corpo.map((p) => `<p>${esc(p)}</p>`).join("")}</div>
       ${linhaRefs(r.em)}
+      ${mencoes.length ? `<div class="mencoes"><b>A ementa menciona</b>${mencoes.map((k) => `<p><span>${esc(MOTIVOS[k])}.</span> ${esc(MOTIVOS_DICA[k])}</p>`).join("")}<p class="nota">Marcas automáticas, pelas palavras da ementa; confira no texto.</p></div>` : ""}
       ${extra ? `<h3>Dados do julgado</h3><dl class="dl">${extra}</dl>` : ""}`);
     // Decisões monocráticas do mesmo processo (a que originou o agravo interno, por exemplo).
     monocraticasDe([digitos(r.n)]).then((l) => {
@@ -1750,7 +1770,14 @@
     destaques: (p) => p?.get("aba") === "auto"
       ? ajuda("O que é a Seleção automática", `
         <p class="texto-serif">Triagem feita pelo site sobre todos os acórdãos dos últimos três meses: ficam os julgados de relevância média ou alta, pela pontuação descrita em Sobre (órgão julgador, tese registrada, afetação, superação de entendimento, entre outros critérios).</p>
-        <p>Para o Informativo oficial, que é a curadoria do próprio Tribunal, use a outra aba. Para períodos anteriores, use a Pesquisa.</p>${COMO_BUSCAR()}`)
+        <p>Para o Informativo oficial, que é a curadoria do próprio Tribunal, use a outra aba. Para períodos anteriores, use a Pesquisa.</p>
+        <h3>O que significam as marcas dos julgados</h3>
+      <ul class="lista-ajuda">
+        <li><span class="selo alta">Sinal forte de relevância</span> O site pontua cada acórdão (órgão julgador, tese registrada, afetação, menção a mudança de entendimento etc.). Com 10 pontos ou mais, o julgado recebe este selo. É uma sugestão de leitura, não a força vinculante do precedente; o cursor sobre o selo mostra os pontos.</li>
+        <li><span class="selo pri">Afetação ao rito repetitivo</span> O STJ vai firmar uma tese para todos os casos iguais; os processos sobre o tema podem ficar suspensos.</li>
+        <li><span class="selo pri">Recurso repetitivo</span> Julgado ligado a um tema repetitivo, cuja tese é de observância obrigatória.</li>
+        <li>Na página do julgado, “A ementa menciona” indica, pelas palavras da ementa, <b>distinção</b> (distinguishing: o precedente não se aplica porque os fatos são diferentes), <b>divergência</b> (dissídio entre tribunais ou órgãos, muitas vezes só para dizer que não foi demonstrado), <b>mudança de entendimento</b> (overruling), <b>questão nova</b> e <b>modulação de efeitos</b>.</li>
+      </ul>${COMO_BUSCAR()}`)
       : ajuda("O que é o Informativo do STJ", `
         <p class="texto-serif">${EXPLICA.info[1]}</p>
         <ul class="lista-ajuda">
@@ -1764,6 +1791,13 @@
         <li>Por padrão, a busca abrange todo o acervo e percorre os arquivos mês a mês, do mais recente ao mais antigo, mostrando os resultados à medida que avança. Para respostas imediatas, restrinja o Período (por exemplo, últimos 12 meses).</li>
         <li>As decisões de rotina (Súmula 7, embargos rejeitados, falta de prequestionamento etc.) ficam ocultas; o filtro Exibir as mostra.</li>
         <li>Matéria aceita mais de uma escolha; os demais filtros restringem por órgão, classe, relator e processo.</li>
+      </ul>
+      <h3>O que significam as marcas dos julgados</h3>
+      <ul class="lista-ajuda">
+        <li><span class="selo alta">Sinal forte de relevância</span> O site pontua cada acórdão (órgão julgador, tese registrada, afetação, menção a mudança de entendimento etc.). Com 10 pontos ou mais, o julgado recebe este selo. É uma sugestão de leitura, não a força vinculante do precedente; o cursor sobre o selo mostra os pontos.</li>
+        <li><span class="selo pri">Afetação ao rito repetitivo</span> O STJ vai firmar uma tese para todos os casos iguais; os processos sobre o tema podem ficar suspensos.</li>
+        <li><span class="selo pri">Recurso repetitivo</span> Julgado ligado a um tema repetitivo, cuja tese é de observância obrigatória.</li>
+        <li>Na página do julgado, “A ementa menciona” indica, pelas palavras da ementa, <b>distinção</b> (distinguishing: o precedente não se aplica porque os fatos são diferentes), <b>divergência</b> (dissídio entre tribunais ou órgãos, muitas vezes só para dizer que não foi demonstrado), <b>mudança de entendimento</b> (overruling), <b>questão nova</b> e <b>modulação de efeitos</b>.</li>
       </ul>${COMO_BUSCAR()}`),
     repetitivos: () => ajuda("O que são os Precedentes qualificados", `
       <p class="texto-serif">Temas repetitivos, controvérsias, incidentes de assunção de competência (IAC), SIRDR e PUIL do STJ, com a questão submetida, a tese firmada, a situação e os processos vinculados.</p>
@@ -1822,7 +1856,7 @@
       <ul class="lista-ajuda">
         <li>Use aspas para a expressão exata: <b>"bem de família"</b>.</li>
         <li>Combine com e, ou, não: <b>"plano de saúde" e reembolso</b>; <b>alimentos não gravídicos</b>.</li>
-        <li>Trunque com $: <b>prescri$</b>. Para um tema específico: <b>tema 1234</b>.</li>
+        <li>Para todas as formas de uma palavra, use o asterisco: <b>prescri*</b> (prescrição, prescricional, prescrito). Para um tema específico: <b>tema 1234</b>.</li>
       </ul>
       <p class="nota">Os dados ficam guardados neste navegador. O link “Copiar link para usar em outro aparelho” leva a mesma configuração para o celular ou outro computador.</p>`),
     salvos: () => ajuda("Como usar os Salvos", `
@@ -2675,7 +2709,7 @@
           <div class="radar-forms">
             <div class="radar-bloco t-termos"><h3>Assunto</h3>
               <form class="adicionar" data-lista="termos"><input placeholder='Ex.: "prescrição intercorrente"' aria-label="Novo assunto"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
-              <p class="nota">Aceita "frase", e, ou, não, prescri$ e tema 1234.</p></div>
+              <p class="nota">Aceita "expressão exata", e, ou, não, prescri* (todas as formas da palavra) e tema 1234.</p></div>
             <div class="radar-bloco t-procs"><h3>Processo</h3>
               <form class="adicionar" data-lista="procs"><input placeholder="Ex.: REsp 2222623" aria-label="Novo processo"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
               <p class="nota">Avisa quando entrar em pauta, tiver acórdão ou decisão monocrática.</p></div>
@@ -3337,7 +3371,7 @@
     const f = { q: p.get("q") || "", a: p.get("a") || "", e: p.get("e") || "todas", o: p.get("o") || "", rl: p.get("rl") || "", s: p.get("s") || "rec" };
     main.innerHTML = `${abasDestaques("")}
       <div id="if-f" class="bloco-filtros">
-        ${campoBusca("if-q", 'Tema ou tese. Ex.: "adjudicação compulsória" ou prescri$', f.q)}
+        ${campoBusca("if-q", 'Tema ou tese. Ex.: "adjudicação compulsória" ou prescri*', f.q)}
         <div class="fd-filtros filtros-lista" id="if-pil"></div>
         <datalist id="if-rels">${[...new Set(l.map((x) => x.rel).filter(Boolean))].sort().map((r) => `<option value="${esc(r)}">`).join("")}</datalist>
       </div>
@@ -4735,8 +4769,12 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.10.01";
+  const VERSAO = "2026.10.02";
   const NOVIDADES = [
+    ["2026-10-02", [
+      "Cartões mais limpos: fica só o selo “Sinal forte de relevância” e, das marcas, “Afetação ao rito repetitivo” e “Recurso repetitivo”. Na página do julgado, o quadro “A ementa menciona” explica distinção, divergência, mudança de entendimento, questão nova e modulação.",
+      "Novo guia “Como pesquisar”, passo a passo e com exemplos. Para todas as formas de uma palavra, use o asterisco (prescri*); “tema 1365” e “súmula 7” passam a funcionar como escritos.",
+    ]],
     ["2026-10-01", [
       "Pesquisa: os acórdãos publicados no mês corrente, antes do arquivo mensal do STJ, ficam acessíveis por um aviso no alto da lista, com filtro por número, classe ou relator; os que já têm texto integral trazem a ementa.",
     ]],
@@ -4785,15 +4823,24 @@
       <h3 style="font-family:var(--ui)">Como a relevância é calculada</h3>
       <p>Cada acórdão recebe uma pontuação automática. Somam pontos o julgamento pela Corte Especial (+5) ou por Seção (+4), a tese jurídica registrada (+6), a afetação ao rito repetitivo (+6), os embargos de divergência (+4), o tema repetitivo (+3) e as menções a superação ou mudança de entendimento e a questão nova (+4), a modulação e a distinção (+3) e a divergência (+2). Perdem pontos os agravos internos e os embargos de declaração (−1) e os fundamentos de rotina, como Súmula 7, Súmulas 283/284 do STF, embargos rejeitados e reexame de provas (até −4).</p>
       <p>No Atualize-se entram apenas julgados com uma tese legível: a tese jurídica ou os itens da tese de julgamento com conteúdo próprio. Ficam de fora os embargos de declaração, os agravos em recurso extraordinário, os recursos não conhecidos ou desprovidos sem tese e os julgados de repetitivo cuja tese já aparece como “tese firmada”. Esses acórdãos continuam nos Destaques e na Pesquisa. A tese de julgamento de cada acórdão é lida item por item. Saem da fila os julgados em que todos os itens apenas aplicam óbices ou entendimentos consolidados (Súmulas 5, 7, 83, 182, 211, 282 e 284, prequestionamento, embargos de declaração, prisão preventiva por fundamentação usual, dosimetria), e perdem posição os que repetem em série a mesma tese. Quando só parte dos itens tem conteúdo próprio, o cartão mostra apenas esses itens; a tese completa continua na ementa.</p>
-      <p>Com 10 pontos ou mais, o acórdão recebe o selo <b>sinal forte de relevância</b>; de 6 a 9, <b>relevante</b>; de 2 a 5, marcado para <b>acompanhar</b>. A pontuação indica prioridade de leitura, e não a força vinculante do precedente; passe o cursor sobre o selo para ver os pontos de cada acórdão. A área do direito é identificada pelas palavras da verbetação. É uma triagem para orientar a leitura, e não uma avaliação jurídica.</p>
+      <p>Com 10 pontos ou mais, o acórdão recebe o selo <b>sinal forte de relevância</b>, o único exibido nos cartões. As faixas de 6 a 9 pontos (relevante) e de 2 a 5 (acompanhar) não aparecem como selo, mas continuam servindo para ordenar a lista e para o filtro de relevância dos Destaques. A pontuação indica prioridade de leitura, e não a força vinculante do precedente; passe o cursor sobre o selo para ver os pontos de cada acórdão. A área do direito é identificada pelas palavras da verbetação. É uma triagem para orientar a leitura, e não uma avaliação jurídica.</p>
+      <h3 style="font-family:var(--ui)">O que significam as marcas dos julgados</h3>
+      <p>Nos cartões aparecem só duas marcas objetivas: <b>Afetação ao rito repetitivo</b> (o STJ vai firmar uma tese para todos os casos iguais, e os processos sobre o tema podem ficar suspensos) e <b>Recurso repetitivo</b> (julgado ligado a um tema repetitivo, de observância obrigatória pelo art. 927, III, do CPC). Na página do julgado, o quadro “A ementa menciona” reúne as indicações tiradas das palavras da ementa, que servem de pista e devem ser conferidas no texto:</p>
+      <ul>
+        <li><b>Distinção (distinguishing):</b> o julgado explica por que um precedente não se aplica ao caso, por serem os fatos diferentes.</li>
+        <li><b>Divergência:</b> a ementa trata de dissídio jurisprudencial ou de embargos de divergência. Com frequência, é apenas para dizer que a divergência não foi demonstrada.</li>
+        <li><b>Mudança de entendimento (overruling):</b> a ementa fala em superação ou revisão da jurisprudência anterior.</li>
+        <li><b>Questão nova:</b> a ementa diz que o tema ainda não tinha precedentes no STJ.</li>
+        <li><b>Modulação de efeitos:</b> o tribunal definiu a partir de quando o entendimento passa a valer.</li>
+      </ul>
       <h3 style="font-family:var(--ui)">Como ler as cores</h3>
       <p>As cores têm sempre o mesmo significado em todas as telas.</p>
       <div class="legenda-cores">
         <p><span class="selo ok">Verde</span> tese firmada e tema julgado</p>
-        <p><span class="selo rel">Âmbar</span> tema afetado ou em andamento e relevância média</p>
+        <p><span class="selo rel">Âmbar</span> tema afetado ou em andamento</p>
         <p><span class="selo alta">Vermelho</span> o que pede atenção agora: em pauta, sinal forte de relevância</p>
         <p><span class="selo acomp">Azul-claro</span> acórdão de repetitivo publicado e itens para acompanhar</p>
-        <p><span class="selo pri">Azul</span> julgados das Turmas e Seções e marcas de relevância</p>
+        <p><span class="selo pri">Azul</span> marcas dos julgados (afetação, recurso repetitivo)</p>
         <p>Cada matéria tem a sua própria cor: ${Object.keys(AREAS).map((k) => seloArea(k)).join(" ")}</p>
       </div>
       <h3 style="font-family:var(--ui)">Matérias e assuntos específicos</h3>

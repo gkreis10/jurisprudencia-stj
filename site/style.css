@@ -1321,3 +1321,13 @@ button.salvo-nota:hover { background: var(--sup-3); }
 .mes-ferr .campo-busca { flex: 1; min-width: 240px; }
 .mes-so { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--tx-2); min-height: 44px; cursor: pointer; }
 .item-djen.com-ementa .djen-res { margin-top: 8px; }
+.ab-intro { margin: 0 0 10px; }
+.ab-passos { margin: 0 0 12px; padding-left: 22px; display: flex; flex-direction: column; gap: 7px; }
+.ab-passos li { line-height: 1.55; }
+.ajuda-busca code { white-space: nowrap; }
+.mencoes { margin: 16px 0 6px; padding: 10px 14px; border: 1px solid var(--linha); border-radius: 12px; background: var(--sup-2); font-size: 14px; line-height: 1.5; color: var(--tx-2); }
+.mencoes > b { display: block; margin-bottom: 4px; font: 700 11px/1.2 var(--ui); text-transform: uppercase; letter-spacing: .06em; color: var(--tx-3); }
+.mencoes p { margin: 4px 0; }
+.mencoes p span { font-weight: 600; color: var(--tx); }
+.mencoes p.nota { margin-top: 6px; font-size: 12.5px; }
+.lista-ajuda .selo { margin-right: 4px; }
