@@ -203,17 +203,19 @@
   const seloMat = (ar = [], sa = [], max = 1) => (ar || []).slice(0, max).map((a) => { const s = (sa || []).find((x) => x.startsWith(a + "/")); return `<span class="selo area" style="--h:${AREA_COR[a] ?? 222}">${esc(AREAS[a] || a)}${s ? `<span class="sub"> · ${esc(rotMat(s, true))}</span>` : ""}</span>`; }).join("");
   // Seletor de matérias em dois painéis: à esquerda as matérias; à direita os assuntos
   // da matéria aberta, agrupados como na lei de regência. No celular, um painel por vez.
-  function htmlMaterias({ cont, sel, aberta, todas = "Todas as matérias", op = (v) => `data-op="${esc(v)}"` }) {
+  function htmlMaterias({ cont, sel, aberta, todas = "Todas as matérias", op = (v) => `data-op="${esc(v)}"`, todasOn, selReal = sel }) {
     const temSel = (a) => sel(a) || Object.keys(SUBAREAS[a] || {}).some((s) => sel(`${a}/${s}`));
-    const areas = Object.keys(AREAS).filter((a) => !cont || cont[a] || temSel(a));
+    const temReal = (a) => selReal(a) || Object.keys(SUBAREAS[a] || {}).some((s) => selReal(`${a}/${s}`));
+    // Sem contagem, a matéria só aparece se estiver marcada de fato (e não apenas por "todas marcadas").
+    const areas = Object.keys(AREAS).filter((a) => !cont || cont[a] || temReal(a));
     if (cont) areas.sort((a, b) => (cont[b] || 0) - (cont[a] || 0));
     const n = (v) => (cont ? `<span class="n">${fmtInt(cont[v] || 0)}</span>` : "");
     const algum = areas.some(temSel);
-    const subsDe = (a) => Object.entries(SUBAREAS[a] || {}).filter(([k]) => !cont || cont[`${a}/${k}`] || sel(`${a}/${k}`));
+    const subsDe = (a) => Object.entries(SUBAREAS[a] || {}).filter(([k]) => !cont || cont[`${a}/${k}`] || selReal(`${a}/${k}`));
     const larga = !matchMedia("(max-width: 860px)").matches;
     // No computador, o painel da direita nunca fica vazio: abre a matéria marcada ou a primeira da lista.
     if (larga && (aberta === undefined || aberta === "" || !areas.includes(aberta))) aberta = areas.find((a) => temSel(a) && subsDe(a).length) || areas.find((a) => subsDe(a).length) || "";
-    const esquerda = `<div class="mt2-areas" role="list"><button type="button" class="mt2-todas" ${op("")} aria-pressed="${!algum}">${esc(todas)}</button>${areas.map((a) => {
+    const esquerda = `<div class="mt2-areas" role="list"><button type="button" class="mt2-todas" ${op("")} aria-pressed="${todasOn ?? !algum}">${esc(todasOn === undefined ? todas : todasOn ? "Desmarcar todas" : "Marcar todas")}</button>${areas.map((a) => {
       const subs = subsDe(a);
       const attrs = subs.length ? `data-mt-abrir="${a}" aria-expanded="${aberta === a}"` : `${op(a)} aria-pressed="${sel(a)}"`;
       return `<button type="button" class="mt2-area${subs.length ? "" : " folha"}${temSel(a) ? " marcada" : ""}${aberta === a ? " aberta" : ""}" style="--h:${AREA_COR[a] ?? 222}" ${attrs}><i></i><span class="nome">${esc(AREAS[a])}</span>${n(a)}${subs.length ? ico("seta") : ""}</button>`;
@@ -1942,12 +1944,15 @@
 
     // ------------------------------------------------------------ filtros
     const conta = (dim, pred) => todos.filter((x) => passaFeed(x, f, dim) && (!soNovos || !lidos()[x.k]) && pred(x)).length;
+    // Listas completas de cada filtro, gravadas ao desenhar o painel (para "todos menos um").
+    const ultTodos = { ar: [], tp: Object.keys(FEED_TIPOS), org: [], rel: [] }, nenhumFd = { ar: {}, tp: {}, org: {}, rel: {} };
+    const tudoFd = (dim) => !(dim === "rel" ? listaV(f.rel) : f[dim]).length && !nenhumFd[dim].nenhum;
     const rotulo = {
-      ar: () => (f.ar.length === 1 ? rotMat(f.ar[0]) || "Matéria" : f.ar.length ? `Matéria · ${f.ar.length}` : "Matéria"),
-      tp: () => (f.tp.length === 1 ? FEED_TIPOS[f.tp[0]].rot : f.tp.length ? `Tipo · ${f.tp.length}` : "Tipo"),
+      ar: () => (f.ar.length === 1 ? rotMat(f.ar[0]) || "Matéria" : f.ar.length ? rotExcetoMat(f.ar, ultTodos.ar) || `Matéria · ${f.ar.length}` : "Matéria"),
+      tp: () => (f.tp.length === 1 ? FEED_TIPOS[f.tp[0]].rot : f.tp.length ? rotExceto("Tipo", f.tp, ultTodos.tp, (k) => FEED_TIPOS[k]?.rot || k) || `Tipo · ${f.tp.length}` : "Tipo"),
       per: () => (f.per ? PERIODOS.find((p) => p[0] === f.per)[1] : "Período"),
       tese: () => (f.tese === "com" ? "Com tese" : f.tese === "sem" ? "Sem tese" : "Tese"),
-      org: () => (f.org.length === 1 ? f.org[0] : f.org.length ? `Órgão · ${f.org.length}` : "Órgão"),
+      org: () => (f.org.length === 1 ? f.org[0] : f.org.length ? rotExceto("Órgão", f.org, ultTodos.org, (x) => x) || `Órgão · ${f.org.length}` : "Órgão"),
       rel: () => { const l = listaV(f.rel); return l.length === 1 ? relatorFmt(l[0]) : l.length ? `Relator · ${l.length}` : "Relator"; },
       ord: () => (f.ord === "rec" ? "Ordenar: mais recentes" : "Ordenar: sugerida"),
     };
@@ -1960,21 +1965,25 @@
     function conteudoPop(dim) {
       if (dim === "ar") {
         const c = contarMat(todos.filter((x) => passaFeed(x, f, "ar") && (!soNovos || !lidos()[x.k])), (x) => x.ar, (x) => x.sa);
-        return `<h3>Matéria</h3>${htmlMaterias({ cont: c, sel: (v) => f.ar.includes(v), aberta: popAberta, todas: "Todas as matérias", op: (v) => `data-op="ar" data-val="${esc(v)}"` })}<p class="nota">Escolha a matéria e, se quiser, um ou mais assuntos específicos. Dá para marcar mais de uma.</p>`;
+        ultTodos.ar = Object.keys(AREAS).filter((a) => c[a]);
+        return `<h3>Matéria</h3>${htmlMaterias({ cont: c, sel: (v) => tudoFd("ar") || f.ar.includes(v), selReal: (v) => f.ar.includes(v), aberta: popAberta, todas: "Todas as matérias", op: (v) => `data-op="ar" data-val="${esc(v)}"`, todasOn: tudoFd("ar") })}<p class="nota">Escolha a matéria e, se quiser, um ou mais assuntos específicos. Dá para marcar mais de uma.</p>`;
       }
       if (dim === "ord") return `<h3>Ordenar por</h3><div class="chips">${[["", "Sugerida para você"], ["rec", "Mais recentes"]].map(([v, txt]) => `<button type="button" class="chip" data-op="ord" data-val="${v}" aria-pressed="${f.ord === v}">${txt}</button>`).join("")}</div><p class="nota">Sugerida: combina relevância, novidade, o seu radar e as matérias que você mais lê, alternando os tipos de novidade.</p>`;
-      if (dim === "tp") return `<h3>Tipo de novidade</h3><div class="chips">${Object.entries(FEED_TIPOS).map(([k, v]) => opcao("tp", k, v.longo, conta("tp", (x) => x.tipo === k), f.tp.includes(k))).join("")}</div>`;
+      if (dim === "tp") return `<h3>Tipo de novidade</h3>${botaoTodos(tudoFd("tp"), f.tp.length, ultTodos.tp.length, 'data-op="tp" data-val=""')}<div class="chips">${Object.entries(FEED_TIPOS).map(([k, v]) => opcao("tp", k, v.longo, conta("tp", (x) => x.tipo === k), tudoFd("tp") || f.tp.includes(k))).join("")}</div>`;
       if (dim === "per") return `<h3>Período</h3><div class="chips">${PERIODOS.map(([d, txt]) => opcao("per", d, txt, conta("per", (x) => !d || Math.abs((new Date(hojeISO()) - new Date(x.d)) / 864e5) <= d), f.per === d)).join("")}</div><p class="nota">Pautas contam pela proximidade da sessão.</p>`;
       if (dim === "tese") return `<h3>Tese</h3><div class="chips">${[["", "Todas"], ["com", "Com tese firmada ou de julgamento"], ["sem", "Sem tese"]].map(([v, txt]) => opcao("tese", v, txt, conta("tese", (x) => !v || (v === "com") === x.tese), f.tese === v)).join("")}</div>`;
       if (dim === "org") {
         const c = {}; todos.filter((x) => passaFeed(x, f, "org") && (!soNovos || !lidos()[x.k]) && x.org).forEach((x) => (c[x.org] = (c[x.org] || 0) + 1));
         const nomes = Object.values(D.orgaos).filter((o) => c[o] || f.org.includes(o));
-        return `<h3>Órgão julgador</h3><div class="chips">${nomes.map((o) => opcao("org", o, o, c[o] || 0, f.org.includes(o))).join("")}</div>`;
+        ultTodos.org = nomes;
+        return `<h3>Órgão julgador</h3>${botaoTodos(tudoFd("org"), f.org.length, nomes.length, 'data-op="org" data-val=""')}<div class="chips">${nomes.map((o) => opcao("org", o, o, c[o] || 0, tudoFd("org") || f.org.includes(o))).join("")}</div>`;
       }
       const c = {}; todos.filter((x) => passaFeed(x, f, "rel") && (!soNovos || !lidos()[x.k]) && x.rel).forEach((x) => { const k = titulo(x.rel); c[k] = (c[k] || 0) + 1; });
       const lista = Object.entries(c).sort((a, b) => b[1] - a[1]);
+      ultTodos.rel = lista.map(([nome]) => nome);
       return `<h3>Relator(a)</h3><input type="search" class="campo" id="fd-rel-q" placeholder="Digite o nome" autocomplete="off">
-        <div class="chips" id="fd-rel-l" style="margin-top:10px">${f.rel ? opcao("rel", "", "Todos", "", false) : ""}${lista.map(([nome, n]) => opcao("rel", nome, nome, n, listaV(f.rel).some((r) => norm(r) === norm(nome)))).join("")}</div>`;
+        <div style="margin-top:10px">${botaoTodos(tudoFd("rel"), listaV(f.rel).length, lista.length, 'data-op="rel" data-val=""')}</div>
+        <div class="chips" id="fd-rel-l">${lista.map(([nome, n]) => opcao("rel", nome, nome, n, tudoFd("rel") || listaV(f.rel).some((r) => norm(r) === norm(nome)))).join("")}</div>`;
     }
     const pop = $("#fd-pop"), veu = $("#fd-veu");
     let popDim = "", popAberta = "";
@@ -1983,7 +1992,7 @@
       const mesmo = popDim === dim && !pop.hidden;
       const rol = mesmo ? [pop, ...$$(".mt2-areas, .mt2-subs", pop)].map((el) => el.scrollTop) : [];
       const qAnt = mesmo ? ($("#fd-rel-q", pop)?.value || "") : "";
-      if (popDim !== dim) popAberta = dim === "ar" ? (f.ar[0] || "").split("/")[0] : "";
+      if (popDim !== dim) { popAberta = dim === "ar" ? (f.ar[0] || "").split("/")[0] : ""; if (nenhumFd[dim]) nenhumFd[dim].nenhum = false; }
       popDim = dim;
       pop.innerHTML = `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div>${conteudoPop(dim)}`;
       const folha = matchMedia("(max-width: 860px)").matches;
@@ -2019,19 +2028,30 @@
       if (ab) { popAberta = ab.dataset.mtAbrir; const ar0 = $(".mt2-areas", pop)?.scrollTop || 0; abrirPop("ar", $('[data-fp="ar"]')); const ar1 = $(".mt2-areas", pop); if (ar1) ar1.scrollTop = ar0; const sb = $(".mt2-subs", pop); if (sb) sb.scrollTop = 0; return; }
       const b = e.target.closest("[data-op]"); if (!b) return;
       const { op, val } = b.dataset;
-      if (op === "ar" && !val) f.ar = [];
-      else if (op === "ar") {
-        // Geral e específica não se acumulam: marcar uma desmarca a outra.
-        const mae = val.split("/")[0];
-        f.ar = f.ar.includes(val) ? f.ar.filter((x) => x !== val) : [...f.ar.filter((x) => (val.includes("/") ? x !== mae : !x.startsWith(val + "/"))), val];
+      const antes = JSON.stringify(f);
+      if (op === "ar") {
+        const est = nenhumFd.ar;
+        if (!val) { const eraTudo = tudoFd("ar"); f.ar = []; est.nenhum = eraTudo; }
+        else if (est.nenhum) { est.nenhum = false; f.ar = [val]; }
+        else if (tudoFd("ar")) {
+          // Tudo marcado: a matéria (ou o assunto) tocada sai; no assunto, ficam os demais assuntos da matéria.
+          const [a, sub] = val.split("/");
+          f.ar = ultTodos.ar.filter((x) => x !== a);
+          if (sub) f.ar.push(...Object.keys(SUBAREAS[a] || {}).filter((k) => k !== sub).map((k) => `${a}/${k}`));
+        } else {
+          // Geral e específica não se acumulam: marcar uma desmarca a outra.
+          const mae = val.split("/")[0];
+          f.ar = f.ar.includes(val) ? f.ar.filter((x) => x !== val) : [...f.ar.filter((x) => (val.includes("/") ? x !== mae : !x.startsWith(val + "/"))), val];
+          if (!f.ar.length) est.nenhum = true;
+        }
       }
-      else if (op === "tp" || op === "org") { f[op] = f[op].includes(val) ? f[op].filter((x) => x !== val) : [...f[op], val]; }
+      else if (op === "tp" || op === "org") { f[op] = alternarTodos(f[op], ultTodos[op], val, nenhumFd[op]); }
       if (op === "ord") f.ord = val;
       if (op === "per") f.per = +val;
       if (op === "tese") f.tese = val;
-      if (op === "rel") { const cur = listaV(f.rel); f.rel = !val ? "" : (cur.some((r) => norm(r) === norm(val)) ? cur.filter((r) => norm(r) !== norm(val)) : [...cur, val]).join("|"); }
-      aplicar();
-      if (op === "per" || op === "tese" || op === "ord" || (op === "ar" && !val) || (op === "rel" && !val)) fecharPop(); else abrirPop(op, $(`[data-fp="${op}"]`));
+      if (op === "rel") f.rel = alternarTodos(listaV(f.rel), ultTodos.rel, val, nenhumFd.rel).join("|");
+      if (JSON.stringify(f) !== antes) aplicar(); else desenharFiltros();
+      if (op === "per" || op === "tese" || op === "ord") fecharPop(); else abrirPop(op, $(`[data-fp="${op}"]`));
     });
     veu.addEventListener("click", fecharPop);
     const foraPop = (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("[data-fp]")) fecharPop(); };
@@ -2610,14 +2630,16 @@
   const RES_DJEN = { Negando: "negou provimento", "Não Conhecendo": "não conheceu", Concedendo: "deu provimento ou concedeu", "Admitindo Embargo": "acolheu os embargos" };
   const chaveDjen = (o) => `d:${o.reg}|${o.d}|${o.r || ""}`;
   // Acórdão publicado no DJEN cuja ementa ainda não está no arquivo mensal do STJ.
-  function cardDjen(o, { por = "", novo = "", nivel = "", nota = "", em = "" } = {}) {
+  function cardDjen(o, { por = "", novo = "", nivel = "", nota = "", em = "", mes = false } = {}) {
     const tit = o.r ? `${o.r} no ${o.p}` : o.p;
     const res = RES_DJEN[o.t] ? `O STJ ${RES_DJEN[o.t]}` : "";
+    const mm = +String(o.d || "").slice(5, 7);
+    const seloPub = mes && mm ? `<span class="selo acomp" title="Publicado no DJEN; o STJ divulga a ementa no arquivo mensal, em regra no início do mês seguinte">Publicado em ${MESES_L[mm - 1]} · ${em ? "ementa do texto integral" : `ementa em ${MESES_L[mm % 12]}`}</span>` : `<span class="selo acomp">Acórdão publicado</span>`;
     if (em) {
       const [cab, ...resto] = em.split("\n");
       nota = `${res ? `${esc(res)}. ` : ""}Ementa tirada do texto integral publicado pelo STJ; a versão do arquivo mensal entra no início do mês seguinte.`;
       return `<li class="card item item-radar item-djen com-ementa">
-      <div class="item-cab">${nivel}<span class="item-tit">${esc(tit)}</span><span class="selo acomp">Acórdão publicado</span>${novo}
+      <div class="item-cab">${nivel}<span class="item-tit">${esc(tit)}</span>${seloPub}${novo}
         <span class="meta"><span>DJEN ${fmtData(o.d)}</span>${D.orgaos[o.tr] ? `<span>${esc(D.orgaos[o.tr])}</span>` : ""}${o.rel ? `<span>Rel. ${esc(titulo(o.rel))}</span>` : ""}</span></div>
       <p class="verb">${esc(frase(cab))}</p>
       ${resto.length ? `<div class="expansivel"><div><div class="texto-serif">${resto.map((x) => `<p>${esc(x)}</p>`).join("")}</div></div></div>` : ""}
@@ -2626,8 +2648,9 @@
         <a class="link-acao" href="${URLS.processo(o.reg)}" target="_blank" rel="noopener">Consulta processual ${ico("externo")}</a>
         <span class="dir">${botaoSalvar(chaveDjen(o), { k: "d", p: o.p, r: o.r, t: o.t, rel: o.rel, reg: o.reg, d: o.d, tr: o.tr })}</span></div></li>`;
     }
+    if (mes) nota = `A ementa entra quando o STJ divulgar o arquivo mensal, em regra no início de ${MESES_L[mm % 12]}.`;
     return `<li class="card item item-radar item-djen">
-      <div class="item-cab">${nivel}<span class="item-tit">${esc(tit)}</span><span class="selo acomp">Acórdão publicado</span>${novo}
+      <div class="item-cab">${nivel}<span class="item-tit">${esc(tit)}</span>${seloPub}${novo}
         <span class="meta"><span>DJEN ${fmtData(o.d)}</span>${D.orgaos[o.tr] ? `<span>${esc(D.orgaos[o.tr])}</span>` : ""}${o.rel ? `<span>Rel. ${esc(titulo(o.rel))}</span>` : ""}</span></div>
       <p class="texto-serif djen-res">${res ? `${esc(res)}. ` : ""}${nota || "A ementa entra no site quando o STJ divulgar o arquivo mensal de acórdãos, em regra nos primeiros dias do mês seguinte à publicação."}</p>
       <div class="acoes"><a class="link-acao" href="${URLS.inteiroTeor(o.reg, o.d)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>
@@ -3145,11 +3168,60 @@
   // Filtros de escolha múltipla guardados como texto: "a|b|c".
   const listaV = (v) => String(v ?? "").split("|").filter(Boolean);
   const temV = (v, x) => !v || listaV(v).includes(String(x ?? ""));
+  // Escolha múltipla com "todas marcadas" por padrão: tocar num item com tudo marcado o deixa de fora;
+  // desmarcar o último volta ao estado "nenhum" (sem filtro, para escolher um a um). estado.nenhum é
+  // só visual. Devolve a nova seleção ([] = todos).
+  function alternarTodos(cur, todos, val, estado) {
+    if (val === "") { const eraTudo = !cur.length && !estado.nenhum; estado.nenhum = eraTudo; return []; }
+    if (estado.nenhum) { estado.nenhum = false; return [val]; }
+    if (!cur.length) return todos.filter((x) => x !== val);
+    const nova = cur.includes(val) ? cur.filter((x) => x !== val) : [...cur, val];
+    if (!nova.length) { estado.nenhum = true; return []; }
+    if (todos.length && todos.every((x) => nova.includes(x))) return [];
+    return nova;
+  }
+  const botaoTodos = (tudo, n, total, attr = "data-op-todos") => `<div class="pop-todos"><button type="button" class="btn btn-claro btn-peq" ${attr} aria-pressed="${tudo}">${tudo ? "Desmarcar todos" : "Marcar todos"}</button><span class="nota">${tudo ? "Todos marcados: toque num item para deixá-lo de fora." : n ? `${fmtInt(n)} de ${fmtInt(total)} marcados.` : "Toque nos itens que quer ver."}</span></div>`;
+  // Matéria com quase tudo marcado: o que ficou de fora (matérias inteiras ou assuntos de uma matéria).
+  function rotExcetoMat(sel, areas) {
+    const fora = [];
+    for (const a of areas) {
+      if (sel.includes(a)) continue;
+      const subs = sel.filter((x) => x.startsWith(a + "/"));
+      if (!subs.length) fora.push(AREAS[a] || a);
+      else for (const k of Object.keys(SUBAREAS[a] || {})) if (!sel.includes(`${a}/${k}`)) fora.push(SUBAREAS[a][k]);
+    }
+    if (sel.length < 2 || !fora.length || fora.length > 2 || sel.length <= fora.length) return "";
+    const t = `Matéria: exceto ${fora.join(", ")}`;
+    return t.length > 40 ? `Matéria · todas menos ${fora.length}` : t;
+  }
+  // Rótulo do filtro quando quase tudo está marcado: "Órgão: exceto Quinta Turma".
+  function rotExceto(rot, sel, todos, nome) {
+    const fora = todos.filter((x) => !sel.includes(x));
+    if (sel.length < 2 || !fora.length || fora.length > 2 || sel.length <= fora.length) return "";
+    const t = `${rot}: exceto ${fora.map(nome).join(", ")}`;
+    return t.length > 40 ? `${rot} · todos menos ${fora.length}` : t;
+  }
   function pilulas(raiz, defs, aoMudar) {
     garantirPopF();
     const vazioDe = (d) => (d.tipo === "multi" ? [] : d.tipo === "toggle" ? false : d.tipo === "varios" ? "" : (d.padrao ?? ""));
     const ativo = (d) => (d.tipo === "multi" ? d.get().length > 0 : d.tipo === "toggle" ? !!d.get() : String(d.get() ?? "") !== String(d.padrao ?? ""));
+    // Escolha múltipla ("varios", "multi" e "materia"): sem filtro, todas as opções aparecem marcadas,
+    // e tocar numa delas a deixa de fora (as demais continuam marcadas). "Desmarcar todas" limpa a
+    // seleção visualmente (sem filtrar) para escolher uma a uma; "Marcar todas" volta ao início.
+    const multi = (d) => d.tipo === "varios" || d.tipo === "multi" || d.tipo === "materia";
+    const selDe = (d) => (d.tipo === "multi" ? [...d.get()] : d.tipo === "materia" ? listaMat(d.get()) : listaV(d.get()));
+    const porSel = (d, l) => d.set(d.tipo === "multi" ? l : d.tipo === "materia" ? l.join(",") : l.join("|"));
+    const opsReais = (d) => (d.opcoes ? d.opcoes() : []).filter((o) => String(o.v) !== "").map((o) => String(o.v));
+    const tudo = (d) => !selDe(d).length && !d._nenhum;
+    const matAreas = (d) => { const c = d.cont ? d.cont() : null; return Object.keys(AREAS).filter((a) => !c || c[a]); };
+    const rotulo = (d, v) => { const o = (d.opcoes ? d.opcoes() : []).find((x) => String(x.v) === String(v)); return o?.curto || o?.t || v; };
     const rot = (d) => {
+      if (multi(d) && ativo(d)) {
+        // Quase todas marcadas: mostra o que ficou de fora.
+        const l = selDe(d);
+        const t = d.tipo === "materia" ? rotExcetoMat(l, matAreas(d)) : rotExceto(d.rot, l, opsReais(d), (x) => rotulo(d, x));
+        if (t) return t;
+      }
       if (d.tipo === "toggle" || !ativo(d)) return d.rotAtual ? d.rotAtual() : d.rot;
       if (d.tipo === "multi") { const v = d.get(); const o = d.opcoes().find((x) => x.v === v[0]); return v.length === 1 ? (o?.t || d.rot) : `${d.rot} · ${v.length}`; }
       if (d.tipo === "texto") return `${d.rot}: ${d.get()}`;
@@ -3163,19 +3235,22 @@
         + (n ? `<button type="button" class="fpill limpar" data-pil-limpar>${ico("x")} Limpar</button>` : "");
     }
     function conteudo(d) {
-      const ops = d.opcoes ? d.opcoes() : [];
+      const ops = (d.opcoes ? d.opcoes() : []).filter((o) => !(multi(d) && d.tipo !== "materia" && String(o.v) === "" && opsReais(d).length > 1));
       const v = d.get();
       const chip = (o) => {
-        const m = d.tipo === "multi" ? v.includes(o.v) : d.tipo === "varios" ? (o.v === "" ? !listaV(v).length : listaV(v).includes(String(o.v))) : String(v ?? "") === String(o.v);
+        const m = multi(d) ? (tudo(d) || selDe(d).includes(String(o.v))) : String(v ?? "") === String(o.v);
         return `<button type="button" class="chip${o.h != null ? " area" : ""}" data-op="${esc(String(o.v))}" aria-pressed="${m}"${o.h != null ? ` style="--h:${o.h}"` : ""}>${o.h != null ? "<i></i>" : o.ponto ? `<span class="ponto ${o.ponto}"></span>` : ""}${esc(o.t)}${o.n != null ? ` <span class="n">${fmtInt(o.n)}</span>` : ""}</button>`;
       };
       const corpo = d.tipo === "materia"
-        ? htmlMaterias({ cont: d.cont ? d.cont() : null, sel: (x) => listaMat(v).includes(x), aberta: POPF.aberta, todas: d.todas || "Todas as matérias" })
+        ? htmlMaterias({ cont: d.cont ? d.cont() : null, sel: (x) => tudo(d) || listaMat(v).includes(x), selReal: (x) => listaMat(v).includes(x), aberta: POPF.aberta, todas: d.todas || "Todas as matérias", todasOn: tudo(d) })
         : d.tipo === "texto"
         ? `<form class="adicionar" data-pil-form><input type="search" value="${esc(v || "")}" placeholder="${esc(d.ph || "")}"${d.lista ? ` list="${d.lista}"` : ""} autocomplete="off"><button class="btn btn-pri" type="submit">Aplicar</button></form>${ops.length ? `<div class="chips" style="margin-top:12px">${ops.slice(0, 24).map(chip).join("")}</div>` : ""}`
         : d.grupos
         ? d.grupos.map(([g, rotG]) => { const os = ops.filter((o) => (o.g || "") === g); return os.length ? `${rotG ? `<p class="pop-grupo">${esc(rotG)}</p>` : ""}<div class="chips${d.vertical ? " vertical" : ""}">${os.map(chip).join("")}</div>` : ""; }).join("")
         : `<div class="chips${d.vertical ? " vertical" : ""}">${ops.map(chip).join("")}</div>`;
+      // Botão único de marcar/desmarcar todas, no lugar da antiga opção "Todos".
+      const todosBtn = multi(d) && d.tipo !== "materia" && opsReais(d).length > 1
+        ? botaoTodos(tudo(d), selDe(d).length, opsReais(d).length) : "";
       // Campo de data: um dia (ir para a semana) ou um intervalo (de/até).
       const vd = String(v || "");
       const datas = d.datas === "uma"
@@ -3184,7 +3259,7 @@
         ? `<form class="pop-datas" data-pil-datas><label>De<input type="date" name="de" value="${vd.startsWith("d:") ? vd.split(":")[1] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label><label>Até<input type="date" name="ate" value="${vd.startsWith("d:") ? vd.split(":")[2] : ""}" min="${d.min || ""}" max="${d.max || ""}"></label>${d.edicao ? `<label class="curto">ou edição nº<input type="number" name="ed" inputmode="numeric" min="${d.edicao.min}" max="${d.edicao.max}" placeholder="${d.edicao.max}" value="${vd.startsWith("e:") ? vd.slice(2) : ""}"></label>` : ""}<button class="btn btn-pri btn-peq" type="submit">Aplicar</button></form>` : "";
       const busca = d.busca ? `<input type="search" class="pop-busca" data-pop-busca placeholder="${esc(d.busca === true ? "Filtrar a lista" : d.busca)}" autocomplete="off">` : "";
       const rodape = d.tipo === "varios" ? `<div class="pop-rodape"><p class="nota">Dá para marcar mais de uma opção.</p><button type="button" class="btn btn-pri btn-peq" data-fechar-pop>Concluir</button></div>` : "";
-      return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${busca}${datas}${datas && ops.length ? `<p class="pop-grupo">${esc(d.rotAtalhos || "Atalhos")}</p>` : ""}${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}${d.tipo === "materia" ? `<div class="pop-rodape"><p class="nota">Marque quantas matérias e assuntos quiser; a lista reúne todos os marcados.</p><button type="button" class="btn btn-pri btn-peq" data-fechar-pop>Concluir</button></div>` : ""}${rodape}`;
+      return `<div class="fd-pop-cab"><span class="alca"></span><button type="button" class="btn-ico" data-fechar-pop aria-label="Fechar">${ico("x")}</button></div><h3>${esc(d.titulo || d.rot)}</h3>${busca}${todosBtn}${datas}${datas && ops.length ? `<p class="pop-grupo">${esc(d.rotAtalhos || "Atalhos")}</p>` : ""}${corpo}${d.nota ? `<p class="nota">${d.nota}</p>` : ""}${d.tipo === "materia" ? `<div class="pop-rodape"><p class="nota">Marque quantas matérias e assuntos quiser; a lista reúne todos os marcados.</p><button type="button" class="btn btn-pri btn-peq" data-fechar-pop>Concluir</button></div>` : ""}${rodape}`;
     }
     // Redesenha o painel aberto sem fechá-lo nem mudá-lo de lugar, mantendo a rolagem e o texto da busca.
     function redesenharPop(d) {
@@ -3199,7 +3274,7 @@
       $$("[data-op]", POPF.el).forEach((c) => { c.hidden = !!n && c.dataset.op !== "" && !norm(c.textContent).includes(n); });
     }
     function abrir(i, botao) {
-      const d = defs[i];
+      const d = defs[i]; d._nenhum = false;
       if (POPF.raiz !== raiz || POPF.i !== i) POPF.aberta = d.tipo === "materia" ? (listaMat(d.get())[0] || "").split("/")[0] : "";
       POPF.raiz = raiz; POPF.i = i;
       POPF.el.innerHTML = conteudo(d);
@@ -3216,17 +3291,32 @@
         if (e.target.closest("[data-fechar-pop]")) return fecharPopF();
         const ab = e.target.closest("[data-mt-abrir]");
         if (ab) { POPF.aberta = ab.dataset.mtAbrir; const top = $(".mt2-areas", POPF.el)?.scrollTop || 0; POPF.el.innerHTML = conteudo(d); const ar = $(".mt2-areas", POPF.el); if (ar) ar.scrollTop = top; const sb = $(".mt2-subs", POPF.el); if (sb) sb.scrollTop = 0; return; }
-        const b = e.target.closest("[data-op]"); if (!b) return;
-        const o = (d.opcoes?.() || []).find((x) => String(x.v) === b.dataset.op); const val = o ? o.v : b.dataset.op;
-        if (d.tipo === "multi") { const cur = d.get(); d.set(val === "" ? [] : cur.includes(val) ? cur.filter((x) => x !== val) : [...cur, val]); }
-        else if (d.tipo === "materia") { const cur = listaMat(d.get()); d.set(val === "" ? "" : (cur.includes(val) ? cur.filter((x) => x !== val) : [...cur, val]).join(",")); }
-        else if (d.tipo === "varios") { const cur = listaV(d.get()), sv = String(val); d.set(sv === "" ? "" : (cur.includes(sv) ? cur.filter((x) => x !== sv) : [...cur, sv]).join("|")); }
+        const bt = e.target.closest("[data-op-todos]");
+        const b = bt || e.target.closest("[data-op]"); if (!b) return;
+        const o = bt ? null : (d.opcoes?.() || []).find((x) => String(x.v) === b.dataset.op); const val = bt ? "" : o ? o.v : b.dataset.op;
+        const antes = JSON.stringify(d.get());
+        if (multi(d)) {
+          const sv = String(val);
+          if (sv === "") { const eraTudo = tudo(d); porSel(d, []); d._nenhum = eraTudo; }
+          else if (d._nenhum) { d._nenhum = false; porSel(d, [sv]); }
+          else if (tudo(d)) {
+            // Todas marcadas: tocar numa a deixa de fora. Na matéria, um assunto sai e ficam os demais assuntos dela.
+            if (d.tipo === "materia") { const areas = matAreas(d), c = d.cont ? d.cont() : null; const [a, sub] = sv.split("/"); const l = areas.filter((x) => x !== a); if (sub) l.push(...Object.keys(SUBAREAS[a] || {}).filter((k) => k !== sub && (!c || c[`${a}/${k}`])).map((k) => `${a}/${k}`)); porSel(d, l); }
+            else porSel(d, opsReais(d).filter((x) => x !== sv));
+          } else {
+            const cur = selDe(d), nova = cur.includes(sv) ? cur.filter((x) => x !== sv) : [...cur, sv];
+            const todos = d.tipo === "materia" ? matAreas(d) : opsReais(d);
+            if (!nova.length) { d._nenhum = true; porSel(d, []); }
+            else if (d.tipo !== "materia" && todos.every((x) => nova.includes(x))) porSel(d, []);
+            else porSel(d, nova);
+          }
+        }
         else d.set(String(d.get() ?? "") === String(val) && !d.obrigatorio ? vazioDe(d) : val);
-        const multiplo = d.tipo === "multi" || d.tipo === "materia" || d.tipo === "varios";
+        const multiplo = multi(d);
         if (multiplo) travarAltura();
-        desenhar(); aoMudar();
+        desenhar(); if (!multiplo || JSON.stringify(d.get()) !== antes) aoMudar();
         // Filtros de escolha múltipla: o painel fica aberto, no mesmo lugar, para marcar outras opções.
-        if (multiplo && val !== "") redesenharPop(d); else fecharPopF();
+        if (multiplo) redesenharPop(d); else fecharPopF();
       };
       POPF.el.oninput = (e) => { if (e.target.matches?.("[data-pop-busca]")) filtrarPop(e.target.value); };
       if (!folha) $("[data-pop-busca]", POPF.el)?.focus();
@@ -3242,7 +3332,7 @@
       if (fm) { const inp = $("input", fm); if (!folha) inp.focus(); fm.onsubmit = (e) => { e.preventDefault(); d.set(inp.value.trim()); desenhar(); aoMudar(); fecharPopF(); }; }
     }
     raiz.addEventListener("click", (e) => {
-      if (e.target.closest("[data-pil-limpar]")) { defs.forEach((d) => { if (!d.semLimpar) d.set(vazioDe(d)); }); fecharPopF(); desenhar(); return aoMudar(); }
+      if (e.target.closest("[data-pil-limpar]")) { defs.forEach((d) => { if (!d.semLimpar) { d.set(vazioDe(d)); d._nenhum = false; } }); fecharPopF(); desenhar(); return aoMudar(); }
       const b = e.target.closest("[data-pil]"); if (!b) return;
       const i = +b.dataset.pil, d = defs[i];
       if (d.tipo === "toggle") { d.set(!d.get()); fecharPopF(); desenhar(); return aoMudar(); }
@@ -3567,6 +3657,7 @@
       const periodos = [{ v: "todo", t: `Todo o acervo (desde ${primeiro ? fmtMesL(primeiro) : "—"})`, curto: "Todo o acervo" },
         { v: "u1", t: `Último mês (${meses[0] ? fmtMes(meses[0].m) : "—"})`, curto: "Último mês" }, { v: "u3", t: "Últimos 3 meses" }, { v: "u6", t: "Últimos 6 meses" }, { v: "u12", t: "Últimos 12 meses" }, { v: "u24", t: "Últimos 2 anos" },
         ...anosAc.slice(1).map((a) => ({ g: "desde", v: `desde:${a}`, t: `Desde ${a}`, curto: `Desde ${a}` }))];
+      if (D.man.radar?.mesN) periodos.splice(1, 0, { v: "mes", t: `Publicados em ${rotMesCorrente()}, ainda sem o arquivo mensal (${fmtInt(D.man.radar.mesN)})`, curto: `Publicados em ${rotMesCorrente()}` });
       const rotPerAc = (v) => { if (/^d:/.test(v)) { const [, de, ate] = v.split(":"); return `${de ? fmtData(de) : "início"} a ${ate ? fmtData(ate) : "hoje"}`; } return "Período"; };
       AC.pil = pilulas($("#ac-pil"), [
         { rot: "Período", titulo: "Período de publicação", tipo: "um", padrao: "todo", obrigatorio: true, semLimpar: true, rotAtual: () => "Todo o acervo", rotValor: rotPerAc, get: () => AC.f.p, set: (v) => (AC.f.p = v), opcoes: () => periodos,
@@ -3606,6 +3697,7 @@
   const AC = { lista: [], mostrados: 0, termos: [], token: 0, dl: false, f: null, pil: null, cls: new Map(), rels: new Map() };
   // Meses (mais recente primeiro) de um valor do filtro Período.
   function mesesDoPeriodo(p, todos) {
+    if (p === "mes") return [];
     if (/^\d{4}-\d{2}$/.test(p)) return [p];
     if (/^a:\d{4}$/.test(p)) return todos.filter((m) => m.startsWith(p.slice(2)));
     if (/^desde:\d{4}$/.test(p)) return todos.filter((m) => m >= `${p.slice(6)}-01`);
@@ -3680,7 +3772,7 @@
       return ids.has(id);
     });
   }
-  const rotPeriodo = (p, meses) => (p === "todo" ? "todo o acervo" : /^desde:/.test(p) ? `desde ${p.slice(6)}` : /^a:\d{4}$/.test(p) ? `ano de ${p.slice(2)}` : meses.length === 1 ? fmtMesL(meses[0]) : meses.length ? `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}` : "período sem acórdãos");
+  const rotPeriodo = (p, meses) => (p === "mes" ? "os publicados no mês corrente" : p === "todo" ? "todo o acervo" : /^desde:/.test(p) ? `desde ${p.slice(6)}` : /^a:\d{4}$/.test(p) ? `ano de ${p.slice(2)}` : meses.length === 1 ? fmtMesL(meses[0]) : meses.length ? `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}` : "período sem acórdãos");
   async function buscar() {
     const tk = ++AC.token;
     $("#ac-lista")?.setAttribute("aria-busy", "true");
@@ -3718,18 +3810,29 @@
       $("#ac-lista").removeAttribute("aria-busy");
       return;
     }
+    // Período "mês corrente": só os acórdãos publicados e ainda fora do arquivo mensal.
+    if (f.p === "mes") {
+      const lista = await itensMes(f, cons, listaV(f.c).map(norm), listaV(f.rl).map(norm), true);
+      if (tk !== AC.token) return;
+      const porRel = !cons.vazio && f.s === "auto";
+      AC.lista = lista.sort(porRel ? (a, b) => b._sc - a._sc || b.dj.localeCompare(a.dj) : (a, b) => b.dj.localeCompare(a.dj)); AC.termos = cons.termos;
+      $("#ac-info").innerHTML = `<b>${fmtInt(lista.length)}</b> acórdão(s) publicado(s) desde ${fmtData(D.man.radar?.mesDe || "")}, ainda sem o arquivo mensal do STJ${f.o ? " nos órgãos escolhidos" : ""} · ${porRel ? "por relevância" : "mais recentes primeiro"}.${cons.vazio ? "" : " A busca por palavras só alcança os que já têm a ementa pelo texto integral."}${f.a || f.x || f.t ? " Os filtros de matéria, relevância e tese não se aplicam a eles." : ""} O órgão é estimado pelo relator até a chegada do arquivo mensal. ${explicacaoHTML(cons)}`;
+      renderLista(true);
+      return;
+    }
     // Sem termo nem filtro: mostra os acórdãos mais recentes de cada órgão (arquivo pequeno), sem
     // baixar os arquivos mensais. A consulta ao acervo começa quando houver termo ou filtro.
     const inicial = cons.vazio && !f.n && !f.a && !f.c && !f.rl && !f.x && !f.t && f.r && (f.s === "auto" || f.s === "data") && (f.p === "todo" || /^u\d+$/.test(f.p));
     if (inicial) {
-      const rec = await carregar("recentes").catch(() => null);
+      const [rec, rm] = await Promise.all([carregar("recentes").catch(() => null), D.man.radar?.mesN ? carregar("radar-recentes").catch(() => []) : []]);
       if (tk !== AC.token) return;
       if (rec) {
         const lista = rec.filter((r) => temV(f.o, r.o)).sort((a, b) => (b.dj || "").localeCompare(a.dj || "") || (b.s ?? 0) - (a.s ?? 0));
-        AC.lista = agrupar(lista.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = [];
-        $("#ac-info").innerHTML = `Acórdãos publicados mais recentemente${f.o ? " nos órgãos escolhidos" : ""}. Digite termos ou use os filtros para pesquisar em ${esc(rotPeriodo(f.p, meses))}.`;
+        const m10 = (rm || []).filter((x) => doMes(x) && temV(f.o, x.tr)).slice(0, 10).map((x) => pseudoMes(x, x.em));
+        AC.lista = [...m10, ...agrupar(lista.map((r) => Object.assign(r, { _dup: [] })))]; AC.termos = [];
+        $("#ac-info").innerHTML = `Acórdãos publicados mais recentemente${f.o ? " nos órgãos escolhidos" : ""}. Digite termos ou use os filtros para pesquisar em ${esc(rotPeriodo(f.p, meses))}.${m10.length ? ` Os ${m10.length} primeiros saíram em ${rotMesCorrente()} e ainda não têm o arquivo mensal do STJ. <button type="button" class="link-acao" id="ac-ver-mes">Ver todos os ${fmtInt(D.man.radar.mesN)} de ${rotMesCorrente()}</button>` : ""}`;
+        $("#ac-ver-mes")?.addEventListener("click", () => { AC.f.p = "mes"; AC.pil?.desenhar(); buscar(); });
         renderLista(true);
-        avisoMes(f, tk);
         return;
       }
     }
@@ -3821,6 +3924,13 @@
     prog.hidden = true;
     res.sort(ord); if (res.length > MAX_RES) res.length = MAX_RES;
     AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos;
+    const baseN = total > res.length ? total : AC.lista.length;
+    let nMes = 0;
+    if (!f.n && mesInclui(f.p)) {
+      const mes = await itensMes(f, cons, clsSel, relSel);
+      if (tk !== AC.token) return;
+      if (mes.length) { nMes = mes.length; AC.lista = [...AC.lista, ...mes].sort(ord); }
+    }
     // Processo ainda sem ementa no acervo: publicações recentes no DJEN e sessões marcadas.
     const extra = $("#ac-extra"); extra.innerHTML = "";
     const monoSTJ = $("#ac-mono-stj"); if (monoSTJ) monoSTJ.innerHTML = "";
@@ -3863,57 +3973,54 @@
     const avisoFalha = falhas ? `<span class="aviso-falha" role="alert">${ico("alerta")} ${falhas === 1 ? "1 arquivo mensal não pôde ser consultado" : `${fmtInt(falhas)} arquivos mensais não puderam ser consultados`}; os resultados podem estar incompletos. <button type="button" class="btn btn-claro btn-peq" id="ac-denovo">Tentar novamente</button></span>` : "";
     if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: sem acórdão no acervo. Veja abaixo ${monos.length ? "as decisões monocráticas" : "a publicação no DJEN"}${monos.length && extra.querySelector(".item-djen, .item-radar") ? " e as demais publicações" : ""}.`;
     else if (cortado) $("#ac-info").innerHTML = `Exibindo os <b>${fmtInt(res.length)}</b> acórdãos ${ordem === "julg" ? "julgados mais recentemente" : "mais recentes"} (limite da consulta; use os filtros para refinar) · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} ${explicacaoHTML(cons)}`;
-    else $("#ac-info").innerHTML = `<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
+    else $("#ac-info").innerHTML = `<b>${fmtInt(baseN + nMes)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
+    if (nMes) $("#ac-info").insertAdjacentHTML("beforeend", ` <span class="nota-mes">Inclui ${fmtInt(nMes)} publicado(s) em ${rotMesCorrente()}, ainda sem o arquivo mensal do STJ${cons.vazio ? "" : " (só os que já têm a ementa pelo texto integral)"}.</span>`);
     if (avisoFalha) { $("#ac-info").insertAdjacentHTML("beforeend", avisoFalha); $("#ac-denovo").addEventListener("click", () => buscar()); }
     renderLista(true);
   }
-  // Acórdãos do mês corrente: publicados no DJEN, ainda fora do arquivo mensal (que traz a ementa).
-  // O aviso usa só o manifest; a lista (radar.json) é baixada quando o usuário pede.
-  function avisoMes(f, tk) {
-    const rd = D.man.radar || {}, ult = D.man.meses?.[0]?.m || "";
-    if (!rd.mesN || !rd.mesDe) return;
-    const ex = $("#ac-extra"); if (!ex || tk !== AC.token) return;
-    ex.innerHTML = `<div class="mes-aviso">
-        <div><b>${fmtInt(rd.mesN)} acórdãos publicados desde ${fmtData(rd.mesDe)}</b> ainda não estão no arquivo mensal do STJ${ult ? ` (o último é de ${fmtMesL(ult)})` : ""}, que traz a ementa e entra no início do mês seguinte.${rd.mesEm ? ` ${fmtInt(rd.mesEm)} já têm a ementa pelo texto integral.` : ""}</div>
-        <button type="button" class="btn btn-claro btn-peq" id="ac-mes">Ver os publicados do mês</button></div>`;
-    $("#ac-mes").addEventListener("click", () => modoMes(f));
+  // Acórdãos do mês corrente: publicados no DJEN e ainda fora do arquivo mensal do STJ (que traz a
+  // ementa). Entram na mesma lista da Pesquisa, com etiqueta própria; os que já têm o texto integral
+  // trazem a ementa e respondem à busca por palavras.
+  const ultMesAc = () => (D.man.meses?.[0]?.m || "").replace("-", "");
+  const doMes = (x) => String(x.d || "").replace(/-/g, "").slice(0, 6) > ultMesAc();
+  function mesInclui(p) {
+    const de = D.man.radar?.mesDe || "";
+    if (!de) return false;
+    if (p === "todo" || p === "mes" || /^u\d+$/.test(p) || /^desde:/.test(p)) return true;
+    if (/^a:\d{4}$/.test(p)) return p.slice(2) === de.slice(0, 4);
+    if (/^d:/.test(p)) { const ate = p.split(":")[2]; return !ate || ate >= de; }
+    return false;
   }
-  async function modoMes(f) {
-    const tk = ++AC.token; AC.ctrl?.abort();
-    const info = $("#ac-info"), ul = $("#ac-lista"), pag = $("#ac-pag"), ex = $("#ac-extra");
-    if ($("#ac-mono-stj")) $("#ac-mono-stj").innerHTML = "";
-    info.textContent = "Carregando os acórdãos publicados no mês…"; ul.setAttribute("aria-busy", "true");
-    const [dj, ems] = await Promise.all([djen().catch(() => null), ementasMes()]);
-    if (tk !== AC.token) return;
-    if (!dj) { info.innerHTML = `<span class="aviso-falha" role="alert">${ico("alerta")} Não foi possível carregar a lista. <button type="button" class="btn btn-claro btn-peq" id="ac-mes-denovo">Tentar novamente</button></span>`; $("#ac-mes-denovo").addEventListener("click", () => modoMes(f)); return; }
-    const ult = (D.man.meses?.[0]?.m || "").replace("-", "");
-    const base = dj.filter((x) => String(x.d || "").replace(/-/g, "").slice(0, 6) > ult && temV(f.o, x.tr));
-    const st = { q: "", so: false, n: 50 };
-    ex.innerHTML = `<div class="mes-ferr">
-        <div class="campo-busca">${ico("pesquisa")}<input type="search" id="ac-mes-q" placeholder="Filtrar por número, classe ou relator" aria-label="Filtrar os publicados do mês"></div>
-        <label class="mes-so"><input type="checkbox" id="ac-mes-so"> Só com ementa</label>
-        <button type="button" class="btn btn-fant btn-peq" id="ac-mes-sair">Voltar aos mais recentes com ementa</button></div>`;
-    const desenhar = () => {
-      const w = norm(st.q).split(/\s+/).filter(Boolean);
-      const vis = base.filter((x) => (!st.so || ems[x.q]) && (!w.length || w.every((t) => x._p.includes(t) || norm(x.rel || "").includes(t) || digitos(x.p).includes(t.replace(/\D/g, "") || "#"))));
-      info.innerHTML = `<b>${fmtInt(vis.length)}</b> acórdão(s) publicados desde ${fmtData(D.man.radar?.mesDe || "")}${f.o ? " nos órgãos escolhidos" : ""}, ainda fora do arquivo mensal do STJ · mais recentes primeiro. O órgão é estimado pelo relator até a chegada do arquivo mensal.`;
-      ul.removeAttribute("aria-busy");
-      ul.innerHTML = vis.slice(0, st.n).map((x) => cardDjen(x, { em: ems[x.q] || "" })).join("") || vazio("filtro", "Nada neste filtro", "Revise o número, a classe ou o nome do relator.");
-      pag.innerHTML = vis.length > st.n ? `<div class="acoes" style="justify-content:center;margin:14px 0"><button type="button" class="btn btn-claro" id="ac-mes-mais">Mostrar mais ${fmtInt(Math.min(50, vis.length - st.n))}</button></div>` : "";
-      $("#ac-mes-mais")?.addEventListener("click", () => { st.n += 50; desenhar(); });
-    };
-    $("#ac-mes-q").addEventListener("input", debounce(() => { st.q = $("#ac-mes-q").value; st.n = 50; desenhar(); }, 250));
-    $("#ac-mes-so").addEventListener("change", (e) => { st.so = e.target.checked; st.n = 50; desenhar(); });
-    $("#ac-mes-sair").addEventListener("click", () => buscar());
-    desenhar();
-    $("#ac-mes-q").focus({ preventScroll: true });
+  const PREP = new Set(["no", "na", "nos", "nas", "em"]);
+  const palCl = (c) => norm(c).split(/\s+/).filter((w) => w && !PREP.has(w));
+  const pseudoMes = (x, em) => ({ _mes: x, _em: em || "", dj: x.d, id: `m|${x.reg}|${x.d}|${x.r || ""}`, _sc: 0 });
+  async function itensMes(f, cons, clsSel, relSel, ignorarMat = false) {
+    if (!ignorarMat && (f.a || f.x || f.t)) return [];
+    const [dj, ems] = await Promise.all([djen().catch(() => []), ementasMes()]);
+    const temTexto = !cons.vazio, clsP = clsSel.map(palCl);
+    const out = [];
+    for (const x of dj) {
+      if (!doMes(x) || !temV(f.o, x.tr)) continue;
+      if (clsP.length) { const pc = palCl(`${x.r || ""} ${String(x.p || "").replace(/\s*\d.*$/, "")}`); if (!clsP.some((c) => c.join(" ") === pc.join(" "))) continue; }
+      if (relSel.length) { const nr = norm(x.rel || ""); if (!relSel.some((r) => nr === r || nr.includes(r))) continue; }
+      const em = x.q ? ems[x.q] || "" : "";
+      const it = pseudoMes(x, em);
+      if (temTexto) {
+        if (!em) continue;
+        const doc = norm(em); if (!cons.testa(doc)) continue;
+        const i = doc.indexOf("\n"); it._sc = cons.pontua(doc, doc.slice(0, i > 0 ? i : 400));
+      }
+      out.push(it);
+    }
+    return out;
   }
+  const rotMesCorrente = () => { const de = D.man.radar?.mesDe || ""; return de ? MESES_L[+de.slice(5, 7) - 1] : "este mês"; };
   const pgAc = paginador("ac", () => renderLista(false), "#ac-lista");
   function renderLista(reset) {
     const ul = $("#ac-lista");
     ul.removeAttribute("aria-busy");
     if (reset) pgAc.pag = 1;
-    ul.innerHTML = pgAc.fatia(AC.lista).map((r) => cardAcordao(r, { termos: AC.termos })).join("");
+    ul.innerHTML = pgAc.fatia(AC.lista).map((r) => (r._mes ? cardDjen(r._mes, { em: r._em, mes: true }) : cardAcordao(r, { termos: AC.termos }))).join("");
     $("#ac-pag").innerHTML = pgAc.html(AC.lista.length);
     if (!AC.lista.length && $("#ac-extra")?.innerHTML) ul.innerHTML = "";
     else if (!AC.lista.length) ul.innerHTML = vazio("pesquisa", "Nenhum acórdão encontrado", "Amplie o período, escolha “Exibir: tudo” para incluir as decisões de rotina ou revise os termos. Toque em “?” para ver como combinar palavras.");
@@ -4769,8 +4876,12 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.10.02";
+  const VERSAO = "2026.10.03";
   const NOVIDADES = [
+    ["2026-10-03", [
+      "Pesquisa: os acórdãos do mês corrente, ainda sem o arquivo mensal do STJ, entram na própria lista, com a etiqueta “Publicado em … · ementa em …”. No Período, “Publicados em [mês]” mostra só eles, com os mesmos filtros.",
+      "Filtros de várias escolhas: sem filtro, todas as opções aparecem marcadas e tocar numa delas a deixa de fora (por exemplo, todos os órgãos menos um). “Desmarcar todos” limpa para escolher uma a uma.",
+    ]],
     ["2026-10-02", [
       "Cartões mais limpos: fica só o selo “Sinal forte de relevância” e, das marcas, “Afetação ao rito repetitivo” e “Recurso repetitivo”. Na página do julgado, o quadro “A ementa menciona” explica distinção, divergência, mudança de entendimento, questão nova e modulação.",
       "Novo guia “Como pesquisar”, passo a passo e com exemplos. Para todas as formas de uma palavra, use o asterisco (prescri*); “tema 1365” e “súmula 7” passam a funcionar como escritos.",
