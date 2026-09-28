@@ -1351,3 +1351,11 @@ button.salvo-nota:hover { background: var(--sup-3); }
 @media (max-width: 860px) { .chip.area[aria-pressed="true"] { background: hsl(var(--h) 70% 45% / .13); border-color: hsl(var(--h) 65% 45% / .5); } }
 .chips.vertical .chip { justify-content: flex-start; }
 .chips.vertical .chip .n { margin-left: auto; }
+/* Grupo de assuntos selecionável (segundo nível da matéria) */
+button.mt2-grupo { display: flex; align-items: center; gap: 6px; width: 100%; margin: 12px 0 4px; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; font-family: var(--ui); }
+button.mt2-grupo::before { content: ""; width: 12px; height: 12px; border: 1.5px solid var(--linha-2); border-radius: 3px; flex: none; }
+button.mt2-grupo[aria-pressed="true"] { color: hsl(var(--h) 60% 32%); }
+button.mt2-grupo[aria-pressed="true"]::before { background: hsl(var(--h) 65% 45%); border-color: hsl(var(--h) 65% 45%); box-shadow: inset 0 0 0 2px var(--sup); }
+@media (hover: hover) and (pointer: fine) { button.mt2-grupo:hover { background: var(--sup-2); color: var(--tx); } }
+:root[data-theme="dark"] button.mt2-grupo[aria-pressed="true"] { color: hsl(var(--h) 80% 76%); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) button.mt2-grupo[aria-pressed="true"] { color: hsl(var(--h) 80% 76%); } }
