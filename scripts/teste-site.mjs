@@ -8,7 +8,7 @@
 // Uso: node scripts/teste-site.mjs [pasta]   (padrão: _site)
 // Requer playwright-core (ou playwright) e um Chrome/Chromium; CHROME indica o executável.
 import { createServer } from "node:http";
-import { readFileSync, existsSync, statSync, createReadStream } from "node:fs";
+import { readFileSync, existsSync, statSync, createReadStream, readdirSync, appendFileSync } from "node:fs";
 import { join, extname, resolve } from "node:path";
 
 const RAIZ = resolve(process.argv[2] || "_site");
@@ -35,6 +35,16 @@ try { const pn = json("data/painel.json"); if (!Array.isArray(pn.ev) || !pn.dest
 let semFrag = 0;
 for (let i = 0; i < 100; i++) { const k = String(i).padStart(2, "0"); if (tam(`data/numeros/n${k}.json`) < 0 || tam(`data/numeros/r${k}.json`) < 0) semFrag++; }
 if (semFrag) falha(`${semFrag} fragmentos do índice de números ausentes`); else ok("índice de números: 100 fragmentos");
+// Espaço total: o GitHub Pages aceita até 1 GB. Acima de 850 MB fica o aviso (sem bloquear); acima
+// de 1 GB a publicação falharia de qualquer modo.
+{
+  const soma = (d) => readdirSync(d, { withFileTypes: true }).reduce((t, e) => t + (e.isDirectory() ? soma(join(d, e.name)) : e.isFile() ? statSync(join(d, e.name)).size : 0), 0);
+  const mb = Math.round(soma(RAIZ) / 1e6);
+  if (mb > 1000) falha(`site com ${mb} MB, acima do limite de 1 GB do GitHub Pages`);
+  else if (mb > 850) { avisos.push(`site com ${mb} MB (aviso a partir de 850 MB; limite de 1 GB)`); console.log(`::warning title=Espaço do site::O site ocupa ${mb} MB; o limite do GitHub Pages é 1 GB.`); }
+  else ok(`espaço do site: ${mb} MB de 1000 MB`);
+  if (process.env.GITHUB_STEP_SUMMARY) { try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Espaço do site: ${mb} MB de 1000 MB${mb > 850 ? " — ATENÇÃO: acima de 850 MB" : ""}.\n`); } catch { /* opcional */ } }
+}
 // Limites de tamanho: um arquivo que cresce sem controle deixa o site lento.
 const limites = { "app.js": 800e3, "style.css": 250e3, "index.html": 30e3, "data/painel.json": 400e3, "data/recentes.json": 4e6, "data/manifest.json": 400e3 };
 for (const [p, lim] of Object.entries(limites)) { const t = tam(p); if (t < 0) falha(`${p} ausente`); else if (t > lim) falha(`${p} com ${Math.round(t / 1e3)} KB (limite ${Math.round(lim / 1e3)} KB)`); }

@@ -10,9 +10,11 @@ import base64
 import gzip
 import hashlib
 import io
+import json
 import shutil
 import sys
 import tarfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -95,6 +97,8 @@ def main() -> None:
     print(f"Acórdãos: {len(meses)} meses; {bruto / 1e6:.0f} MB em JSON -> {compacto / 1e6:.0f} MB publicados. Site: {total / 1e6:.0f} MB.")
     if total > 950e6:
         print("AVISO: o site passa de 950 MB; o limite do GitHub Pages é 1 GB.", file=sys.stderr)
+    # Espaço ocupado, para a conferência automática e a coleta semanal avisarem antes do limite.
+    (DESTINO / "data" / "espaco.json").write_text(json.dumps({"mb": round(total / 1e6), "limite": 1000, "aviso": 850, "em": time.strftime("%Y-%m-%d")}), encoding="utf-8")
 
 
 if __name__ == "__main__":
