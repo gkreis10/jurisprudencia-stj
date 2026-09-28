@@ -1312,7 +1312,8 @@ button.salvo-nota:hover { background: var(--sup-3); }
   .ds-obs { font: italic 9pt var(--ui); color: #555; }
   .ds-rodape { margin-top: 16pt; font: 8.5pt/1.4 var(--ui); color: #555; }
 }
-.mono-stj { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0 18px; }
+.mono-stj { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--linha); border-radius: 12px; background: var(--sup-2); font-size: 14px; color: var(--tx-2); }
+.mono-stj > span { flex: 1; min-width: 200px; }
 .mes-aviso { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--linha); border-radius: 12px; background: var(--sup-2); font-size: 14px; line-height: 1.5; color: var(--tx-2); }
 .mes-aviso > div { flex: 1; min-width: 240px; }
 .mes-aviso b { color: var(--tx); }

@@ -142,8 +142,6 @@
     processo: (reg) => `https://processo.stj.jus.br/processo/pesquisa/?tipoPesquisa=tipoPesquisaNumeroRegistro&termo=${encodeURIComponent(reg)}`,
     // Documento da decisão monocrática no DJe (PDF oficial), pelo número do documento.
     mono: (x) => (x.seq ? `https://processo.stj.jus.br/processo/dj/documento/mediado/?tipo_documento=documento&componente=MON&sequencial=${encodeURIComponent(x.seq)}&num_registro=${encodeURIComponent(x.reg)}&data=${String(x.d).replace(/-/g, "")}&formato=PDF` : `https://processo.stj.jus.br/processo/pesquisa/?tipoPesquisa=tipoPesquisaNumeroRegistro&termo=${encodeURIComponent(x.reg)}`),
-    // Pesquisa de jurisprudência do STJ, base de decisões monocráticas (inclui as anteriores a 2021).
-    monoSTJ: (termo) => `https://scon.stj.jus.br/SCON/pesquisar.jsp?b=DTXT&tipo_visualizacao=RESUMO&livre=${encodeURIComponent(termo)}`,
     tema: (tp, n) => {
       const cod = { "Tema": "T", "Controvérsia": "C", "IAC": "I", "SIRDR": "S", "PUIL": "P" }[tp] || "T";
       return `https://processo.stj.jus.br/repetitivos/temas_repetitivos/pesquisa.jsp?novaConsulta=true&tipo_pesquisa=${cod}&cod_tema_inicial=${n}&cod_tema_final=${n}`;
@@ -973,7 +971,7 @@
       <div class="item-sel">${seloNivel(nivelAc(r.s ?? 0), r)}${motivos}${areas}</div>
       <div class="acoes" style="margin:4px 0 14px">
         <a class="btn btn-pri btn-peq" href="${URLS.inteiroTeor(r.reg, r.dj)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>
-        <a class="btn btn-claro btn-peq" href="${URLS.processo(r.reg)}" target="_blank" rel="noopener">Consulta processual</a>
+        <a class="btn btn-claro btn-peq" href="${URLS.processo(r.reg)}" target="_blank" rel="noopener" title="Consulta processual do STJ; as decisões, inclusive monocráticas anteriores a 2021, ficam na aba “Decisões”">Processo e decisões no STJ ${ico("externo")}</a>
         <button type="button" class="btn btn-claro btn-peq" id="ga-cit">${ico("copiar")} Copiar ementa e citação</button>
         <button type="button" class="btn btn-claro btn-peq" id="ga-socit">${ico("citar")} Copiar só a citação</button>
         <button type="button" class="btn btn-claro btn-peq btn-salvar" id="ga-salvar" data-salvo-chave="a:${esc(r.id)}" aria-pressed="${salvo}">${ico("salvar")} ${salvo ? "Salvo" : "Salvar"}</button>
@@ -3526,10 +3524,10 @@
         <div class="barra-res"><p id="ac-info" aria-live="polite"></p><div class="progresso" id="ac-prog" hidden><i></i></div>
           <button type="button" class="btn btn-fant btn-peq" id="ac-link">${ico("link")} Copiar link</button></div>
         <p class="cobertura" id="ac-cob">${coberturaHTML()}</p>
+        <div id="ac-mono-stj"></div>
         <div id="ac-extra"></div>
         <ol class="lista" id="ac-lista"></ol>
-        <div id="ac-pag"></div>
-        <div id="ac-mono-stj"></div>`;
+        <div id="ac-pag"></div>`;
       const anosAc = [...new Set(meses.map((m) => m.m.slice(0, 4)))];
       const primeiro = meses.length ? meses[meses.length - 1].m : "";
       const periodos = [{ v: "todo", t: `Todo o acervo (desde ${primeiro ? fmtMesL(primeiro) : "—"})`, curto: "Todo o acervo" },
@@ -3808,18 +3806,20 @@
         extra.innerHTML = `<p class="nota extra-tit">${pubs.length ? `<b>Publicado recentemente no DJEN</b> · ainda sem ementa no arquivo mensal do STJ` : ""}${pubs.length && sess.length ? " · " : ""}${sess.length ? "<b>Em pauta</b>" : ""}</p>
           <ol class="lista">${sess.map((x) => cardPauta(x)).join("")}${pubs.map((x) => cardDjen(x, { em: emsN[x.q] || "" })).join("")}</ol>`;
       }
-      // A base aberta do STJ só tem monocráticas desde 2021; para as anteriores, a pesquisa do próprio STJ.
-      const ref = clNum ? `${classeBase(clNum)} ${f.n}` : res[0] ? `${classeBase(res[0].cl)} ${digitos(res[0].n)}` : monos[0] ? `${monos[0].cl} ${monos[0].n}` : f.n;
-      // O número de registro começa pelo ano de autuação: processo autuado a partir de 2021 não tem decisão anterior.
-      const ano = String(res[0]?.reg || monos[0]?.reg || "").slice(0, 4), antigo = !/^\d{4}$/.test(ano) || ano < "2021";
-      // Duas vias oficiais: a pesquisa de jurisprudência (base de monocráticas) e a consulta processual,
-      // cuja aba "Decisões" lista todas as decisões do processo, inclusive as anteriores a 2021.
-      const regProc = String(res[0]?.reg || monos[0]?.reg || (f.n.length >= 10 ? f.n : ""));
-      const botaoSTJ = `<a class="btn btn-claro btn-peq" href="${URLS.monoSTJ(ref)}" target="_blank" rel="noopener">Pesquisar monocráticas no STJ ${ico("externo")}</a>${regProc ? `<a class="btn btn-claro btn-peq" href="${URLS.processo(regProc)}" target="_blank" rel="noopener" title="Na página do processo, abra a aba “Decisões”">Decisões na consulta processual ${ico("externo")}</a>` : ""}`;
+      // A aba "Decisões" da consulta processual lista todas as decisões do processo, inclusive as
+      // monocráticas anteriores a 2021 (a base aberta do STJ começa em 2021). Fica no alto do resultado.
+      const procs = new Map();
+      for (const r of res) if (r.reg && !procs.has(r.reg)) procs.set(r.reg, `${classeBase(r.cl)} ${fmtNumProc(digitos(r.n))}`);
+      for (const x of monos) if (x.reg && !procs.has(x.reg)) procs.set(x.reg, `${x.cl} ${fmtNumProc(x.n)}`);
+      if (!procs.size && f.n.length >= 10) procs.set(f.n, fmtNumProc(f.n));
+      const lp = [...procs].slice(0, 3);
+      if (lp.length && monoSTJ) {
+        const antigo = lp.some(([reg]) => reg.slice(0, 4) < "2021");
+        monoSTJ.innerHTML = `<div class="mono-stj">${ico("arquivo")}<span>Todas as decisões ${lp.length > 1 ? "destes processos" : "deste processo"} no STJ${antigo ? ", inclusive as monocráticas anteriores a 2021" : ", inclusive as monocráticas não terminativas"}:</span>
+          ${lp.map(([reg, rot]) => `<a class="btn btn-claro btn-peq" href="${URLS.processo(reg)}" target="_blank" rel="noopener" title="Abre a consulta processual do STJ; as decisões ficam na aba “Decisões”">${lp.length > 1 ? `${esc(rot)} · ` : ""}Decisões do processo ${ico("externo")}</a>`).join("")}</div>`;
+      }
       if (monos.length) extra.insertAdjacentHTML("beforeend", `<p class="nota extra-tit"><b>Decisões monocráticas neste processo</b> · ${fmtInt(monos.length)} · desde 2021, sem o texto: o número abre a decisão oficial no STJ</p>
-          <ol class="lista">${monos.slice(0, 60).map(cardMono).join("")}</ol>
-          ${antigo ? `<p class="nota mono-stj">As decisões anteriores a 2021 não estão na base aberta do STJ. ${botaoSTJ}</p>` : ""}`);
-      else if (monoSTJ) monoSTJ.innerHTML = `<p class="nota mono-stj">Nenhuma decisão monocrática deste processo na base aberta do STJ, que começa em janeiro de 2021 e reúne só as decisões terminativas. ${botaoSTJ}</p>`;
+          <ol class="lista">${monos.slice(0, 60).map(cardMono).join("")}</ol>`);
     }
     const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.querySelector(".item-djen, .item-radar:not(.item-mono)") ? " e no DJEN" : ""}${monos.length ? ` · ${fmtInt(monos.length)} decisão(ões) monocrática(s) abaixo` : ""}` : rotPeriodo(f.p, meses);
     const parcial = AC.parar === tk ? " · busca interrompida" : "";
@@ -4741,7 +4741,7 @@
       "Pesquisa: os acórdãos publicados no mês corrente, antes do arquivo mensal do STJ, ficam acessíveis por um aviso no alto da lista, com filtro por número, classe ou relator; os que já têm texto integral trazem a ementa.",
     ]],
     ["2026-09-30", [
-      "Busca pelo número do processo: botões para pesquisar as decisões monocráticas diretamente no STJ (pesquisa de jurisprudência e aba “Decisões” da consulta processual), inclusive as anteriores a 2021, que não estão na base aberta.",
+      "Busca pelo número do processo: no alto do resultado, botão “Decisões do processo”, que abre a consulta processual do STJ com todas as decisões, inclusive as monocráticas anteriores a 2021; na página do julgado, o botão passou a se chamar “Processo e decisões no STJ”.",
     ]],
     ["2026-09-29", [
       "Dossiê em PDF nos Salvos: reúne os itens da pasta (ou do filtro) com índice, ementa completa, tese, citação, avaliação e anotação, separados por avaliação.",
