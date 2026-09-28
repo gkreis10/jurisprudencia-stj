@@ -1272,3 +1272,8 @@ button.salvo-nota:hover { background: var(--sup-3); }
 .menu a { padding-top: 8px; padding-bottom: 8px; }
 .mais-grupo { margin: 16px 2px 8px; font: 700 11px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--tx-3); }
 .mais-grupo:first-child { margin-top: 0; }
+
+/* Decisões monocráticas */
+.item-mono .item-tit { text-decoration: none; color: var(--pri); }
+@media (hover: hover) and (pointer: fine) { .item-mono .item-tit:hover { text-decoration: underline; } }
+.mono-desfecho { margin: 4px 0 0; }

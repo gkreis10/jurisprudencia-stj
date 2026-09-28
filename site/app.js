@@ -140,6 +140,8 @@
   const URLS = {
     inteiroTeor: (reg, dj) => `https://processo.stj.jus.br/processo/revista/inteiroteor/?num_registro=${encodeURIComponent(reg)}&dt_publicacao=${encodeURIComponent(fmtData(dj))}`,
     processo: (reg) => `https://processo.stj.jus.br/processo/pesquisa/?tipoPesquisa=tipoPesquisaNumeroRegistro&termo=${encodeURIComponent(reg)}`,
+    // Documento da decisão monocrática no DJe (PDF oficial), pelo número do documento.
+    mono: (x) => (x.seq ? `https://processo.stj.jus.br/processo/dj/documento/mediado/?tipo_documento=documento&componente=MON&sequencial=${encodeURIComponent(x.seq)}&num_registro=${encodeURIComponent(x.reg)}&data=${String(x.d).replace(/-/g, "")}&formato=PDF` : `https://processo.stj.jus.br/processo/pesquisa/?tipoPesquisa=tipoPesquisaNumeroRegistro&termo=${encodeURIComponent(x.reg)}`),
     tema: (tp, n) => {
       const cod = { "Tema": "T", "Controvérsia": "C", "IAC": "I", "SIRDR": "S", "PUIL": "P" }[tp] || "T";
       return `https://processo.stj.jus.br/repetitivos/temas_repetitivos/pesquisa.jsp?novaConsulta=true&tipo_pesquisa=${cod}&cod_tema_inicial=${n}&cod_tema_final=${n}`;
@@ -632,12 +634,47 @@
     if (!r.ok) throw new Error(`${r.status} ao carregar ${url}`);
     return r.json();
   }
+  // Arquivos guardados já compactados (.json.gz), descompactados no navegador.
+  function carregarGz(nome) {
+    if (!D.cache[nome]) D.cache[nome] = getJSONgz(`data/${nome}.json`).catch((e) => { delete D.cache[nome]; throw e; });
+    return D.cache[nome];
+  }
   function carregar(nome, prep) {
     if (!D.cache[nome]) D.cache[nome] = getJSON(`data/${nome}.json`).then((x) => (prep ? prep(x) : x)).catch((e) => { delete D.cache[nome]; throw e; });
     return D.cache[nome];
   }
   // Classe do recurso principal: "AgInt nos EDcl no AREsp" -> "AREsp" (REsp e AREsp têm numerações próprias).
   const classeBase = (cl) => (String(cl || "").trim().split(/\s+(?:no|na|nos|nas|em)\s+/i).pop().split(/\s+/)[0] || "").replace(/\.$/, "");
+  // Decisões monocráticas (metadados do STJ, desde 2021): número, recurso interno, ministro,
+  // data de publicação e desfecho, sem o texto. Fragmentadas pelos dois últimos dígitos do número.
+  async function monocraticasDe(nums = [], regs = []) {
+    if (!D.man.monocraticas?.v) return [];
+    const frag = (n) => n.slice(-2).padStart(2, "0");
+    const sn = new Set(nums.map(digitos).filter(Boolean)), sr = new Set(regs.map(digitos).filter(Boolean));
+    if (sr.size) {
+      const rs = await Promise.all([...new Set([...sr].map(frag))].map((k) => carregarGz(`monocraticas/r${k}`).catch(() => ({ l: [] }))));
+      for (const r of rs) for (const [reg, n] of r.l) if (sr.has(reg)) sn.add(n);
+    }
+    if (!sn.size) return [];
+    const fs = await Promise.all([...new Set([...sn].map(frag))].map((k) => carregarGz(`monocraticas/m${k}`).catch(() => null)));
+    const out = [];
+    for (const f of fs) if (f) for (const x of f.l) {
+      if (!sn.has(x[0]) || (sr.size && !sr.has(x[1]) && !nums.map(digitos).includes(x[0]))) continue;
+      out.push({ n: x[0], reg: x[1], cl: x[2], rec: x[3], d: x[4] ? `${x[4].slice(0, 4)}-${x[4].slice(4, 6)}-${x[4].slice(6, 8)}` : "", min: f.min[x[5]] || "", teor: f.teor[x[6]] || "", desc: f.desc[x[7]] || "", seq: x[8] });
+    }
+    return out.sort((a, b) => b.d.localeCompare(a.d));
+  }
+  const RES_MONO = { Negando: "Negou provimento", Denegando: "Denegou", "Não Conhecendo": "Não conheceu", Concedendo: "Concedeu ou deu provimento", "Admitindo Embargo": "Admitiu os embargos", Outros: "Outro desfecho" };
+  const tituloMono = (x) => (x.rec && x.rec !== "DESIS" ? `${x.rec} no ${x.cl} ${fmtNumProc(x.n)}` : `${x.cl} ${fmtNumProc(x.n)}`);
+  const desfechoMono = (x) => (x.desc ? x.desc.charAt(0).toUpperCase() + x.desc.slice(1) : RES_MONO[x.teor] || x.teor || "") + (x.rec === "DESIS" ? " (pedido de desistência)" : "");
+  function cardMono(x) {
+    return `<li class="card item item-mono">
+      <div class="item-cab"><a class="item-tit" href="${URLS.mono(x)}" target="_blank" rel="noopener" title="Abrir a decisão oficial (PDF do STJ)">${esc(tituloMono(x))}</a><span class="selo">Decisão monocrática</span>
+        <span class="meta">${x.min ? `<span>${esc(relatorFmt(x.min))}</span>` : ""}<span>Publ. ${fmtData(x.d)}</span></span></div>
+      <p class="texto-serif mono-desfecho">${esc(desfechoMono(x))}.</p>
+      <div class="acoes"><a class="link-acao" href="${URLS.mono(x)}" target="_blank" rel="noopener">Decisão oficial (PDF) ${ico("externo")}</a>
+        <a class="link-acao" href="${URLS.processo(x.reg)}" target="_blank" rel="noopener">Consulta processual ${ico("externo")}</a></div></li>`;
+  }
   // Índice de números de processo. Na versão fragmentada (manifest.numeros.v = 2), baixa só os
   // fragmentos dos números pedidos (dois últimos dígitos), em vez do índice inteiro.
   // Devolve { m, o, l } com as linhas [número, registro, mês, órgão, id] dos números ou registros pedidos.
@@ -799,9 +836,13 @@
         if (++c >= 150) break;
       }
     }
+    // Decisões monocráticas nos processos acompanhados (desde 2021).
+    const mns = P.procs.length ? await monocraticasDe(P.procs.map(digitos), P.procs.map(digitos).filter((x) => x.length >= 10)).catch(() => []) : [];
     for (const proc of P.procs) {
       const nd = digitos(proc); if (!nd) continue;
       const bate = (reg, p) => reg === nd || digitos(p) === nd;
+      const clp = classeBase(String(proc).replace(/\s*\d[\s\S]*$/, "")).toLowerCase();
+      for (const x of mns) if (bate(x.reg, x.n) && (!clp || x.reg === nd || x.cl.toLowerCase() === clp)) add(`m|${x.seq || `${x.reg}|${x.d}|${x.rec}`}`, { tipo: "mono", nivel: "rel", d: x.d, dNovo: x.d, termo: proc, obj: x });
       for (const p of pl) if (bate(p.reg, p.p)) add(`p|${p.reg}|${p.d}|${p.pet || ""}`, { tipo: "pauta", nivel: "alta", d: p.d, dNovo: p.pub || hoje, termo: proc, obj: p });
       for (const x of dj) if (bate(x.reg, x.p)) add(`d|${x.reg}|${x.d}|${x.r || ""}`, { tipo: "djen", nivel: "rel", d: x.d, dNovo: x.d, termo: proc, obj: x });
       for (const r of ix) if (bate(r.reg, r.n)) add(`a|${r.id}`, { tipo: "acordao", nivel: "rel", d: r.dj, dNovo: r.dj, termo: proc, obj: r });
@@ -940,6 +981,12 @@
       <div class="texto-serif" style="margin-top:10px">${corpo.map((p) => `<p>${esc(p)}</p>`).join("")}</div>
       ${linhaRefs(r.em)}
       ${extra ? `<h3>Dados do julgado</h3><dl class="dl">${extra}</dl>` : ""}`);
+    // Decisões monocráticas do mesmo processo (a que originou o agravo interno, por exemplo).
+    monocraticasDe([digitos(r.n)]).then((l) => {
+      const cb = classeBase(r.cl).toLowerCase(); l = l.filter((x) => x.cl.toLowerCase() === cb);
+      if (!l.length || $("#gaveta").hidden || $("#gaveta-tit").textContent !== `${r.cl} ${fmtNumProc(r.n)}`) return;
+      $("#gaveta-corpo").insertAdjacentHTML("beforeend", `<h3>Decisões monocráticas neste processo</h3><p class="nota">Sem o texto; o número abre a decisão oficial no STJ.</p><ol class="lista">${l.slice(0, 20).map(cardMono).join("")}</ol>`);
+    }).catch(() => {});
     $("#ga-cit").addEventListener("click", () => copiar(`${r.em}\n${citacao(r)}`, "Ementa e citação copiadas."));
     $("#ga-socit").addEventListener("click", () => copiar(citacao(r), "Citação copiada."));
     $("#ga-org").addEventListener("click", () => { const k = `a:${r.id}`; if (!P.salvos[k]) { P.salvos[k] = { ...minimoAcordao(r), salvoEm: hojeISO() }; salvarP(); avisarSalvos(); } organizarSalvo(k); });
@@ -2360,6 +2407,7 @@
     if (it.tipo === "acordao") { tit = `${o.cl} ${fmtNumProc(o.n)} · ${D.orgaos[o.o] || ""}`; txt = frase(o.h || ""); }
     if (it.tipo === "pauta") { tit = `${o.p}${o.pet ? " (" + o.pet + ")" : ""} em pauta`; txt = `${fmtDiaL(o.d)} · ${D.orgaos[o.o] || ""} · Rel. ${o.rel || ""}`; }
     if (it.tipo === "djen") { tit = `${o.p} · acórdão publicado`; txt = `${o.r || ""} ${o.t || ""} · Rel. ${titulo(o.rel)}`; }
+    if (it.tipo === "mono") { tit = `${tituloMono(o)} · decisão monocrática`; txt = `${desfechoMono(o)} · ${relatorFmt(o.min)}`; }
     const tema = it.tipo === "tema" ? ` data-tema="${esc(o.tp)}|${o.n}"` : "";
     return `<li class="evento"${tema}><span class="quando">${fmtData(it.d)}</span><span class="marco"><span class="ponto ${it.nivel}" style="margin-top:0"></span></span>
       <div><div class="evento-tit">${tema ? `<button type="button" data-abrir-tema>${esc(tit)}</button>` : esc(tit)} ${it.novo ? '<span class="selo novo">Novo</span>' : ""}</div>
@@ -2367,7 +2415,7 @@
   }
 
   // ============================================================ MEU RADAR
-  const TIPO_RADAR = { tema: "Repetitivo", acordao: "Acórdão", informativo: "Informativo", pauta: "Em pauta", djen: "Publicação no DJEN" };
+  const TIPO_RADAR = { tema: "Repetitivo", acordao: "Acórdão", informativo: "Informativo", pauta: "Em pauta", djen: "Publicação no DJEN", mono: "Decisão monocrática" };
   function areasItem(it) { return it.obj?.ar || (it.tipo === "pauta" && it.temaObj?.ar) || []; }
   function subsItem(it) { return it.obj?.sa || (it.tipo === "pauta" && it.temaObj?.sa) || []; }
   // Publicação do DJEN salva: quando o acórdão chega ao acervo, o salvo passa a ser o acórdão completo.
@@ -2406,7 +2454,7 @@
   document.addEventListener("click", (e) => {
     const b = e.target.closest("[data-acomp-proc]"); if (!b) return;
     const v = b.dataset.acompProc; if (!P.procs.some((x) => digitos(x) === digitos(v))) { P.procs.push(v); salvarP(); atualizarContadorRadar?.(); }
-    toast("Processo incluído no Meu radar: avisa quando entrar em pauta ou tiver acórdão."); b.remove();
+    toast("Processo incluído no Meu radar: avisa quando entrar em pauta, tiver acórdão ou decisão monocrática."); b.remove();
   });
   const RES_DJEN = { Negando: "negou provimento", "Não Conhecendo": "não conheceu", Concedendo: "deu provimento ou concedeu", "Admitindo Embargo": "acolheu os embargos" };
   const chaveDjen = (o) => `d:${o.reg}|${o.d}|${o.r || ""}`;
@@ -2470,6 +2518,7 @@
           <span class="dir">${botaoSalvar(`i:${o.id}`, { k: "i", id: o.id })}</span></div></li>`;
     }
     if (it.tipo === "pauta") return cardPauta(o, { por, novo, nivel });
+    if (it.tipo === "mono") return cardMono(o).replace('<div class="item-cab">', `<div class="item-cab">${nivel}`).replace('<span class="selo">Decisão monocrática</span>', `<span class="selo">Decisão monocrática</span>${novo}`).replace('</div></li>', `${por}</div></li>`);
     return cardDjen(o, { por, novo, nivel });
   }
 
@@ -2499,7 +2548,7 @@
               <p class="nota">Aceita "frase", e, ou, não, prescri$ e tema 1234.</p></div>
             <div class="radar-bloco t-procs"><h3>Processo</h3>
               <form class="adicionar" data-lista="procs"><input placeholder="Ex.: REsp 2222623" aria-label="Novo processo"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
-              <p class="nota">Avisa quando entrar em pauta ou tiver acórdão.</p></div>
+              <p class="nota">Avisa quando entrar em pauta, tiver acórdão ou decisão monocrática.</p></div>
             <div class="radar-bloco t-oabs"><h3>OAB</h3>
               <form class="adicionar" data-lista="oabs"><input placeholder="Ex.: RS 12345" aria-label="Nova OAB"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
               <p class="nota">Mostra seus processos nas próximas pautas.</p></div>
@@ -3606,8 +3655,11 @@
     AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos;
     // Processo ainda sem ementa no acervo: publicações recentes no DJEN e sessões marcadas.
     const extra = $("#ac-extra"); extra.innerHTML = "";
+    let monos = [];
     if (f.n) {
-      const [dj, pl] = await Promise.all([djen().catch(() => []), pautas().catch(() => [])]);
+      const [dj, pl, mn] = await Promise.all([djen().catch(() => []), pautas().catch(() => []), monocraticasDe([f.n], f.n.length >= 10 ? [f.n] : []).catch(() => [])]);
+      // Com a classe digitada, só as monocráticas dessa classe (se houver).
+      monos = mn; if (clNum) { const cb = classeBase(clNum).toLowerCase(); const so = mn.filter((x) => x.cl.toLowerCase() === cb); if (so.length) monos = so; }
       if (tk !== AC.token) return;
       const casaN = (p, reg) => { const d = digitos(p); return d === f.n || reg === f.n || (f.n.length >= 6 && d.includes(f.n)); };
       const noAcervo = new Set(res.map((r) => `${r.reg}|${r.dj}`));
@@ -3617,14 +3669,16 @@
         extra.innerHTML = `<p class="nota extra-tit">${pubs.length ? `<b>Publicado recentemente no DJEN</b> · ainda sem ementa no arquivo mensal do STJ` : ""}${pubs.length && sess.length ? " · " : ""}${sess.length ? "<b>Em pauta</b>" : ""}</p>
           <ol class="lista">${sess.map((x) => cardPauta(x)).join("")}${pubs.map((x) => cardDjen(x)).join("")}</ol>`;
       }
+      if (monos.length) extra.insertAdjacentHTML("beforeend", `<p class="nota extra-tit"><b>Decisões monocráticas neste processo</b> · ${fmtInt(monos.length)} · desde 2021, sem o texto: o número abre a decisão oficial no STJ</p>
+          <ol class="lista">${monos.slice(0, 60).map(cardMono).join("")}</ol>`);
     }
-    const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.innerHTML ? " e no DJEN" : ""}` : rotPeriodo(f.p, meses);
+    const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.querySelector(".item-djen, .item-radar:not(.item-mono)") ? " e no DJEN" : ""}${monos.length ? ` · ${fmtInt(monos.length)} decisão(ões) monocrática(s) abaixo` : ""}` : rotPeriodo(f.p, meses);
     const parcial = AC.parar === tk ? " · busca interrompida" : "";
     const corte = total > res.length && !cortado ? ` · exibindo os ${fmtInt(res.length)} ${ordem === "rel" ? "mais aderentes" : "mais recentes"}` : "";
     const lidosIB = pares.length < paresTodos ? ` · ${fmtInt(pares.length)} de ${fmtInt(paresTodos)} arquivos mensais consultados` : "";
     // Arquivos que não puderam ser baixados: a lista está incompleta, e o usuário precisa saber.
     const avisoFalha = falhas ? `<span class="aviso-falha" role="alert">${ico("alerta")} ${falhas === 1 ? "1 arquivo mensal não pôde ser consultado" : `${fmtInt(falhas)} arquivos mensais não puderam ser consultados`}; os resultados podem estar incompletos. <button type="button" class="btn btn-claro btn-peq" id="ac-denovo">Tentar novamente</button></span>` : "";
-    if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: ainda sem ementa no acervo. Veja abaixo a publicação no DJEN.`;
+    if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: sem acórdão no acervo. Veja abaixo ${monos.length ? "as decisões monocráticas" : "a publicação no DJEN"}${monos.length && extra.querySelector(".item-djen, .item-radar") ? " e as demais publicações" : ""}.`;
     else if (cortado) $("#ac-info").innerHTML = `Exibindo os <b>${fmtInt(res.length)}</b> acórdãos ${ordem === "julg" ? "julgados mais recentemente" : "mais recentes"} (limite da consulta; use os filtros para refinar) · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} ${explicacaoHTML(cons)}`;
     else $("#ac-info").innerHTML = `<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     if (avisoFalha) { $("#ac-info").insertAdjacentHTML("beforeend", avisoFalha); $("#ac-denovo").addEventListener("click", () => buscar()); }
@@ -4350,8 +4404,10 @@
     // 2. Bases necessárias (o índice de números só é baixado se houver processo citado).
     const LIM = 120;
     const procs = [...citProc.values()].slice(0, LIM);
-    const [t, pt, pl, ix, dj, nums, sums] = await Promise.all([temas(), procTemas(), pautas(), indice(), djen(),
-      procs.length ? numerosDe(procs.map((c) => c.n)).catch(() => null) : null, citSum.size ? sumulas().catch(() => []) : []]);
+    const [t, pt, pl, ix, dj, nums, sums, mns] = await Promise.all([temas(), procTemas(), pautas(), indice(), djen(),
+      procs.length ? numerosDe(procs.map((c) => c.n)).catch(() => null) : null, citSum.size ? sumulas().catch(() => []) : [],
+      procs.length ? monocraticasDe(procs.map((c) => c.n)).catch(() => []) : []]);
+    const porMono = new Map(); for (const x of mns) { if (!porMono.has(x.n)) porMono.set(x.n, []); porMono.get(x.n).push(x); }
     const porNumero = new Map();
     if (nums) for (const x of nums.l) { if (!porNumero.has(x[0])) porNumero.set(x[0], []); porNumero.get(x[0]).push(x); }
 
@@ -4382,28 +4438,35 @@
       const noAcervo = mesmaClasse.map((x) => ({ m: nums.m[x[2]], o: nums.o[x[3]], id: x[4] })).sort((a, b) => b.m.localeCompare(a.m));
       const notas = [];
       // Conferência dos dados citados com os acórdãos do processo no acervo.
-      const regs = mesmaClasse.filter((x) => x[6] !== undefined);
+      const monos = (porMono.get(c.n) || []).filter((x) => x.cl.toLowerCase() === cb);
+      // Julgamentos do processo com que os dados citados são conferidos: acórdãos do acervo e monocráticas.
+      const cand = [...mesmaClasse.filter((x) => x[6] !== undefined).map((x) => ({ rel: x[6], o: nums.o[x[3]], dd: x[7], dj: x[8] })),
+        ...monos.map((x) => ({ rel: x.min, o: "", dd: "", dj: x.d.replace(/-/g, ""), mono: true }))];
       let conf = "";
-      if (regs.length && c.cits.length) {
+      if (cand.length && c.cits.length) {
         const difsTot = new Set();
+        const uniq = (f) => [...new Set(cand.map(f).filter(Boolean))].join(" / ");
         const linhas = c.cits.slice(0, 4).map((ci) => {
           const partes = [], difs = [];
           const item = (rot, ok, real) => { partes.push(`${rot} ${ok ? '<span class="conf ok">confere</span>' : `<span class="conf dif">no acervo: ${esc(real)}</span>`}`); };
-          if (ci.rel) { const ok = regs.some((x) => mesmoRelator(ci.rel, x[6])); item(`relator ${esc(ci.rel)}`, ok, [...new Set(regs.map((x) => relatorFmt(x[6])))].join(" / ")); if (!ok) difs.push("relator"); }
-          if (ci.o) { const ok = regs.some((x) => nums.o[x[3]] === ci.o); item(esc(D.orgaos[ci.o] || ci.o), ok, [...new Set(regs.map((x) => D.orgaos[nums.o[x[3]]] || ""))].join(" / ")); if (!ok) difs.push("órgão"); }
-          if (ci.dd) { const ok = regs.some((x) => x[7] === ci.dd); item(`julgado em ${fmtAMD(ci.dd)}`, ok, [...new Set(regs.map((x) => fmtAMD(x[7])))].join(" / ")); if (!ok) difs.push("data do julgamento"); }
-          if (ci.dj) { const ok = regs.some((x) => x[8] === ci.dj); item(`DJe ${fmtAMD(ci.dj)}`, ok, [...new Set(regs.map((x) => fmtAMD(x[8])))].join(" / ")); if (!ok) difs.push("data da publicação"); }
+          if (ci.rel) { const ok = cand.some((x) => mesmoRelator(ci.rel, x.rel)); item(`relator ${esc(ci.rel)}`, ok, uniq((x) => relatorFmt(x.rel))); if (!ok) difs.push("relator"); }
+          // Órgão e data de julgamento só existem para os acórdãos.
+          if (ci.o && cand.some((x) => x.o)) { const ok = cand.some((x) => x.o === ci.o); item(esc(D.orgaos[ci.o] || ci.o), ok, uniq((x) => D.orgaos[x.o] || "")); if (!ok) difs.push("órgão"); }
+          if (ci.dd && cand.some((x) => x.dd)) { const ok = cand.some((x) => x.dd === ci.dd); item(`julgado em ${fmtAMD(ci.dd)}`, ok, uniq((x) => (x.dd ? fmtAMD(x.dd) : ""))); if (!ok) difs.push("data do julgamento"); }
+          if (ci.dj) { const ok = cand.some((x) => x.dj === ci.dj); item(`DJe ${fmtAMD(ci.dj)}`, ok, uniq((x) => fmtAMD(x.dj))); if (!ok) difs.push("data da publicação"); }
           difs.forEach((d) => difsTot.add(d));
-          return `<p class="cit-dados"><b>Dados citados${c.cits.length > 1 && ci.pg ? ` (p. ${ci.pg})` : c.cits.length > 1 ? ` (${c.cits.indexOf(ci) + 1}ª citação)` : ""}:</b> ${partes.join("; ")}.</p>`;
+          return partes.length ? `<p class="cit-dados"><b>Dados citados${c.cits.length > 1 && ci.pg ? ` (p. ${ci.pg})` : c.cits.length > 1 ? ` (${c.cits.indexOf(ci) + 1}ª citação)` : ""}:</b> ${partes.join("; ")}.</p>` : "";
         });
-        conf = linhas.join("") + (difsTot.size ? `<p class="cit-dados nota">Confira: o dado divergente pode se referir a outro julgamento do mesmo processo (agravo, embargos) ou a uma decisão monocrática.</p>` : "");
+        conf = linhas.join("") + (difsTot.size ? `<p class="cit-dados nota">Confira: o dado divergente pode se referir a outro julgamento do mesmo processo (agravo, embargos) ou a uma decisão monocrática anterior a 2021.</p>` : "");
         if (difsTot.size) alertas.push(`${c.cl} ${fmtNumProc(c.n)}: ${[...difsTot].join(", ")} citado${difsTot.size > 1 ? "s" : ""} não confere${difsTot.size > 1 ? "m" : ""} com o acervo`);
       }
+      const notaMono = !monos.length ? "" : (`<b>${monos.length === 1 ? "1 decisão monocrática" : `${monos.length} decisões monocráticas`}</b> neste processo: ${monos.slice(0, 3).map((x) => `<a class="link-acao" href="${URLS.mono(x)}" target="_blank" rel="noopener">${esc(x.rec && x.rec !== "DESIS" ? `${x.rec}, ` : "")}${esc(relatorFmt(x.min))}, ${fmtData(x.d)}: ${esc(desfechoMono(x).toLowerCase())}</a>`).join(" · ")}${monos.length > 3 ? ` · <a class="link-acao" href="#pesquisa?q=${c.n}">ver todas</a>` : ""}`);
       for (const v of vinc) { const x = t.idx.get(`${v.tp}-${v.n}`); notas.push(`${v.lc ? "Leading case" : "Processo vinculado"} ${v.tp === "Controvérsia" ? "à" : "ao"} <button type="button" class="link-acao" data-tema-direto="${esc(v.tp)}|${v.n}">${esc(v.tp)} ${v.n}</button>${x ? ` (${esc(x.sit)})` : ""}`); }
       for (const p of pauta) notas.push(`<b>Em pauta</b> em ${fmtData(p.d)} · ${esc(D.orgaos[p.o] || "")}${p.pet ? " (" + esc(p.pet) + ")" : ""}`);
       if (noAcervo.length) notas.push(`<b>${noAcervo.length} acórdão(s) no acervo</b> neste processo: ${noAcervo.slice(0, 4).map((a) => `<button type="button" class="link-acao" data-vf-ac="${esc(a.id)}|${a.m}|${a.o}|${esc(c.cl)}|${c.n}">${esc(D.orgaos[a.o] || a.o)}, ${fmtMes(a.m)}</button>`).join(" · ")}${noAcervo.length > 4 ? ` · <a class="link-acao" href="#pesquisa?q=${c.n}">ver todos</a>` : ""}`);
       else if (ac) notas.push(`Acórdão publicado em ${fmtData(ac.dj)} · ${esc(D.orgaos[ac.o] || "")}`);
       if (pub && !ac && !noAcervo.length) notas.push(`Acórdão publicado no DJEN em ${fmtData(pub.d)}, ainda sem ementa no acervo`);
+      if (notaMono) notas.push(notaMono);
       const avisoClasse = !noAcervo.length && outraClasse.length ? ` O acervo tem acórdão de ${outraClasse.map(esc).join(" e ")} com esse número, mas não de ${esc(classeBase(c.cl))}; confira a classe citada.` : "";
       const stj = `<a class="link-acao" href="${URL_PROC_STJ(c.cl, c.n)}" target="_blank" rel="noopener">consultar no site do STJ ${ico("externo")}</a>`;
       // O número do recurso abre o próprio julgado (o acórdão mais recente do processo no acervo); na falta
@@ -4412,9 +4475,10 @@
       const alvo = noAcervo[0] || (ac ? { id: ac.id, m: ac.m, o: ac.o } : null);
       const titP = alvo ? `<button type="button" class="link-acao" data-vf-ac="${esc(alvo.id)}|${alvo.m}|${alvo.o}|${esc(c.cl)}|${c.n}" title="Abrir o acórdão${noAcervo.length > 1 ? " mais recente" : ""} deste processo">${rotP}</button>`
         : vinc.length ? `<button type="button" class="link-acao" data-tema-direto="${esc(vinc[0].tp)}|${vinc[0].n}" title="Abrir ${vinc[0].tp === "Controvérsia" ? "a" : "o"} ${esc(vinc[0].tp)} ${vinc[0].n}, a que o processo está vinculado">${rotP}</button>`
+        : monos.length ? `<a class="link-acao" href="${URLS.mono(monos[0])}" target="_blank" rel="noopener" title="Abrir a decisão monocrática oficial (PDF do STJ)">${rotP} ${ico("externo")}</a>`
         : pub || pauta.length ? `<a class="link-acao" href="#pesquisa?q=${c.n}" title="Ver a publicação no DJEN e a pauta deste processo">${rotP}</a>`
         : `<a class="link-acao" href="${URL_PROC_STJ(c.cl, c.n)}" target="_blank" rel="noopener" title="Consultar o processo no site do STJ">${rotP} ${ico("externo")}</a>`;
-      return `<div class="cit"><span class="cit-tit">${titP}</span>${notas.length ? '<span class="selo pri">Encontrado</span>' : '<span class="selo">Não encontrado nesta base</span>'}<div class="cit-txt">${notas.join("<br>") || `Não consta do acervo do site, das pautas nem dos precedentes qualificados. O acervo reúne apenas os acórdãos colegiados publicados nos Dados Abertos do STJ, sem decisões monocráticas; isso não significa que o processo não exista.${avisoClasse} ${stj}`}</div>${conf}${ondeHTML(c)}</div>`;
+      return `<div class="cit"><span class="cit-tit">${titP}</span>${notas.length ? '<span class="selo pri">Encontrado</span>' : '<span class="selo">Não encontrado nesta base</span>'}<div class="cit-txt">${notas.join("<br>") || `Não consta do acervo do site, das pautas, dos precedentes qualificados nem das decisões monocráticas publicadas desde 2021. O acervo reúne os acórdãos colegiados dos Dados Abertos do STJ; isso não significa que o processo não exista.${avisoClasse} ${stj}`}</div>${conf}${ondeHTML(c)}</div>`;
     });
     const porSum = new Map((sums || []).map((s) => [s.n, s]));
     const linhasSum = [...citSum.values()].map((c) => {
@@ -4475,14 +4539,17 @@
       if (!h) for (const p of $$(".aviso, .stat", card)) L.push(p.innerText.replace(/\s+/g, " ").trim());
       L.push("");
     }
-    L.push("Base: acórdãos colegiados dos Dados Abertos do STJ, precedentes qualificados e súmulas do STJ. Não inclui decisões monocráticas.");
+    L.push("Base: acórdãos colegiados dos Dados Abertos do STJ, decisões monocráticas publicadas desde 2021 (sem o texto), precedentes qualificados e súmulas do STJ.");
     return L.join("\n");
   }
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.09.27";
+  const VERSAO = "2026.09.28";
   const NOVIDADES = [
+    ["2026-09-28", [
+      "Decisões monocráticas desde 2021 (sem o texto): aparecem na busca pelo número do processo, no Verificar petição, na página do acórdão e no Meu radar; o número abre a decisão oficial no STJ.",
+    ]],
     ["2026-09-27", [
       "Composição passou para o grupo Informações.",
       "Os grupos do menu podem ser recolhidos pela seta; a escolha fica guardada e a seção aberta continua sempre visível.",
@@ -4532,6 +4599,8 @@
       <p>Cada julgado, tema, súmula, nota e tese recebe uma matéria geral (Civil, Processo Civil, Penal, Tributário etc.) e, quando possível, até três assuntos específicos. Os assuntos seguem a organização da lei de regência: no Civil, a do Código Civil (parte geral, obrigações, contratos, responsabilidade civil e direito das coisas); em Família e Sucessões, os livros IV e V do Código; no Processo Civil, as partes do CPC (parte geral, conhecimento, execução e recursos). No filtro Matéria, escolha a matéria à esquerda e o assunto à direita; no celular, toque na matéria e use “Matérias” para voltar. A classificação é automática, feita pelos termos da ementa, e pode conter imprecisões.</p>
       <h3 style="font-family:var(--ui)">Busca por número de processo</h3>
       <p>Na Pesquisa, o número pode ser digitado no próprio campo de busca, com ou sem a classe e os pontos (“REsp 2.231.419/SP”, “resp 2231419” ou “2231419”). O site procura em todo o acervo e, se o acórdão ainda não estiver no arquivo mensal do STJ, mostra a publicação no DJEN e a sessão em pauta, quando houver. Também aceita o número de registro (12 dígitos). O número deve estar completo.</p>
+      <h3 style="font-family:var(--ui)">Decisões monocráticas</h3>
+      <p>As decisões monocráticas terminativas publicadas desde janeiro de 2021 vêm do conjunto “Íntegras de Decisões Terminativas e Acórdãos do Diário da Justiça”, dos Dados Abertos do STJ. O site guarda apenas os dados de identificação: processo, recurso interno (agravo, embargos etc.), ministro, data de publicação e desfecho; o número do processo abre a decisão oficial (PDF) no site do STJ. Elas aparecem na busca pelo número do processo, no Verificar petição, na página do acórdão (“Decisões monocráticas neste processo”) e no Meu radar, para os processos acompanhados. Não entram na pesquisa por palavras, porque o texto não é guardado. Processos em segredo de justiça não constam do conjunto.</p>
       <h3 style="font-family:var(--ui)">Salvos</h3>
       <p>Acórdãos, publicações do DJEN, temas, notas do Informativo, teses e pautas podem ser salvos pelo marcador e ficam na aba Salvos, no menu à esquerda. Lá é possível separá-los em pastas (por tese, cliente ou processo; um item pode estar em várias), marcá-los como favoráveis ou desfavoráveis (no penal, à defesa), anotá-los, filtrá-los por tipo e matéria, buscar nas anotações e copiar as citações de uma pasta de uma só vez. Um acórdão salvo a partir do DJEN passa a exibir a ementa completa assim que o STJ divulgar o arquivo mensal. Os salvos ficam guardados neste navegador.</p>
       <h3 style="font-family:var(--ui)">Informativo do STJ</h3>
@@ -4568,7 +4637,7 @@
     const ms = D.man.meses.map((x) => x.m).sort();
     const esp = situacaoFontes(D.man)[0];
     const verif = esp.verif ? fmtData(esp.verif.slice(0, 10)) : "—";
-    return `${ico("sobre")}<span>Acórdãos colegiados publicados nos Dados Abertos do STJ, de ${ms.length ? fmtMesL(ms[0]) : "—"} a ${ms.length ? fmtMesL(ms[ms.length - 1]) : "—"}. Não inclui decisões monocráticas. Base verificada em ${verif}.${esp.defasada ? ` <a href="#sobre?s=fontes" class="defas">A fonte está com atraso.</a>` : ""}</span>`;
+    return `${ico("sobre")}<span>Acórdãos colegiados publicados nos Dados Abertos do STJ, de ${ms.length ? fmtMesL(ms[0]) : "—"} a ${ms.length ? fmtMesL(ms[ms.length - 1]) : "—"}. Decisões monocráticas (desde 2021, sem o texto) aparecem na busca pelo número do processo. Base verificada em ${verif}.${esp.defasada ? ` <a href="#sobre?s=fontes" class="defas">A fonte está com atraso.</a>` : ""}</span>`;
   }
   function situacaoFontes(m) {
     const dias = (iso) => (iso ? (Date.now() - new Date(iso.length === 10 ? `${iso}T12:00:00-03:00` : iso)) / 864e5 : Infinity);
