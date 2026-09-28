@@ -1260,7 +1260,15 @@ button.salvo-nota:hover { background: var(--sup-3); }
 .aviso-armaz .btn-ico { color: inherit; font-size: 20px; }
 
 /* Menu agrupado */
-.menu-grupo { margin: 12px 12px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--nav-tx-2); }
+.menu-bloco { display: flex; flex-direction: column; }
+.menu-itens { display: flex; flex-direction: column; gap: 2px; }
+.menu-grupo { display: flex; align-items: center; justify-content: space-between; width: 100%; margin: 10px 0 2px; padding: 5px 12px; border: 0; border-radius: 8px; background: none; cursor: pointer; font: 700 10.5px/1.2 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--nav-tx-2); text-align: left; }
+.menu-grupo svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms ease; }
+.menu-bloco.fechado .menu-grupo svg { transform: rotate(-90deg); }
+@media (hover: hover) and (pointer: fine) { .menu-grupo:hover { color: var(--nav-tx); background: var(--nav-2); } }
+/* Grupo recolhido com novidade num item: um ponto ao lado do nome do grupo. */
+.menu-bloco.fechado:has(.cont:not([hidden])) .menu-grupo span::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--pri); vertical-align: middle; }
+@media (prefers-reduced-motion: reduce) { .menu-grupo svg { transition: none; } }
 .menu a { padding-top: 8px; padding-bottom: 8px; }
 .mais-grupo { margin: 16px 2px 8px; font: 700 11px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--tx-3); }
 .mais-grupo:first-child { margin-top: 0; }

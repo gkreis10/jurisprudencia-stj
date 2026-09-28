@@ -2166,11 +2166,23 @@
     { id: "sumulas", g: "Pesquisar", tit: "Súmulas e teses", sobre: "Súmulas e Jurisprudência em Teses", ico: "sumulas", fn: vSumulas },
     { id: "pautas", g: "Pesquisar", tit: "Pautas e publicações", menu: "Pautas", sobre: "O que vai ser julgado", ico: "pautas", fn: vPautas },
     { id: "verificar", g: "Ferramentas", tit: "Verificar petição", sobre: "Conferência de citações", ico: "verificar", fn: vVerificar },
-    { id: "composicao", g: "Ferramentas", tit: "Composição", sobre: "Ministros, Seções e Turmas", ico: "composicao", fn: vComposicao },
+    { id: "composicao", g: "Informações", tit: "Composição", sobre: "Ministros, Seções e Turmas", ico: "composicao", fn: vComposicao },
     { id: "sobre", g: "Informações", tit: "Sobre o Radar STJ", menu: "Sobre e novidades", sobre: "Fontes, método e novidades", ico: "sobre", fn: vSobre },
   ];
   function montarNav() {
-    $("#menu").innerHTML = VIEWS.map((v, i) => `${v.g && v.g !== VIEWS[i - 1]?.g ? `<div class="menu-grupo">${v.g}</div>` : ""}<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.menu || v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}${v.cont3 ? '<span class="cont-n cont-salvos" hidden></span>' : ""}</a>`).join("");
+    // Grupos recolhíveis (abertos por padrão); a escolha fica guardada neste navegador.
+    const link = (v) => `<a href="#${v.id}" data-v="${v.id}">${ico(v.ico)}<span>${v.menu || v.tit}</span>${v.cont ? '<span class="cont cont-radar" hidden></span>' : ""}${v.cont2 ? '<span class="cont cont-feed" hidden></span>' : ""}${v.cont3 ? '<span class="cont-n cont-salvos" hidden></span>' : ""}</a>`;
+    const fechados = new Set(P.menuFechado || []);
+    const grupos = [...new Set(VIEWS.map((v) => v.g).filter(Boolean))];
+    $("#menu").innerHTML = VIEWS.filter((v) => !v.g).map(link).join("") + grupos.map((g, i) => `
+      <div class="menu-bloco${fechados.has(g) ? " fechado" : ""}" data-grupo="${g}">
+        <button type="button" class="menu-grupo" aria-expanded="${!fechados.has(g)}" aria-controls="mg-${i}"><span>${g}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <div class="menu-itens" id="mg-${i}"${fechados.has(g) ? " hidden" : ""}>${VIEWS.filter((v) => v.g === g).map(link).join("")}</div>
+      </div>`).join("");
+    $("#menu").addEventListener("click", (e) => {
+      const b = e.target.closest(".menu-grupo"); if (!b) return;
+      abrirGrupoMenu(b.closest(".menu-bloco").dataset.grupo, b.getAttribute("aria-expanded") !== "true");
+    });
     const inf = [["painel", "Início"], ["atualize", "Atualize-se"], ["radar", "Radar"], ["pesquisa", "Pesquisa"]];
     $("#barra-inf").innerHTML = inf.map(([id, l]) => `<a href="#${id}" data-v="${id}">${ico(VIEWS.find((v) => v.id === id).ico)}<span>${l}</span>${id === "radar" ? '<span class="cont cont-radar" hidden></span>' : ""}${id === "atualize" ? '<span class="cont cont-feed" hidden></span>' : ""}</a>`).join("")
       + `<button type="button" id="inf-mais" aria-haspopup="dialog">${ico("mais")}<span>Mais</span></button>`;
@@ -2181,6 +2193,14 @@
         `<a class="card item" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit" href="#${v.id}" data-fechar>${ico(v.ico)}<span><b>${v.tit}</b><br><span class="meta">${v.sobre}</span></span></a>`).join("")}</div>`).join("")}</nav>`);
       $$("[data-fechar]", $("#gaveta-corpo")).forEach((a) => a.addEventListener("click", fecharGaveta));
     });
+  }
+  function abrirGrupoMenu(g, abrir) {
+    const bl = $(`.menu-bloco[data-grupo="${g}"]`); if (!bl) return;
+    bl.classList.toggle("fechado", !abrir);
+    $(".menu-grupo", bl).setAttribute("aria-expanded", String(abrir));
+    $(".menu-itens", bl).hidden = !abrir;
+    const f = new Set(P.menuFechado || []); if (abrir) f.delete(g); else f.add(g);
+    P.menuFechado = [...f]; salvarP();
   }
   function lerHash() {
     const h = location.hash.replace(/^#/, "");
@@ -2203,6 +2223,8 @@
     const { v, p } = lerHash();
     if (v !== "pesquisa") AC.token++; // interrompe uma busca longa em andamento ao sair da Pesquisa
     const def = VIEWS.find((x) => x.id === v);
+    // A seção aberta fica sempre visível no menu, mesmo que o grupo estivesse recolhido.
+    if (def.g && (P.menuFechado || []).includes(def.g)) abrirGrupoMenu(def.g, true);
     $$("[data-v]").forEach((a) => { a.classList.toggle("ativa", a.dataset.v === v); if (a.dataset.v === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
     $("#topo-titulo").innerHTML = `${esc(def.tit)}${AJUDA_VIEW[def.id] ? ` <button type="button" class="topo-ajuda" data-topo-ajuda="${def.id}" title="Como funciona esta página" aria-label="Como funciona esta página">?</button>` : ""}`;
     $("#topo-sobre").textContent = def.sobre;
@@ -4459,8 +4481,12 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.09.26";
+  const VERSAO = "2026.09.27";
   const NOVIDADES = [
+    ["2026-09-27", [
+      "Composição passou para o grupo Informações.",
+      "Os grupos do menu podem ser recolhidos pela seta; a escolha fica guardada e a seção aberta continua sempre visível.",
+    ]],
     ["2026-09-26", [
       "Menu agrupado em Acompanhar, Pesquisar, Ferramentas e Informações.",
       "A página inicial abre com um resumo leve; o Meu radar e as leituras pendentes são calculados em seguida.",
