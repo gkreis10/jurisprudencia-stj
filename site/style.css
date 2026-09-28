@@ -1277,3 +1277,38 @@ button.salvo-nota:hover { background: var(--sup-3); }
 .item-mono .item-tit { text-decoration: none; color: var(--pri); }
 @media (hover: hover) and (pointer: fine) { .item-mono .item-tit:hover { text-decoration: underline; } }
 .mono-desfecho { margin: 4px 0 0; }
+/* v2026.09.29: voltar na gaveta, pasta sem salvar automático e dossiê */
+.gaveta-cab { justify-content: flex-start; }
+.gaveta-cab .gaveta-tits { flex: 1; min-width: 0; }
+.gaveta-voltar { margin: -4px 0 0 -10px; width: 44px; height: 44px; flex: none; }
+#gaveta-fechar { flex: none; }
+.gaveta-voltar[hidden] { display: none; }
+.org-aviso { margin-top: 18px; padding: 10px 12px; border-radius: 10px; background: var(--sup-2); }
+.dossie { display: none; }
+@media print {
+  @page { margin: 18mm 16mm; }
+  html.imp-dossie body > *:not(#dossie) { display: none !important; }
+  html.imp-dossie, html.imp-dossie body { background: #fff !important; }
+  html.imp-dossie #dossie { display: block; color: #111; font: 11pt/1.5 var(--serif); }
+  .dossie h1 { font: 700 20pt/1.2 var(--serif); margin: 2pt 0 4pt; }
+  .dossie h2 { font: 700 13pt/1.3 var(--ui); margin: 18pt 0 8pt; padding-bottom: 3pt; border-bottom: 1pt solid #999; break-after: avoid; }
+  .dossie h3 { font: 700 13pt/1.3 var(--serif); margin: 0 0 2pt; }
+  .dossie h4 { font: 700 9pt/1.2 var(--ui); text-transform: uppercase; letter-spacing: .06em; color: #444; margin: 8pt 0 3pt; }
+  .dossie p { margin: 0 0 5pt; }
+  .ds-sobre, .ds-tipo { font: 700 8.5pt/1.2 var(--ui); text-transform: uppercase; letter-spacing: .08em; color: #555; margin: 0 0 2pt !important; }
+  .ds-meta { font: 9.5pt/1.4 var(--ui); color: #444; }
+  .ds-cab { padding-bottom: 8pt; border-bottom: 2pt solid #111; }
+  .ds-indice { width: 100%; border-collapse: collapse; font: 9.5pt/1.35 var(--ui); }
+  .ds-indice th, .ds-indice td { text-align: left; padding: 3pt 6pt; border-bottom: .5pt solid #bbb; vertical-align: top; }
+  .ds-indice td:first-child, .ds-indice th:first-child { width: 28pt; }
+  .ds-quebra { break-before: page; }
+  .ds-item { padding: 12pt 0; border-bottom: .5pt solid #bbb; break-inside: avoid-page; }
+  .ds-texto { text-align: justify; }
+  .ds-tese { margin: 6pt 0; padding: 6pt 9pt; border-left: 2.5pt solid #555; background: #f3f3f3; }
+  .ds-tese b, .ds-nota b { display: block; font: 700 8.5pt/1.2 var(--ui); text-transform: uppercase; letter-spacing: .06em; color: #444; margin-bottom: 3pt; }
+  .ds-cit { font-size: 10pt; }
+  .ds-link a { color: #0b4ea2; text-decoration: underline; font: 9.5pt var(--ui); }
+  .ds-org { margin-top: 6pt; padding: 6pt 9pt; border: .75pt solid #999; border-radius: 4pt; font: 10pt/1.45 var(--ui); }
+  .ds-obs { font: italic 9pt var(--ui); color: #555; }
+  .ds-rodape { margin-top: 16pt; font: 8.5pt/1.4 var(--ui); color: #555; }
+}
