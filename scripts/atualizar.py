@@ -1393,10 +1393,12 @@ def atualizar_monocraticas() -> dict:
     vistos = set()
     for arq in sorted(MONO_CACHE.glob("*.json.gz")):
         for l in json.loads(gzip.decompress(arq.read_bytes())):
-            k = (l[8] or f"{l[1]}|{l[4]}|{l[3]}")
-            if k in vistos or not l[0]:
+            # O mesmo documento pode vir em arquivo mensal e diário; e a mesma decisão republicada no
+            # mesmo dia aparece com outro número de documento: fica uma só.
+            k, k2 = (l[8] or f"{l[1]}|{l[4]}|{l[3]}"), tuple(l[:8])
+            if k in vistos or k2 in vistos or not l[0]:
                 continue
-            vistos.add(k)
+            vistos.add(k); vistos.add(k2)
             por_n.setdefault(_frag(l[0]), []).append(l)
     pasta = SITE_DATA / "monocraticas"
     if pasta.exists():
