@@ -737,6 +737,8 @@
   const URL_INFO = (ed) => `https://processo.stj.jus.br/jurisprudencia/externo/informativo/?acao=pesquisarumaedicao&livre=%27${String(ed).padStart(4, "0")}%27.cod.`;
   const sumulas = () => carregar("sumulas", (l) => { for (const x of l) { x._n = norm(`${x.t} ${x.ass || ""} ${x.ramo || ""} ${x.nota || ""}`); x._d = x.julg || x.pub || ""; } return l; });
   const indice = () => carregar("indice", (l) => { for (const x of l) x._n = norm(`${x.h} ${x.tese || ""} ${x.tj || ""}`); return l; });
+  // Ementas extraídas do texto integral dos acórdãos do mês (só parte deles vem com texto).
+  const ementasMes = () => carregar("radar-ementas").catch(() => ({}));
   const djen = () => carregar("radar", (l) => { for (const x of l) x._p = norm(`${x.p} ${x.r || ""}`); return l; });
 
   // Arquivos mensais de acórdãos: publicados compactados (.json.gz) para caber o acervo longo;
@@ -2576,9 +2578,22 @@
   const RES_DJEN = { Negando: "negou provimento", "Não Conhecendo": "não conheceu", Concedendo: "deu provimento ou concedeu", "Admitindo Embargo": "acolheu os embargos" };
   const chaveDjen = (o) => `d:${o.reg}|${o.d}|${o.r || ""}`;
   // Acórdão publicado no DJEN cuja ementa ainda não está no arquivo mensal do STJ.
-  function cardDjen(o, { por = "", novo = "", nivel = "", nota = "" } = {}) {
+  function cardDjen(o, { por = "", novo = "", nivel = "", nota = "", em = "" } = {}) {
     const tit = o.r ? `${o.r} no ${o.p}` : o.p;
     const res = RES_DJEN[o.t] ? `O STJ ${RES_DJEN[o.t]}` : "";
+    if (em) {
+      const [cab, ...resto] = em.split("\n");
+      nota = `${res ? `${esc(res)}. ` : ""}Ementa tirada do texto integral publicado pelo STJ; a versão do arquivo mensal entra no início do mês seguinte.`;
+      return `<li class="card item item-radar item-djen com-ementa">
+      <div class="item-cab">${nivel}<span class="item-tit">${esc(tit)}</span><span class="selo acomp">Acórdão publicado</span>${novo}
+        <span class="meta"><span>DJEN ${fmtData(o.d)}</span>${D.orgaos[o.tr] ? `<span>${esc(D.orgaos[o.tr])}</span>` : ""}${o.rel ? `<span>Rel. ${esc(titulo(o.rel))}</span>` : ""}</span></div>
+      <p class="verb">${esc(frase(cab))}</p>
+      ${resto.length ? `<div class="expansivel"><div><div class="texto-serif">${resto.map((x) => `<p>${esc(x)}</p>`).join("")}</div></div></div>` : ""}
+      <p class="nota djen-res">${nota}</p>
+      <div class="acoes">${resto.length ? `<button type="button" class="link-acao" data-djen-em>Ver ementa completa</button>` : ""}<a class="link-acao" href="${URLS.inteiroTeor(o.reg, o.d)}" target="_blank" rel="noopener">Inteiro teor oficial ${ico("externo")}</a>
+        <a class="link-acao" href="${URLS.processo(o.reg)}" target="_blank" rel="noopener">Consulta processual ${ico("externo")}</a>
+        <span class="dir">${botaoSalvar(chaveDjen(o), { k: "d", p: o.p, r: o.r, t: o.t, rel: o.rel, reg: o.reg, d: o.d, tr: o.tr })}</span></div></li>`;
+    }
     return `<li class="card item item-radar item-djen">
       <div class="item-cab">${nivel}<span class="item-tit">${esc(tit)}</span><span class="selo acomp">Acórdão publicado</span>${novo}
         <span class="meta"><span>DJEN ${fmtData(o.d)}</span>${D.orgaos[o.tr] ? `<span>${esc(D.orgaos[o.tr])}</span>` : ""}${o.rel ? `<span>Rel. ${esc(titulo(o.rel))}</span>` : ""}</span></div>
@@ -3682,6 +3697,7 @@
         AC.lista = agrupar(lista.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = [];
         $("#ac-info").innerHTML = `Acórdãos publicados mais recentemente${f.o ? " nos órgãos escolhidos" : ""}. Digite termos ou use os filtros para pesquisar em ${esc(rotPeriodo(f.p, meses))}.`;
         renderLista(true);
+        avisoMes(f, tk);
         return;
       }
     }
@@ -3786,9 +3802,11 @@
       const noAcervo = new Set(res.map((r) => `${r.reg}|${r.dj}`));
       const pubs = dj.filter((x) => casaN(x.p, x.reg) && !noAcervo.has(`${x.reg}|${x.d}`)).sort((a, b) => b.d.localeCompare(a.d));
       const sess = pl.filter((x) => x.d >= hojeISO() && casaN(x.p, x.reg)).sort((a, b) => a.d.localeCompare(b.d));
+      const emsN = pubs.some((x) => x.q) ? await ementasMes() : {};
+      if (tk !== AC.token) return;
       if (pubs.length || sess.length) {
         extra.innerHTML = `<p class="nota extra-tit">${pubs.length ? `<b>Publicado recentemente no DJEN</b> · ainda sem ementa no arquivo mensal do STJ` : ""}${pubs.length && sess.length ? " · " : ""}${sess.length ? "<b>Em pauta</b>" : ""}</p>
-          <ol class="lista">${sess.map((x) => cardPauta(x)).join("")}${pubs.map((x) => cardDjen(x)).join("")}</ol>`;
+          <ol class="lista">${sess.map((x) => cardPauta(x)).join("")}${pubs.map((x) => cardDjen(x, { em: emsN[x.q] || "" })).join("")}</ol>`;
       }
       // A base aberta do STJ só tem monocráticas desde 2021; para as anteriores, a pesquisa do próprio STJ.
       const ref = clNum ? `${classeBase(clNum)} ${f.n}` : res[0] ? `${classeBase(res[0].cl)} ${digitos(res[0].n)}` : monos[0] ? `${monos[0].cl} ${monos[0].n}` : f.n;
@@ -3811,6 +3829,47 @@
     else $("#ac-info").innerHTML = `<b>${fmtInt(total > res.length ? total : AC.lista.length)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     if (avisoFalha) { $("#ac-info").insertAdjacentHTML("beforeend", avisoFalha); $("#ac-denovo").addEventListener("click", () => buscar()); }
     renderLista(true);
+  }
+  // Acórdãos do mês corrente: publicados no DJEN, ainda fora do arquivo mensal (que traz a ementa).
+  // O aviso usa só o manifest; a lista (radar.json) é baixada quando o usuário pede.
+  function avisoMes(f, tk) {
+    const rd = D.man.radar || {}, ult = D.man.meses?.[0]?.m || "";
+    if (!rd.mesN || !rd.mesDe) return;
+    const ex = $("#ac-extra"); if (!ex || tk !== AC.token) return;
+    ex.innerHTML = `<div class="mes-aviso">
+        <div><b>${fmtInt(rd.mesN)} acórdãos publicados desde ${fmtData(rd.mesDe)}</b> ainda não estão no arquivo mensal do STJ${ult ? ` (o último é de ${fmtMesL(ult)})` : ""}, que traz a ementa e entra no início do mês seguinte.${rd.mesEm ? ` ${fmtInt(rd.mesEm)} já têm a ementa pelo texto integral.` : ""}</div>
+        <button type="button" class="btn btn-claro btn-peq" id="ac-mes">Ver os publicados do mês</button></div>`;
+    $("#ac-mes").addEventListener("click", () => modoMes(f));
+  }
+  async function modoMes(f) {
+    const tk = ++AC.token; AC.ctrl?.abort();
+    const info = $("#ac-info"), ul = $("#ac-lista"), pag = $("#ac-pag"), ex = $("#ac-extra");
+    if ($("#ac-mono-stj")) $("#ac-mono-stj").innerHTML = "";
+    info.textContent = "Carregando os acórdãos publicados no mês…"; ul.setAttribute("aria-busy", "true");
+    const [dj, ems] = await Promise.all([djen().catch(() => null), ementasMes()]);
+    if (tk !== AC.token) return;
+    if (!dj) { info.innerHTML = `<span class="aviso-falha" role="alert">${ico("alerta")} Não foi possível carregar a lista. <button type="button" class="btn btn-claro btn-peq" id="ac-mes-denovo">Tentar novamente</button></span>`; $("#ac-mes-denovo").addEventListener("click", () => modoMes(f)); return; }
+    const ult = (D.man.meses?.[0]?.m || "").replace("-", "");
+    const base = dj.filter((x) => String(x.d || "").replace(/-/g, "").slice(0, 6) > ult && temV(f.o, x.tr));
+    const st = { q: "", so: false, n: 50 };
+    ex.innerHTML = `<div class="mes-ferr">
+        <div class="campo-busca">${ico("pesquisa")}<input type="search" id="ac-mes-q" placeholder="Filtrar por número, classe ou relator" aria-label="Filtrar os publicados do mês"></div>
+        <label class="mes-so"><input type="checkbox" id="ac-mes-so"> Só com ementa</label>
+        <button type="button" class="btn btn-fant btn-peq" id="ac-mes-sair">Voltar aos mais recentes com ementa</button></div>`;
+    const desenhar = () => {
+      const w = norm(st.q).split(/\s+/).filter(Boolean);
+      const vis = base.filter((x) => (!st.so || ems[x.q]) && (!w.length || w.every((t) => x._p.includes(t) || norm(x.rel || "").includes(t) || digitos(x.p).includes(t.replace(/\D/g, "") || "#"))));
+      info.innerHTML = `<b>${fmtInt(vis.length)}</b> acórdão(s) publicados desde ${fmtData(D.man.radar?.mesDe || "")}${f.o ? " nos órgãos escolhidos" : ""}, ainda fora do arquivo mensal do STJ · mais recentes primeiro. O órgão é estimado pelo relator até a chegada do arquivo mensal.`;
+      ul.removeAttribute("aria-busy");
+      ul.innerHTML = vis.slice(0, st.n).map((x) => cardDjen(x, { em: ems[x.q] || "" })).join("") || vazio("filtro", "Nada neste filtro", "Revise o número, a classe ou o nome do relator.");
+      pag.innerHTML = vis.length > st.n ? `<div class="acoes" style="justify-content:center;margin:14px 0"><button type="button" class="btn btn-claro" id="ac-mes-mais">Mostrar mais ${fmtInt(Math.min(50, vis.length - st.n))}</button></div>` : "";
+      $("#ac-mes-mais")?.addEventListener("click", () => { st.n += 50; desenhar(); });
+    };
+    $("#ac-mes-q").addEventListener("input", debounce(() => { st.q = $("#ac-mes-q").value; st.n = 50; desenhar(); }, 250));
+    $("#ac-mes-so").addEventListener("change", (e) => { st.so = e.target.checked; st.n = 50; desenhar(); });
+    $("#ac-mes-sair").addEventListener("click", () => buscar());
+    desenhar();
+    $("#ac-mes-q").focus({ preventScroll: true });
   }
   const pgAc = paginador("ac", () => renderLista(false), "#ac-lista");
   function renderLista(reset) {
@@ -4673,8 +4732,11 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.09.30";
+  const VERSAO = "2026.10.01";
   const NOVIDADES = [
+    ["2026-10-01", [
+      "Pesquisa: os acórdãos publicados no mês corrente, antes do arquivo mensal do STJ, ficam acessíveis por um aviso no alto da lista, com filtro por número, classe ou relator; os que já têm texto integral trazem a ementa.",
+    ]],
     ["2026-09-30", [
       "Busca pelo número do processo: botão para pesquisar as decisões monocráticas diretamente no STJ, inclusive as anteriores a 2021, que não estão na base aberta.",
     ]],
@@ -4808,6 +4870,12 @@
     $("#veu").addEventListener("click", fecharGaveta);
     $("#gaveta-fechar").addEventListener("click", fecharGaveta);
     $("#gaveta-voltar").addEventListener("click", voltarGaveta);
+    // Ementa do texto integral (acórdãos do mês): abre e recolhe em qualquer lista.
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-djen-em]"); if (!b) return;
+      const x = b.closest("li")?.querySelector(".expansivel"); if (!x) return;
+      x.classList.toggle("aberto"); b.textContent = x.classList.contains("aberto") ? "Recolher ementa" : "Ver ementa completa";
+    });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") fecharGaveta();
       if (e.key === "/" && !/input|textarea|select/i.test(document.activeElement.tagName)) { e.preventDefault(); irParaBusca(); }
