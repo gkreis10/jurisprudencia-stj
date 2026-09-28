@@ -1335,3 +1335,19 @@ button.salvo-nota:hover { background: var(--sup-3); }
 .pop-todos .nota { margin: 0; font-size: 12.5px; }
 .pop-todos .btn[aria-pressed="true"] { border-color: var(--pri); color: var(--pri); }
 .nota-mes { display: block; margin-top: 4px; font-size: 13px; color: var(--tx-3); }
+/* v2026.10.04: seleção suave (fundo claro, borda e marca de seleção) no lugar do bloco escuro */
+.chip[aria-pressed="true"] { background: var(--pri-bg); border-color: color-mix(in srgb, var(--pri) 45%, transparent); color: var(--pri-2); }
+.chip[aria-pressed="true"]::before { content: ""; width: 10px; height: 6px; margin: -3px 1px 0 -2px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); flex: none; }
+.chip.area[aria-pressed="true"] { background: hsl(var(--h) 70% 45% / .13); border-color: hsl(var(--h) 65% 45% / .5); color: hsl(var(--h) 60% 30%); }
+.chip.area[aria-pressed="true"] i { background: hsl(var(--h) 70% 45%); }
+.chip.area[aria-pressed="true"]::before { display: none; }
+.mt2-sub[aria-pressed="true"] { background: hsl(var(--h) 70% 45% / .13); color: hsl(var(--h) 60% 30%); box-shadow: inset 0 0 0 1px hsl(var(--h) 65% 45% / .45); }
+.mt2-sub[aria-pressed="true"] .n { color: hsl(var(--h) 60% 30%); }
+.pop-todos .btn[aria-pressed="true"] { border-color: var(--linha-2); color: var(--tx-2); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chip.area[aria-pressed="true"], :root:not([data-theme="light"]) .mt2-sub[aria-pressed="true"], :root:not([data-theme="light"]) .mt2-sub[aria-pressed="true"] .n { color: hsl(var(--h) 80% 78%); background: hsl(var(--h) 60% 50% / .18); }
+}
+:root[data-theme="dark"] .chip.area[aria-pressed="true"], :root[data-theme="dark"] .mt2-sub[aria-pressed="true"], :root[data-theme="dark"] .mt2-sub[aria-pressed="true"] .n { color: hsl(var(--h) 80% 78%); background: hsl(var(--h) 60% 50% / .18); }
+@media (max-width: 860px) { .chip.area[aria-pressed="true"] { background: hsl(var(--h) 70% 45% / .13); border-color: hsl(var(--h) 65% 45% / .5); } }
+.chips.vertical .chip { justify-content: flex-start; }
+.chips.vertical .chip .n { margin-left: auto; }

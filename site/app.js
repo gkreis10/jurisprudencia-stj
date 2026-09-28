@@ -3636,7 +3636,7 @@
     if (D.man.busca?.facetas && !D.facR) { facetaIB("r").then((d) => { if (d) D.facR = d; }); facetaIB("c").then((d) => { if (d) D.facC = d; }); }
     const F = AC.f = {
       p: p.get("p") || "todo", o: p.get("o") || "", a: p.get("a") || "", c: p.get("c") || "", rl: p.get("rl") || "", n: p.get("n") || "",
-      s: p.get("s") || "auto", r: p.get("r") !== "0", x: p.get("x") === "1", t: p.get("t") === "1",
+      s: p.get("s") || "auto", r: p.get("r") !== "0", x: p.get("x") === "1", t: p.get("t") === "1", se: p.get("se") === "1",
     };
     if (!mesma || !$("#ac-q")) {
       const meses = D.man.meses;
@@ -3679,6 +3679,8 @@
           opcoes: () => [{ v: "", t: "Sem decisões de rotina (padrão)", curto: "Exibir: sem rotina" }, { v: "tudo", t: "Todas as decisões, inclusive de rotina", curto: "Exibir: tudo" },
             { v: "tese", t: "Só acórdãos com tese", curto: "Exibir: só com tese" }, { v: "dest", t: "Só destaques (relevantes)", curto: "Exibir: só destaques" }],
           nota: "<b>Decisões de rotina</b> são acórdãos que apenas aplicam óbices já conhecidos, sem examinar o mérito: Súmula 7/STJ (reexame de provas), Súmulas 282 a 284/STF, falta de impugnação específica, embargos de declaração rejeitados. Ficam ocultas por padrão para não encobrir os julgados úteis. <b>Destaques</b> são os acórdãos classificados como relevantes (veja Sobre)." },
+        ...(D.man.radar?.mesN ? [{ rot: "Incluir sem ementa", tipo: "toggle", get: () => AC.f.se, set: (v) => (AC.f.se = v),
+          dica: `Inclui os acórdãos publicados em ${rotMesCorrente()} que ainda não têm ementa (o STJ a divulga no arquivo mensal, no início do mês seguinte)` }] : []),
         defOrdem(() => AC.f.s, (v) => (AC.f.s = v), [{ v: "auto", t: "Automática" }, { v: "rel", t: "Mais relevantes" }, { v: "data", t: "Publicação mais recente" }, { v: "julg", t: "Julgamento mais recente" }],
           "Automática: com termos de busca, os mais aderentes primeiro; sem termos, os publicados mais recentemente."),
       ], () => buscar());
@@ -3816,7 +3818,7 @@
       if (tk !== AC.token) return;
       const porRel = !cons.vazio && f.s === "auto";
       AC.lista = lista.sort(porRel ? (a, b) => b._sc - a._sc || b.dj.localeCompare(a.dj) : (a, b) => b.dj.localeCompare(a.dj)); AC.termos = cons.termos;
-      $("#ac-info").innerHTML = `<b>${fmtInt(lista.length)}</b> acórdão(s) publicado(s) desde ${fmtData(D.man.radar?.mesDe || "")}, ainda sem o arquivo mensal do STJ${f.o ? " nos órgãos escolhidos" : ""} · ${porRel ? "por relevância" : "mais recentes primeiro"}.${cons.vazio ? "" : " A busca por palavras só alcança os que já têm a ementa pelo texto integral."}${f.a || f.x || f.t ? " Os filtros de matéria, relevância e tese não se aplicam a eles." : ""} O órgão é estimado pelo relator até a chegada do arquivo mensal. ${explicacaoHTML(cons)}`;
+      $("#ac-info").innerHTML = `<b>${fmtInt(lista.length)}</b> acórdão(s) publicado(s) desde ${fmtData(D.man.radar?.mesDe || "")}, ainda sem o arquivo mensal do STJ${f.o ? " nos órgãos escolhidos" : ""}${f.se ? "" : ", só os que já têm ementa"} · ${porRel ? "por relevância" : "mais recentes primeiro"}.${f.se ? "" : ` Para ver também os ${fmtInt((D.man.radar?.mesN || 0) - (D.man.radar?.mesEm || 0))} ainda sem ementa, ative “Incluir sem ementa”.`}${cons.vazio ? "" : " A busca por palavras só alcança os que já têm a ementa pelo texto integral."}${f.a || f.x || f.t ? " Os filtros de matéria, relevância e tese não se aplicam a eles." : ""} O órgão é estimado pelo relator até a chegada do arquivo mensal. ${explicacaoHTML(cons)}`;
       renderLista(true);
       return;
     }
@@ -3828,9 +3830,9 @@
       if (tk !== AC.token) return;
       if (rec) {
         const lista = rec.filter((r) => temV(f.o, r.o)).sort((a, b) => (b.dj || "").localeCompare(a.dj || "") || (b.s ?? 0) - (a.s ?? 0));
-        const m10 = (rm || []).filter((x) => doMes(x) && temV(f.o, x.tr)).slice(0, 10).map((x) => pseudoMes(x, x.em));
+        const m10 = (rm || []).filter((x) => doMes(x) && temV(f.o, x.tr) && (f.se || x.em)).slice(0, 10).map((x) => pseudoMes(x, x.em));
         AC.lista = [...m10, ...agrupar(lista.map((r) => Object.assign(r, { _dup: [] })))]; AC.termos = [];
-        $("#ac-info").innerHTML = `Acórdãos publicados mais recentemente${f.o ? " nos órgãos escolhidos" : ""}. Digite termos ou use os filtros para pesquisar em ${esc(rotPeriodo(f.p, meses))}.${m10.length ? ` Os ${m10.length} primeiros saíram em ${rotMesCorrente()} e ainda não têm o arquivo mensal do STJ. <button type="button" class="link-acao" id="ac-ver-mes">Ver todos os ${fmtInt(D.man.radar.mesN)} de ${rotMesCorrente()}</button>` : ""}`;
+        $("#ac-info").innerHTML = `Acórdãos publicados mais recentemente${f.o ? " nos órgãos escolhidos" : ""}. Digite termos ou use os filtros para pesquisar em ${esc(rotPeriodo(f.p, meses))}.${m10.length ? ` Os ${m10.length} primeiros saíram em ${rotMesCorrente()} e ainda não têm o arquivo mensal do STJ${f.se ? "" : "; a ementa vem do texto integral publicado pelo Tribunal"}.` : ""} <button type="button" class="link-acao" id="ac-ver-mes">Ver os publicados em ${rotMesCorrente()}</button>`;
         $("#ac-ver-mes")?.addEventListener("click", () => { AC.f.p = "mes"; AC.pil?.desenhar(); buscar(); });
         renderLista(true);
         return;
@@ -3974,7 +3976,7 @@
     if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: sem acórdão no acervo. Veja abaixo ${monos.length ? "as decisões monocráticas" : "a publicação no DJEN"}${monos.length && extra.querySelector(".item-djen, .item-radar") ? " e as demais publicações" : ""}.`;
     else if (cortado) $("#ac-info").innerHTML = `Exibindo os <b>${fmtInt(res.length)}</b> acórdãos ${ordem === "julg" ? "julgados mais recentemente" : "mais recentes"} (limite da consulta; use os filtros para refinar) · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} ${explicacaoHTML(cons)}`;
     else $("#ac-info").innerHTML = `<b>${fmtInt(baseN + nMes)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
-    if (nMes) $("#ac-info").insertAdjacentHTML("beforeend", ` <span class="nota-mes">Inclui ${fmtInt(nMes)} publicado(s) em ${rotMesCorrente()}, ainda sem o arquivo mensal do STJ${cons.vazio ? "" : " (só os que já têm a ementa pelo texto integral)"}.</span>`);
+    if (nMes) $("#ac-info").insertAdjacentHTML("beforeend", ` <span class="nota-mes">Inclui ${fmtInt(nMes)} publicado(s) em ${rotMesCorrente()}, ainda sem o arquivo mensal do STJ${f.se && cons.vazio ? "" : ", com a ementa tirada do texto integral"}.</span>`);
     if (avisoFalha) { $("#ac-info").insertAdjacentHTML("beforeend", avisoFalha); $("#ac-denovo").addEventListener("click", () => buscar()); }
     renderLista(true);
   }
@@ -4004,6 +4006,7 @@
       if (clsP.length) { const pc = palCl(`${x.r || ""} ${String(x.p || "").replace(/\s*\d.*$/, "")}`); if (!clsP.some((c) => c.join(" ") === pc.join(" "))) continue; }
       if (relSel.length) { const nr = norm(x.rel || ""); if (!relSel.some((r) => nr === r || nr.includes(r))) continue; }
       const em = x.q ? ems[x.q] || "" : "";
+      if (!em && !f.se) continue;
       const it = pseudoMes(x, em);
       if (temTexto) {
         if (!em) continue;
@@ -4876,8 +4879,12 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.10.03";
+  const VERSAO = "2026.10.04";
   const NOVIDADES = [
+    ["2026-10-04", [
+      "Pesquisa: os acórdãos do mês ainda sem ementa ficam de fora por padrão; o botão “Incluir sem ementa” os traz de volta.",
+      "Filtros com seleção mais leve: o item marcado ganha fundo claro e um sinal de visto, no lugar do bloco escuro.",
+    ]],
     ["2026-10-03", [
       "Pesquisa: os acórdãos do mês corrente, ainda sem o arquivo mensal do STJ, entram na própria lista, com a etiqueta “Publicado em … · ementa em …”. No Período, “Publicados em [mês]” mostra só eles, com os mesmos filtros.",
       "Filtros de várias escolhas: sem filtro, todas as opções aparecem marcadas e tocar numa delas a deixa de fora (por exemplo, todos os órgãos menos um). “Desmarcar todos” limpa para escolher uma a uma.",
