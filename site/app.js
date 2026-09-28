@@ -3812,7 +3812,10 @@
       const ref = clNum ? `${classeBase(clNum)} ${f.n}` : res[0] ? `${classeBase(res[0].cl)} ${digitos(res[0].n)}` : monos[0] ? `${monos[0].cl} ${monos[0].n}` : f.n;
       // O número de registro começa pelo ano de autuação: processo autuado a partir de 2021 não tem decisão anterior.
       const ano = String(res[0]?.reg || monos[0]?.reg || "").slice(0, 4), antigo = !/^\d{4}$/.test(ano) || ano < "2021";
-      const botaoSTJ = `<a class="btn btn-claro btn-peq" href="${URLS.monoSTJ(ref)}" target="_blank" rel="noopener">Pesquisar monocráticas no STJ ${ico("externo")}</a>`;
+      // Duas vias oficiais: a pesquisa de jurisprudência (base de monocráticas) e a consulta processual,
+      // cuja aba "Decisões" lista todas as decisões do processo, inclusive as anteriores a 2021.
+      const regProc = String(res[0]?.reg || monos[0]?.reg || (f.n.length >= 10 ? f.n : ""));
+      const botaoSTJ = `<a class="btn btn-claro btn-peq" href="${URLS.monoSTJ(ref)}" target="_blank" rel="noopener">Pesquisar monocráticas no STJ ${ico("externo")}</a>${regProc ? `<a class="btn btn-claro btn-peq" href="${URLS.processo(regProc)}" target="_blank" rel="noopener" title="Na página do processo, abra a aba “Decisões”">Decisões na consulta processual ${ico("externo")}</a>` : ""}`;
       if (monos.length) extra.insertAdjacentHTML("beforeend", `<p class="nota extra-tit"><b>Decisões monocráticas neste processo</b> · ${fmtInt(monos.length)} · desde 2021, sem o texto: o número abre a decisão oficial no STJ</p>
           <ol class="lista">${monos.slice(0, 60).map(cardMono).join("")}</ol>
           ${antigo ? `<p class="nota mono-stj">As decisões anteriores a 2021 não estão na base aberta do STJ. ${botaoSTJ}</p>` : ""}`);
@@ -4738,7 +4741,7 @@
       "Pesquisa: os acórdãos publicados no mês corrente, antes do arquivo mensal do STJ, ficam acessíveis por um aviso no alto da lista, com filtro por número, classe ou relator; os que já têm texto integral trazem a ementa.",
     ]],
     ["2026-09-30", [
-      "Busca pelo número do processo: botão para pesquisar as decisões monocráticas diretamente no STJ, inclusive as anteriores a 2021, que não estão na base aberta.",
+      "Busca pelo número do processo: botões para pesquisar as decisões monocráticas diretamente no STJ (pesquisa de jurisprudência e aba “Decisões” da consulta processual), inclusive as anteriores a 2021, que não estão na base aberta.",
     ]],
     ["2026-09-29", [
       "Dossiê em PDF nos Salvos: reúne os itens da pasta (ou do filtro) com índice, ementa completa, tese, citação, avaliação e anotação, separados por avaliação.",
