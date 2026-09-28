@@ -1302,6 +1302,127 @@ def gerar_numeros(meses_disp: list[str]) -> dict:
 
 
 # --------------------------------------------------------------------------
+# 6a0. Decisões monocráticas (terminativas) desde 2021, a partir dos metadados do
+#      conjunto "Íntegras de Decisões Terminativas e Acórdãos do Diário da Justiça".
+#      Só os dados de identificação e o resultado (sem o texto): processo, recurso
+#      interno, ministro, data de publicação, desfecho e o número do documento no DJe,
+#      usado no link para o documento oficial. Índice fragmentado pelos dois últimos
+#      dígitos do número, como o de acórdãos.
+# --------------------------------------------------------------------------
+PACOTE_INTEGRAS = "integras-de-decisoes-terminativas-e-acordaos-do-diario-da-justica"
+MONO_CACHE = CACHE / "monocraticas"
+MONO_TEMPO_MAX = 25 * 60  # segundos por execução para a carga inicial; o restante segue nas próximas
+RECURSO_SIGLA = {
+    "EMBARGOS DE DECLARAÇÃO": "EDcl", "AGRAVO REGIMENTAL": "AgRg", "AGRAVO INTERNO": "AgInt", "PEDIDO DE EXTENSÃO": "PExt",
+    "PETIÇÃO": "PET", "PEDIDO DE RECONSIDERAÇÃO": "RCD", "EMBARGOS DE DIVERGÊNCIA": "EREsp", "AGRAVO DE INSTRUMENTO": "Ag",
+    "RECURSO EXTRAORDINÁRIO": "RE", "RECURSO ORDINÁRIO": "RO", "DESISTÊNCIA": "DESIS",
+}
+
+
+def _data_integras(v) -> str:
+    """Datas do conjunto: ISO, segundos ou milissegundos desde 1970 (varia conforme o arquivo)."""
+    if v in (None, ""):
+        return ""
+    t = str(v).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}.*", t):
+        return t[:10].replace("-", "")
+    if re.fullmatch(r"-?\d+", t):
+        n = int(t)
+        n = n / 1000 if abs(n) > 10**11 else n
+        return (dt.datetime.fromtimestamp(n, dt.timezone(dt.timedelta(hours=-3)))).strftime("%Y%m%d")
+    return ""
+
+
+def _desfecho(txt: str) -> str:
+    """Conclusão da decisão sem os campos vazios do modelo ("Denegado o Habeas Corpus de #{nome}")."""
+    t = re.sub(r"\s*\bd[aeo]s?\s+#\{[^}]*\}", "", str(txt or ""))
+    t = re.sub(r"#\{[^}]*\}", "", t).replace("\xa0", " ")
+    t = re.sub(r"\s+", " ", t).strip(" .,;")
+    t = re.sub(r"\s+d[aeo]s?(?=\s+(?:para|e|em)\b|[.,;]|$)", "", t)
+    return re.sub(r"\s+", " ", t)[:180]
+
+
+def _linhas_mono(meta: list) -> list:
+    out = []
+    for x in meta:
+        if str(x.get("tipoDocumento") or "").upper().startswith("AC"):
+            continue
+        proc = str(x.get("processo") or "").split()
+        if len(proc) < 2:
+            continue
+        rec = re.sub(r"\s+", " ", str(x.get("recurso") or "")).strip()
+        rec = RECURSO_SIGLA.get(rec.upper(), rec)
+        out.append([re.sub(r"\D", "", proc[-1]), re.sub(r"\D", "", str(x.get("numeroRegistro") or "")), proc[0], rec,
+                    _data_integras(x.get("dataPublicacao")), str(x.get("NM_MINISTRO") or x.get("ministro") or "").strip(),
+                    str(x.get("teor") or "").strip(), _desfecho(x.get("descricaoMonocratica")),
+                    x.get("SeqDocumento") or x.get("seqDocumento") or ""])
+    return out
+
+
+def gravar_gz(caminho: Path, obj) -> None:
+    """Grava já compactado: o espaço do site conta o tamanho dos arquivos, e o navegador descompacta."""
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_bytes(gzip.compress(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode(), 9, mtime=0))
+
+
+def atualizar_monocraticas() -> dict:
+    MONO_CACHE.mkdir(parents=True, exist_ok=True)
+    recursos = [r for r in pacote(PACOTE_INTEGRAS).get("resources", []) if "metadados" in (r.get("name") or r.get("url") or "")]
+    inicio, novos, falhas = time.time(), 0, 0
+    pendentes = []
+    for r in recursos:
+        # Chave: nome e tamanho do arquivo (um arquivo refeito pelo STJ é baixado de novo).
+        nome = re.sub(r"[^\w.-]", "_", nome_recurso(r)).replace(".json", "")
+        arq = MONO_CACHE / f"{nome}-{r.get('size') or 0}.json.gz"
+        if arq.exists():
+            continue
+        if time.time() - inicio > MONO_TEMPO_MAX:
+            pendentes.append(nome)
+            continue
+        try:
+            linhas = _linhas_mono(json.loads(baixar(r["url"], timeout=300)))
+            for velho in MONO_CACHE.glob(f"{nome}-*.json.gz"):
+                velho.unlink()
+            arq.write_bytes(gzip.compress(json.dumps(linhas, ensure_ascii=False, separators=(",", ":")).encode(), 6))
+            novos += 1
+        except Exception as e:  # noqa: BLE001
+            falhas += 1
+            log(f"  monocráticas: {nome}: {e}")
+    # Índice: todas as decisões, sem repetição (o mesmo documento pode vir em arquivo mensal e diário).
+    por_n: dict[str, list] = {}
+    vistos = set()
+    for arq in sorted(MONO_CACHE.glob("*.json.gz")):
+        for l in json.loads(gzip.decompress(arq.read_bytes())):
+            k = (l[8] or f"{l[1]}|{l[4]}|{l[3]}")
+            if k in vistos or not l[0]:
+                continue
+            vistos.add(k)
+            por_n.setdefault(_frag(l[0]), []).append(l)
+    pasta = SITE_DATA / "monocraticas"
+    if pasta.exists():
+        shutil.rmtree(pasta)
+    total, datas = 0, []
+    por_r: dict[str, list] = {}
+    for k in (f"{i:02d}" for i in range(100)):
+        linhas = sorted(por_n.get(k, []), key=lambda l: (l[0], l[4]))
+        mins = sorted({l[5] for l in linhas}); teores = sorted({l[6] for l in linhas}); descs = sorted({l[7] for l in linhas})
+        pm, pt, pd = ({v: i for i, v in enumerate(x)} for x in (mins, teores, descs))
+        comp = [[l[0], l[1], l[2], l[3], l[4], pm[l[5]], pt[l[6]], pd[l[7]], l[8]] for l in linhas]
+        gravar_gz(pasta / f"m{k}.json.gz", {"min": mins, "teor": teores, "desc": descs, "l": comp})
+        for l in linhas:
+            if l[1]:
+                por_r.setdefault(_frag(l[1]), set()).add((l[1], l[0]))
+            if l[4]:
+                datas.append(l[4])
+        total += len(linhas)
+    for k in (f"{i:02d}" for i in range(100)):
+        gravar_gz(pasta / f"r{k}.json.gz", {"l": sorted(por_r.get(k, set()))})
+    de, ate = (min(datas), max(datas)) if datas else ("", "")
+    log(f"Monocráticas: {total} decisões ({de} a {ate}); {novos} arquivo(s) novo(s), {falhas} falha(s), {len(pendentes)} pendente(s) para a próxima execução.")
+    return {"v": 1, "n": total, "de": de, "ate": ate, "pendentes": len(pendentes), "em": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+
+
+# --------------------------------------------------------------------------
 # 6a'. Acórdãos mais recentes de cada órgão, para a tela inicial da Pesquisa
 #      (sem baixar os arquivos mensais completos).
 # --------------------------------------------------------------------------
@@ -2156,6 +2277,12 @@ def main():
     except Exception as e:  # noqa: BLE001
         erros.append(f"números: {e}")
         log("ERRO números:", e)
+    monocraticas = {}
+    try:
+        monocraticas = atualizar_monocraticas()
+    except Exception as e:  # noqa: BLE001
+        erros.append(f"monocráticas: {e}")
+        log("ERRO monocráticas:", e)
     try:
         gerar_recentes(meses_disp)
     except Exception as e:  # noqa: BLE001
@@ -2257,6 +2384,7 @@ def main():
         "composicao": composicao or manifesto_ant.get("composicao", {}),
         "busca": busca or manifesto_ant.get("busca", {}),
         "numeros": numeros or manifesto_ant.get("numeros", {}),
+        "monocraticas": monocraticas or manifesto_ant.get("monocraticas", {}),
         "painel": painel,
         "esquema": ESQUEMA,
         "erros": erros,

@@ -40,6 +40,13 @@ const limites = { "app.js": 800e3, "style.css": 250e3, "index.html": 30e3, "data
 for (const [p, lim] of Object.entries(limites)) { const t = tam(p); if (t < 0) falha(`${p} ausente`); else if (t > lim) falha(`${p} com ${Math.round(t / 1e3)} KB (limite ${Math.round(lim / 1e3)} KB)`); }
 let maiorFrag = 0; for (let i = 0; i < 100; i++) maiorFrag = Math.max(maiorFrag, tam(`data/numeros/n${String(i).padStart(2, "0")}.json`));
 if (maiorFrag > 2.5e6) falha(`fragmento do índice de números com ${Math.round(maiorFrag / 1e3)} KB (limite 2.500 KB)`); else ok(`maior fragmento do índice: ${Math.round(maiorFrag / 1e3)} KB`);
+if (man.monocraticas?.v) {
+  let falta = 0, maior = 0;
+  for (let i = 0; i < 100; i++) { const k = String(i).padStart(2, "0"); const t = tam(`data/monocraticas/m${k}.json.gz`); if (t < 0 || tam(`data/monocraticas/r${k}.json.gz`) < 0) falta++; maior = Math.max(maior, t); }
+  if (falta) falha(`${falta} fragmentos das decisões monocráticas ausentes`);
+  else if (maior > 1.5e6) falha(`fragmento das monocráticas com ${Math.round(maior / 1e3)} KB compactados (limite 1.500 KB)`);
+  else ok(`monocráticas: ${man.monocraticas.n} decisões, maior fragmento ${Math.round(maior / 1e3)} KB`);
+}
 for (const v of ["pdf.min.js", "pdf.worker.min.js", "mammoth.browser.min.js", "inter-latin-wght-normal.woff2", "source-serif-4-latin-opsz-normal.woff2"]) if (tam(`vendor/${v}`) <= 0) falha(`vendor/${v} ausente`);
 if (!/Content-Security-Policy/.test(readFileSync(join(RAIZ, "index.html"), "utf8"))) falha("index.html sem política de segurança de conteúdo");
 
