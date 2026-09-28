@@ -142,6 +142,8 @@
     processo: (reg) => `https://processo.stj.jus.br/processo/pesquisa/?tipoPesquisa=tipoPesquisaNumeroRegistro&termo=${encodeURIComponent(reg)}`,
     // Documento da decisão monocrática no DJe (PDF oficial), pelo número do documento.
     mono: (x) => (x.seq ? `https://processo.stj.jus.br/processo/dj/documento/mediado/?tipo_documento=documento&componente=MON&sequencial=${encodeURIComponent(x.seq)}&num_registro=${encodeURIComponent(x.reg)}&data=${String(x.d).replace(/-/g, "")}&formato=PDF` : `https://processo.stj.jus.br/processo/pesquisa/?tipoPesquisa=tipoPesquisaNumeroRegistro&termo=${encodeURIComponent(x.reg)}`),
+    // Pesquisa de jurisprudência do STJ, base de decisões monocráticas (inclui as anteriores a 2021).
+    monoSTJ: (termo) => `https://scon.stj.jus.br/SCON/pesquisar.jsp?b=DTXT&tipo_visualizacao=RESUMO&livre=${encodeURIComponent(termo)}`,
     tema: (tp, n) => {
       const cod = { "Tema": "T", "Controvérsia": "C", "IAC": "I", "SIRDR": "S", "PUIL": "P" }[tp] || "T";
       return `https://processo.stj.jus.br/repetitivos/temas_repetitivos/pesquisa.jsp?novaConsulta=true&tipo_pesquisa=${cod}&cod_tema_inicial=${n}&cod_tema_final=${n}`;
@@ -3511,7 +3513,8 @@
         <p class="cobertura" id="ac-cob">${coberturaHTML()}</p>
         <div id="ac-extra"></div>
         <ol class="lista" id="ac-lista"></ol>
-        <div id="ac-pag"></div>`;
+        <div id="ac-pag"></div>
+        <div id="ac-mono-stj"></div>`;
       const anosAc = [...new Set(meses.map((m) => m.m.slice(0, 4)))];
       const primeiro = meses.length ? meses[meses.length - 1].m : "";
       const periodos = [{ v: "todo", t: `Todo o acervo (desde ${primeiro ? fmtMesL(primeiro) : "—"})`, curto: "Todo o acervo" },
@@ -3772,6 +3775,7 @@
     AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos;
     // Processo ainda sem ementa no acervo: publicações recentes no DJEN e sessões marcadas.
     const extra = $("#ac-extra"); extra.innerHTML = "";
+    const monoSTJ = $("#ac-mono-stj"); if (monoSTJ) monoSTJ.innerHTML = "";
     let monos = [];
     if (f.n) {
       const [dj, pl, mn] = await Promise.all([djen().catch(() => []), pautas().catch(() => []), monocraticasDe([f.n], f.n.length >= 10 ? [f.n] : []).catch(() => [])]);
@@ -3786,8 +3790,15 @@
         extra.innerHTML = `<p class="nota extra-tit">${pubs.length ? `<b>Publicado recentemente no DJEN</b> · ainda sem ementa no arquivo mensal do STJ` : ""}${pubs.length && sess.length ? " · " : ""}${sess.length ? "<b>Em pauta</b>" : ""}</p>
           <ol class="lista">${sess.map((x) => cardPauta(x)).join("")}${pubs.map((x) => cardDjen(x)).join("")}</ol>`;
       }
+      // A base aberta do STJ só tem monocráticas desde 2021; para as anteriores, a pesquisa do próprio STJ.
+      const ref = clNum ? `${classeBase(clNum)} ${f.n}` : res[0] ? `${classeBase(res[0].cl)} ${digitos(res[0].n)}` : monos[0] ? `${monos[0].cl} ${monos[0].n}` : f.n;
+      // O número de registro começa pelo ano de autuação: processo autuado a partir de 2021 não tem decisão anterior.
+      const ano = String(res[0]?.reg || monos[0]?.reg || "").slice(0, 4), antigo = !/^\d{4}$/.test(ano) || ano < "2021";
+      const botaoSTJ = `<a class="btn btn-claro btn-peq" href="${URLS.monoSTJ(ref)}" target="_blank" rel="noopener">Pesquisar monocráticas no STJ ${ico("externo")}</a>`;
       if (monos.length) extra.insertAdjacentHTML("beforeend", `<p class="nota extra-tit"><b>Decisões monocráticas neste processo</b> · ${fmtInt(monos.length)} · desde 2021, sem o texto: o número abre a decisão oficial no STJ</p>
-          <ol class="lista">${monos.slice(0, 60).map(cardMono).join("")}</ol>`);
+          <ol class="lista">${monos.slice(0, 60).map(cardMono).join("")}</ol>
+          ${antigo ? `<p class="nota mono-stj">As decisões anteriores a 2021 não estão na base aberta do STJ. ${botaoSTJ}</p>` : ""}`);
+      else if (monoSTJ) monoSTJ.innerHTML = `<p class="nota mono-stj">Nenhuma decisão monocrática deste processo na base aberta do STJ, que começa em janeiro de 2021 e reúne só as decisões terminativas. ${botaoSTJ}</p>`;
     }
     const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.querySelector(".item-djen, .item-radar:not(.item-mono)") ? " e no DJEN" : ""}${monos.length ? ` · ${fmtInt(monos.length)} decisão(ões) monocrática(s) abaixo` : ""}` : rotPeriodo(f.p, meses);
     const parcial = AC.parar === tk ? " · busca interrompida" : "";
@@ -4662,8 +4673,11 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.09.29";
+  const VERSAO = "2026.09.30";
   const NOVIDADES = [
+    ["2026-09-30", [
+      "Busca pelo número do processo: botão para pesquisar as decisões monocráticas diretamente no STJ, inclusive as anteriores a 2021, que não estão na base aberta.",
+    ]],
     ["2026-09-29", [
       "Dossiê em PDF nos Salvos: reúne os itens da pasta (ou do filtro) com índice, ementa completa, tese, citação, avaliação e anotação, separados por avaliação.",
       "Seta “Voltar” na janela lateral: ao abrir “Pasta e avaliação”, um tema ou um ministro a partir de um julgado, dá para voltar ao julgado sem fechá-lo.",
