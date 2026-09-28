@@ -22,6 +22,7 @@ import argparse
 import csv
 import gzip
 import hashlib
+import html
 import unicodedata
 import datetime as dt
 import io
@@ -926,9 +927,33 @@ def mapa_relator_turma(meses_disp: list[str]) -> dict:
     return {n: max(c, key=c.get) for n, c in cont.items()}
 
 
+def _ementa_integra(txt: str) -> str:
+    """Ementa do texto integral do acórdão (entre "EMENTA" e "RELATÓRIO"/"VOTO"), linha a linha."""
+    t = re.sub(r"(?i)<br\s*/?>|</p>", "\n", txt)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = html.unescape(t).replace("\r", "")
+    m = re.search(r"(?m)^[ \t]*EMENTA[ \t]*:?[ \t]*$", t)
+    if not m:
+        return ""
+    resto = t[m.end():]
+    f = re.search(r"(?m)^[ \t]*(RELAT[ÓO]RIO|VOTO|VOTO-VISTA|CERTID[ÃA]O DE JULGAMENTO)[ \t]*$", resto)
+    linhas = [re.sub(r"[ \t]+", " ", x).strip() for x in (resto[:f.start()] if f else resto[:6000]).split("\n")]
+    em = "\n".join(x for x in linhas if x)
+    return em[:6000] if len(em) >= 40 else ""
+
+
 def atualizar_radar(dias: int, meses_disp: list[str]) -> dict:
     pac = pacote("integras-de-decisoes-terminativas-e-acordaos-do-diario-da-justica")
     metas = [r for r in pac["resources"] if nome_recurso(r).startswith("metadados") and re.search(r"\d{8}", nome_recurso(r))]
+    # Textos integrais do dia (só uma parte dos acórdãos vem com texto): dão a ementa antes do arquivo mensal.
+    zips = {}
+    for r in pac["resources"]:
+        n = nome_recurso(r)
+        if n.endswith(".zip") and re.search(r"\d{8}", n):
+            d = data_recurso(r)
+            v = r.get("last_modified") or r.get("created") or ""
+            if d not in zips or v > (zips[d].get("last_modified") or zips[d].get("created") or ""):
+                zips[d] = r
     # Um arquivo por data de publicação (se houver reenvio, vale o mais recente).
     por_data = {}
     for r in metas:
@@ -936,18 +961,26 @@ def atualizar_radar(dias: int, meses_disp: list[str]) -> dict:
         v = r.get("last_modified") or r.get("created") or ""
         if d not in por_data or v > (por_data[d].get("last_modified") or por_data[d].get("created") or ""):
             por_data[d] = r
-    metas = [por_data[d] for d in sorted(por_data)][-dias:]
+    # Pelo menos "dias" datas e, além disso, tudo o que foi publicado depois do último arquivo mensal
+    # de acórdãos (o mês corrente), para que a Pesquisa mostre o mês inteiro enquanto a ementa não chega.
+    ult_mes = (meses_disp[-1] if meses_disp else "").replace("-", "")
+    datas_ok = sorted(por_data)
+    apos = [d for d in datas_ok if ult_mes and d[:6] > ult_mes]
+    metas = [por_data[d] for d in datas_ok[-max(dias, len(apos)):]]
     cache_dir = CACHE / "radar"
     cache_dir.mkdir(parents=True, exist_ok=True)
     mapa = mapa_relator_turma(meses_disp)
     itens = []
     datas = []
+    ementas: dict[str, str] = {}
     for r in metas:
         d = data_recurso(r)
         arq = cache_dir / f"{d}.json"
         versao = r.get("last_modified") or r.get("created")
         cache = ler_json(arq, None)
-        if not cache or cache.get("v") != versao:
+        rz = zips.get(d)
+        vz = (rz.get("last_modified") or rz.get("created") or "") if rz else ""
+        if not cache or cache.get("v") != versao or cache.get("vz") != vz:
             bruto = json.loads(baixar(r["url"]).decode("utf-8"))
             ac = []
             for x in bruto:
@@ -961,9 +994,25 @@ def atualizar_radar(dias: int, meses_disp: list[str]) -> dict:
                     "rel": rel,
                     "t": (x.get("teor") or "").strip(),
                     "reg": str(x.get("numeroRegistro") or ""),
+                    "q": str(x.get("SeqDocumento") or ""),
                 }))
-            cache = {"v": versao, "itens": ac}
+            ems = {}
+            if rz:
+                try:
+                    zf = zipfile.ZipFile(io.BytesIO(baixar(rz["url"])))
+                    seqs = {it["q"] for it in ac if it.get("q")}
+                    for nome in zf.namelist():
+                        q = nome.rsplit("/", 1)[-1].split(".")[0]
+                        if q in seqs:
+                            em = _ementa_integra(zf.read(nome).decode("utf-8", "replace"))
+                            if em:
+                                ems[q] = em
+                except Exception as e:  # noqa: BLE001
+                    log(f"  ! textos de {d} indisponíveis:", e)
+                    vz = ""
+            cache = {"v": versao, "vz": vz, "itens": ac, "em": ems}
             gravar_json(arq, cache)
+        ementas.update(cache.get("em") or {})
         for it in cache["itens"]:
             nome = re.sub(r"\s*\(.*?\)", "", it.get("rel", "")).strip().upper()
             if nome in mapa:
@@ -983,9 +1032,19 @@ def atualizar_radar(dias: int, meses_disp: list[str]) -> dict:
             vistos.add(k)
             unicos.append(it)
     itens = sorted(unicos, key=lambda x: (x.get("d", ""), x.get("p", "")), reverse=True)
+    # O número do documento só fica nos itens que têm ementa (liga o item ao arquivo de ementas).
+    usadas = {}
+    for it in itens:
+        q = it.pop("q", "")
+        if q and q in ementas:
+            it["q"] = q
+            usadas[q] = ementas[q]
     gravar_json(SITE_DATA / "radar.json", itens)
-    log(f"Radar: {len(itens)} acórdãos publicados em {len(datas)} dia(s).")
-    return {"n": len(itens), "dias": datas}
+    gravar_json(SITE_DATA / "radar-ementas.json", usadas)
+    log(f"Radar: {len(itens)} acórdãos publicados em {len(datas)} dia(s); {len(usadas)} com ementa do texto integral.")
+    doMes = [it.get("d", "") for it in itens if ult_mes and it.get("d", "").replace("-", "")[:6] > ult_mes]
+    return {"n": len(itens), "dias": datas, "ementas": len(usadas), "mesN": len(doMes), "mesDe": min(doMes) if doMes else "",
+            "mesEm": sum(1 for it in itens if it.get("q") and it.get("d", "").replace("-", "")[:6] > ult_mes)}
 
 
 
