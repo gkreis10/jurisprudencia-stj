@@ -4913,36 +4913,21 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.10.05";
+  const VERSAO = "2026.09.28";
   const NOVIDADES = [
-    ["2026-10-05", [
+    ["2026-09-28", [
       "Assuntos por matéria revistos: 233 assuntos em 69 grupos, na ordem da lei de regência (por exemplo, Planos de saúde com cobertura, reajuste e rescisão; Recurso especial com prequestionamento, Súmula 7, Súmulas 283/284 e dissídio; Prisão com preventiva, excesso de prazo e domiciliar).",
       "No filtro Matéria, o grupo também pode ser marcado: um toque marca (ou deixa de fora) todos os assuntos do grupo.",
-    ]],
-    ["2026-10-04", [
       "Pesquisa: os acórdãos do mês ainda sem ementa ficam de fora por padrão; o botão “Incluir sem ementa” os traz de volta.",
       "Filtros com seleção mais leve: o item marcado ganha fundo claro e um sinal de visto, no lugar do bloco escuro.",
-    ]],
-    ["2026-10-03", [
       "Pesquisa: os acórdãos do mês corrente, ainda sem o arquivo mensal do STJ, entram na própria lista, com a etiqueta “Publicado em … · ementa em …”. No Período, “Publicados em [mês]” mostra só eles, com os mesmos filtros.",
       "Filtros de várias escolhas: sem filtro, todas as opções aparecem marcadas e tocar numa delas a deixa de fora (por exemplo, todos os órgãos menos um). “Desmarcar todos” limpa para escolher uma a uma.",
-    ]],
-    ["2026-10-02", [
       "Cartões mais limpos: fica só o selo “Sinal forte de relevância” e, das marcas, “Afetação ao rito repetitivo” e “Recurso repetitivo”. Na página do julgado, o quadro “A ementa menciona” explica distinção, divergência, mudança de entendimento, questão nova e modulação.",
       "Novo guia “Como pesquisar”, passo a passo e com exemplos. Para todas as formas de uma palavra, use o asterisco (prescri*); “tema 1365” e “súmula 7” passam a funcionar como escritos.",
-    ]],
-    ["2026-10-01", [
-      "Pesquisa: os acórdãos publicados no mês corrente, antes do arquivo mensal do STJ, ficam acessíveis por um aviso no alto da lista, com filtro por número, classe ou relator; os que já têm texto integral trazem a ementa.",
-    ]],
-    ["2026-09-30", [
       "Busca pelo número do processo: no alto do resultado, botão “Decisões do processo”, que abre a consulta processual do STJ com todas as decisões, inclusive as monocráticas anteriores a 2021; na página do julgado, o botão passou a se chamar “Processo e decisões no STJ”.",
-    ]],
-    ["2026-09-29", [
       "Dossiê em PDF nos Salvos: reúne os itens da pasta (ou do filtro) com índice, ementa completa, tese, citação, avaliação e anotação, separados por avaliação.",
       "Seta “Voltar” na janela lateral: ao abrir “Pasta e avaliação”, um tema ou um ministro a partir de um julgado, dá para voltar ao julgado sem fechá-lo.",
       "“Pasta e avaliação” não salva mais o julgado automaticamente: ele só entra nos salvos se você escolher pasta, avaliação, anotação ou clicar em Salvar.",
-    ]],
-    ["2026-09-28", [
       "Decisões monocráticas desde 2021 (sem o texto): aparecem na busca pelo número do processo, no Verificar petição, na página do acórdão e no Meu radar; o número abre a decisão oficial no STJ.",
     ]],
     ["2026-09-27", [
@@ -4966,7 +4951,14 @@
   async function vSobre(main) {
     const m = D.man;
     const total = m.meses.reduce((s, x) => s + Object.values(x.orgaos).reduce((a, b) => a + b.n, 0), 0);
-    main.innerHTML = `<div class="card card-pad texto-serif" style="max-width:820px">
+    const alvoS = lerHash().p.get("s"), abaS = alvoS === "novidades" ? "novidades" : "sobre";
+    main.innerHTML = `<div class="barra-filtros" style="max-width:820px">
+        <div class="segmentos" role="tablist">
+          <button type="button" role="tab" data-sb-aba="sobre" aria-controls="sb-sobre" aria-selected="${abaS === "sobre"}">Sobre</button>
+          <button type="button" role="tab" data-sb-aba="novidades" aria-controls="sb-novidades" aria-selected="${abaS === "novidades"}">Novidades</button>
+        </div>
+      </div>
+      <div class="card card-pad texto-serif" id="sb-sobre" role="tabpanel" style="max-width:820px;margin-top:14px"${abaS === "sobre" ? "" : " hidden"}>
       <p>O Radar STJ organiza a jurisprudência do Superior Tribunal de Justiça a partir do <a href="https://dadosabertos.web.stj.jus.br/" target="_blank" rel="noopener">Portal de Dados Abertos do STJ</a>. Uma rotina automática consulta o portal duas vezes por dia e publica o que houver de novo.</p>
       <h3 style="font-family:var(--ui)">Fontes</h3>
       <ul>
@@ -5020,9 +5012,6 @@
       <h3 style="font-family:var(--ui)">Privacidade e segurança</h3>
       <p>O seu radar (assuntos, processos e OAB), os itens salvos, as pastas e as anotações ficam apenas no seu navegador e se perdem se os dados do navegador forem apagados; use a cópia de segurança (em Salvos ou no Meu radar) para guardá-los ou levá-los a outro aparelho. O link do Meu radar leva os termos, processos e OABs acompanhados: quem o receber poderá vê-los.</p>
       <p>A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor. Os leitores de PDF (PDF.js) e de DOCX (Mammoth) ficam hospedados no próprio site, em versões fixas conferidas pelo hash, e a política de segurança da página impede que ela carregue código, fontes ou imagens de outros endereços ou envie dados para eles.</p>
-      <h3 style="font-family:var(--ui)" id="sobre-novidades">Novidades</h3>
-      <p class="nota">Versão ${VERSAO}.</p>
-      ${NOVIDADES.map(([d, l]) => `<p><b>${fmtData(d)}</b></p><ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}
       <h3 style="font-family:var(--ui)" id="sobre-fontes">Situação da base</h3>
       <p>Última execução da rotina: ${new Date(m.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. A rotina roda duas vezes por dia; cada fonte tem o próprio ritmo de publicação no STJ.</p>
       ${tabelaFontes(m)}
@@ -5030,8 +5019,19 @@
       ${m.erros?.length ? `<p class="aviso">${ico("alerta")}<span>Na última execução, parte das fontes não respondeu (${esc(m.erros.join("; "))}). Os dados anteriores foram mantidos.</span></p>` : ""}
       <h3 style="font-family:var(--ui)">Cautelas</h3>
       <p>O texto das ementas é o oficial; apenas a verbetação, que o STJ publica em caixa alta, é exibida em letras minúsculas para facilitar a leitura, e o botão de copiar traz o texto original. Antes de citar qualquer julgado, confira o inteiro teor no site do STJ. Os processos em segredo de justiça não constam da base aberta. Este é um projeto independente, sem vínculo com o STJ.</p>
+    </div>
+      <div class="card card-pad texto-serif" id="sb-novidades" role="tabpanel" style="max-width:820px;margin-top:14px"${abaS === "novidades" ? "" : " hidden"}>
+      <p class="nota">Versão ${VERSAO}. As alterações mais recentes aparecem primeiro.</p>
+      ${NOVIDADES.map(([d, l]) => `<h3 style="font-family:var(--ui)">${fmtData(d)}</h3><ul>${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("")}
     </div>`;
-    const alvoS = lerHash().p.get("s"); if (alvoS === "fontes" || alvoS === "novidades") requestAnimationFrame(() => $(`#sobre-${alvoS}`)?.scrollIntoView({ block: "start" }));
+    $$("[data-sb-aba]", main).forEach((bt) => bt.addEventListener("click", () => {
+      const k = bt.dataset.sbAba;
+      $$("[data-sb-aba]", main).forEach((x) => x.setAttribute("aria-selected", String(x === bt)));
+      $("#sb-sobre", main).hidden = k !== "sobre"; $("#sb-novidades", main).hidden = k !== "novidades";
+      history.replaceState(null, "", k === "novidades" ? "#sobre?s=novidades" : "#sobre");
+      window.scrollTo({ top: 0 });
+    }));
+    if (alvoS === "fontes") requestAnimationFrame(() => $("#sobre-fontes")?.scrollIntoView({ block: "start" }));
   }
 
   // Situação de cada fonte: data do dado mais recente e da última verificação bem-sucedida.
