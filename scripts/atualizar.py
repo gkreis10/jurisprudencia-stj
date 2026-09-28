@@ -1041,6 +1041,9 @@ def atualizar_radar(dias: int, meses_disp: list[str]) -> dict:
             usadas[q] = ementas[q]
     gravar_json(SITE_DATA / "radar.json", itens)
     gravar_json(SITE_DATA / "radar-ementas.json", usadas)
+    # Os mais recentes do mês corrente, com a ementa quando houver: arquivo pequeno para a tela inicial da Pesquisa.
+    rec_mes = [dict(it, em=usadas[it["q"]]) if it.get("q") else it for it in itens if ult_mes and it.get("d", "").replace("-", "")[:6] > ult_mes][:150]
+    gravar_json(SITE_DATA / "radar-recentes.json", rec_mes)
     log(f"Radar: {len(itens)} acórdãos publicados em {len(datas)} dia(s); {len(usadas)} com ementa do texto integral.")
     doMes = [it.get("d", "") for it in itens if ult_mes and it.get("d", "").replace("-", "")[:6] > ult_mes]
     return {"n": len(itens), "dias": datas, "ementas": len(usadas), "mesN": len(doMes), "mesDe": min(doMes) if doMes else "",
