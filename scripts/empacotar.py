@@ -1,7 +1,7 @@
 """Monta a pasta publicada (_site) a partir de site/.
 
 Os arquivos mensais de acórdãos vão compactados (.json.gz), para que o acervo longo caiba
-no limite do GitHub Pages; o site descompacta no navegador. Os meses mais recentes também
+no espaço publicado; o site descompacta no navegador. Os meses mais recentes também
 seguem em .json, para navegadores sem suporte a descompactação.
 """
 from __future__ import annotations
@@ -93,12 +93,17 @@ def main() -> None:
             if mes in recentes:
                 shutil.copyfile(arq, dest / arq.name)
                 compacto += len(dados)
-    total = sum(f.stat().st_size for f in DESTINO.rglob("*") if f.is_file())
-    print(f"Acórdãos: {len(meses)} meses; {bruto / 1e6:.0f} MB em JSON -> {compacto / 1e6:.0f} MB publicados. Site: {total / 1e6:.0f} MB.")
-    if total > 950e6:
-        print("AVISO: o site passa de 950 MB; o limite do GitHub Pages é 1 GB.", file=sys.stderr)
-    # Espaço ocupado, para a conferência automática e a coleta semanal avisarem antes do limite.
-    (DESTINO / "data" / "espaco.json").write_text(json.dumps({"mb": round(total / 1e6), "limite": 1000, "aviso": 850, "em": time.strftime("%Y-%m-%d")}), encoding="utf-8")
+    arquivos = [f for f in DESTINO.rglob("*") if f.is_file()]
+    total = sum(f.stat().st_size for f in arquivos)
+    maior = max((f.stat().st_size for f in arquivos), default=0)
+    print(f"Acórdãos: {len(meses)} meses; {bruto / 1e6:.0f} MB em JSON -> {compacto / 1e6:.0f} MB publicados. Site: {total / 1e6:.0f} MB em {len(arquivos) + 1} arquivos.")
+    # Limites do plano gratuito da Cloudflare Pages: 20 mil arquivos por site e 25 MiB por arquivo.
+    if len(arquivos) + 1 > 18000:
+        print(f"AVISO: o site tem {len(arquivos) + 1} arquivos; o limite da Cloudflare é 20.000.", file=sys.stderr)
+    (DESTINO / "data" / "espaco.json").write_text(json.dumps({
+        "mb": round(total / 1e6), "arquivos": len(arquivos) + 1, "maiorMb": round(maior / 2**20, 1),
+        "limiteArquivos": 20000, "avisoArquivos": 18000, "limiteArquivoMb": 25, "em": time.strftime("%Y-%m-%d"),
+    }), encoding="utf-8")
 
 
 if __name__ == "__main__":
