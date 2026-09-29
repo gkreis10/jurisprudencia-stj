@@ -1846,7 +1846,7 @@
     composicao: () => ajuda("Sobre a Composição", `
       <p class="texto-serif">Composição atual do STJ por órgão: Plenário, Corte Especial, Seções, Turmas, conselhos e comissões, conforme o documento oficial publicado pelo Tribunal.</p>
       <ul class="lista-ajuda">
-        <li>A rotina do site confere o documento duas vezes ao dia e atualiza a página quando o STJ publica nova versão.</li>
+        <li>A rotina do site confere o documento todos os dias, às 7h, e atualiza a página quando o STJ publica nova versão.</li>
         <li>Toque em um nome para ver o perfil: cargos, órgãos em que atua, contato do gabinete, resumo do currículo oficial e os acórdãos relatados no acervo.</li>
         <li>As fotos, quando disponíveis, vêm do acervo livre do Wikimedia Commons, com o crédito indicado.</li>
       </ul>`),
@@ -1859,7 +1859,7 @@
       </ul>`),
     sobre: () => ajuda("Sobre esta página", `<p class="texto-serif">Aqui estão as fontes de cada seção, a frequência de atualização, o método de cálculo da relevância e o significado das cores usadas no site.</p>`),
     radar: () => abrirGaveta("Como funciona", "O que o Meu radar faz", `
-      <p class="texto-serif">O Meu radar acompanha, por você, os assuntos, processos e advogados que interessam ao seu trabalho. Ele relê os dados do STJ a cada atualização do site (duas vezes ao dia) e aponta o que surgiu desde a sua última visita.</p>
+      <p class="texto-serif">O Meu radar acompanha, por você, os assuntos, processos e advogados que interessam ao seu trabalho. Ele relê os dados do STJ a cada atualização do site (todos os dias, às 7h) e aponta o que surgiu desde a sua última visita.</p>
       <h3>Assunto (ex.: “prescrição intercorrente”)</h3>
       <p>O radar procura a expressão, com os sinônimos jurídicos usuais, em cinco fontes:</p>
       <ul class="lista-ajuda">
@@ -2295,7 +2295,7 @@
         <div>
           <p class="sobretitulo">Composição em ${fmtData(c.data)}</p>
           <h2 class="cp-tit">Ministros, Seções e Turmas do STJ</h2>
-          <p class="nota">Conforme a <a href="${esc(c.fontes.composicao)}" target="_blank" rel="noopener">composição oficial publicada pelo STJ ${ico("externo")}</a>. O site confere o documento duas vezes ao dia e atualiza esta página quando o Tribunal publica nova versão. Toque em um nome para ver o perfil e os contatos do gabinete.</p>
+          <p class="nota">Conforme a <a href="${esc(c.fontes.composicao)}" target="_blank" rel="noopener">composição oficial publicada pelo STJ ${ico("externo")}</a>. O site confere o documento todos os dias, às 7h, e atualiza esta página quando o Tribunal publica nova versão. Toque em um nome para ver o perfil e os contatos do gabinete.</p>
         </div>
         <form class="cp-busca" id="cp-f" role="search"><input id="cp-q" type="search" placeholder="Buscar ministro" aria-label="Buscar ministro" autocomplete="off"></form>
       </div>
@@ -4913,9 +4913,13 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.09.28";
+  const VERSAO = "2026.09.29";
   const NOVIDADES = [
+    ["2026-09-29", [
+      "Atualização automática uma vez por dia, às 7h (horário de Brasília).",
+    ]],
     ["2026-09-28", [
+      "Sobre e novidades divididos em duas abas.",
       "Assuntos por matéria revistos: 233 assuntos em 69 grupos, na ordem da lei de regência (por exemplo, Planos de saúde com cobertura, reajuste e rescisão; Recurso especial com prequestionamento, Súmula 7, Súmulas 283/284 e dissídio; Prisão com preventiva, excesso de prazo e domiciliar).",
       "No filtro Matéria, o grupo também pode ser marcado: um toque marca (ou deixa de fora) todos os assuntos do grupo.",
       "Pesquisa: os acórdãos do mês ainda sem ementa ficam de fora por padrão; o botão “Incluir sem ementa” os traz de volta.",
@@ -4959,7 +4963,7 @@
         </div>
       </div>
       <div class="card card-pad texto-serif" id="sb-sobre" role="tabpanel" style="max-width:820px;margin-top:14px"${abaS === "sobre" ? "" : " hidden"}>
-      <p>O Radar STJ organiza a jurisprudência do Superior Tribunal de Justiça a partir do <a href="https://dadosabertos.web.stj.jus.br/" target="_blank" rel="noopener">Portal de Dados Abertos do STJ</a>. Uma rotina automática consulta o portal duas vezes por dia e publica o que houver de novo.</p>
+      <p>O Radar STJ organiza a jurisprudência do Superior Tribunal de Justiça a partir do <a href="https://dadosabertos.web.stj.jus.br/" target="_blank" rel="noopener">Portal de Dados Abertos do STJ</a>. Uma rotina automática consulta o portal todos os dias, às 7h (horário de Brasília), e publica o que houver de novo.</p>
       <h3 style="font-family:var(--ui)">Fontes</h3>
       <ul>
         <li><b>Acórdãos (espelhos):</b> ementa, tese, relator, datas e referências legislativas da Corte Especial, das Seções e das Turmas. O STJ divulga um arquivo por mês e órgão, poucos dias após o fim do mês. O acervo reúne ${fmtInt(total)} acórdãos, desde ${m.meses.length ? fmtMesL(m.meses.map((x) => x.m).sort()[0]) : "—"}, e é ampliado aos poucos. Os anos anteriores a maio de 2022 vêm do arquivo histórico que o STJ publica com todos os espelhos até aquela data. Na Pesquisa, o filtro Período permite escolher de um mês a todo o acervo (um ano, desde um ano ou um intervalo de datas); os períodos longos são percorridos em sequência, com o progresso na tela.</li>
@@ -5013,7 +5017,7 @@
       <p>O seu radar (assuntos, processos e OAB), os itens salvos, as pastas e as anotações ficam apenas no seu navegador e se perdem se os dados do navegador forem apagados; use a cópia de segurança (em Salvos ou no Meu radar) para guardá-los ou levá-los a outro aparelho. O link do Meu radar leva os termos, processos e OABs acompanhados: quem o receber poderá vê-los.</p>
       <p>A verificação de petição roda no seu computador, e o texto não é enviado a nenhum servidor. Os leitores de PDF (PDF.js) e de DOCX (Mammoth) ficam hospedados no próprio site, em versões fixas conferidas pelo hash, e a política de segurança da página impede que ela carregue código, fontes ou imagens de outros endereços ou envie dados para eles.</p>
       <h3 style="font-family:var(--ui)" id="sobre-fontes">Situação da base</h3>
-      <p>Última execução da rotina: ${new Date(m.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. A rotina roda duas vezes por dia; cada fonte tem o próprio ritmo de publicação no STJ.</p>
+      <p>Última execução da rotina: ${new Date(m.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. A rotina roda todos os dias, às 7h; cada fonte tem o próprio ritmo de publicação no STJ.</p>
       ${tabelaFontes(m)}
       <p> ${fmtInt(total)} acórdãos de ${m.meses.length ? fmtMes(m.meses[m.meses.length - 1].m) : "—"} a ${m.meses.length ? fmtMes(m.meses[0].m) : "—"}; ${fmtInt(m.temas?.n)} precedentes qualificados; ${fmtInt(m.pautas?.n)} processos em pauta; ${fmtInt(m.destaques?.n)} destaques nos últimos 3 meses.</p>
       ${m.erros?.length ? `<p class="aviso">${ico("alerta")}<span>Na última execução, parte das fontes não respondeu (${esc(m.erros.join("; "))}). Os dados anteriores foram mantidos.</span></p>` : ""}
