@@ -248,6 +248,25 @@ TEMAS_CHAVE = [
 TEMAS_CHAVE_RE = [(k, orgs, re.compile(v)) for k, orgs, v in TEMAS_CHAVE]
 
 
+# Nos temas, a matéria vem da questão submetida e da tese (ver areas_do_tema). As expressões
+# são as mesmas dos acórdãos, com acréscimos próprios da redação das questões; no processo
+# penal saem "nulidade" e "competência", comuns também às questões de processo civil.
+TEMAS_QUESTAO = [(k, orgs, re.compile(v)) for k, orgs, v in [
+    ("familia", PRIVADO, r"(?<!bem de )\bfamilia\b|alimentos (gravidicos|provisorios|definitivos|avoengos)|pensao alimenticia|acao de alimentos|execucao de alimentos|obrigacao alimentar|\bguarda (compartilhada|unilateral|de (menor|filho|crianca))|divorcio|uniao estavel|paternidade|maternidade|inventario|partilha|heranca|herdeir|testament|sucessao (hereditaria|causa mortis|testamentaria)|regime de bens|adocao|alienacao parental|poder familiar|curatela|interdicao|alimentos devidos|alimentos entre|ex-conjuge"),
+    ("consumidor", PRIVADO, r"consumidor|\bcdc\b|plano de saude|operadora de (plano de )?saude|relacao de consumo"),
+    ("bancario", PRIVADO, r"bancari|instituicao financeira|cedula de credito|alienacao fiduciaria|cartao de credito|juros remuneratorios|capitalizacao (anual |mensal |diaria )?de juros|juros com capitalizacao|superendividamento|contrato de mutuo|(emprestimo|credito) consignado(?! no precatorio)|\bconsorcio\b|fundo garantidor de creditos|9\.514|cedula de credito|tarifas? bancaria"),
+    ("empresarial", PRIVADO, r"recuperacao judicial|plano de recuperacao|falencia|societari|sociedade (anonima|limitada|empresaria)|dissolucao (parcial )?de sociedade|propriedade industrial|\bmarcas?\b|patente|titulo de credito|duplicata|nota promissoria"),
+    ("civil", PRIVADO, r"responsabilidade civil|\bcontrat|dano moral|danos morais|usucapiao|\bposse\b|condominio|locacao|direito de propriedade|\bseguro\b|compra e venda|direito autoral"),
+    ("tributario", PUBLICO, r"\bicms\b|\bpis\b|cofins|imposto|\biss\b|\bipi\b|\biptu\b|execucao fiscal|credito tributario|contribuicao (previdenciaria|social)|\btributo"),
+    ("administrativo", PUBLICO, r"servidor publico|servidores publicos|improbidade|licitacao|concurso publico|desapropriacao|responsabilidade civil do estado|ato administrativo|agencia reguladora|processo administrativo disciplinar|concessionaria de servico publico|permissionaria de servico publico|poder concedente"),
+    ("previdenciario", PUBLICO, r"aposentadoria|beneficio previdenciario|\binss\b|auxilio-doenca|pensao por morte|\brgps\b"),
+    ("ambiental", TODOS, r"meio ambiente|dano ambiental|ambiental|poluidor|poluicao|\bpesca|pescador|rompimento (da|de) barragem|desastre ambiental"),
+    ("penal", PENAIS, r"trafico de drogas|dosimetria|execucao penal|\bcrimes?\b|(?<!sob )\bpena\b|furto|roubo|estelionato|homicidio|estupro|progressao (de regime|prisional)|falta grave|dias remidos|remicao|livramento condicional|unificacao (das |de )?penas|penas? de (reclusao|detencao)|monitoramento eletronico|tornozeleira|prisao domiciliar|pacote anticrime|13\.964|suspensao condicional|sursis"),
+    ("proc-penal", PENAIS, r"habeas corpus|prisao preventiva|prisao em flagrante|\bjuri\b|busca (pessoal|domiciliar)|denuncia|acao penal|revisao criminal|codigo de processo penal|\bcpp\b|inquerito policial|acordo de nao persecucao|interrogatorio|ato infracional"),
+    ("proc-civil", PRIVADO | PUBLICO, r"cumprimento (de|da) sentenca|honorarios advocaticios|acao rescisoria|tutela provisoria|agravo de instrumento|embargos a execucao|embargos de terceiro|redirecionamento d[ao] (execucao|cumprimento)|titulo executivo judicial|codigo de processo civil|\bcpc\b|per relationem"),
+]]
+
+
 def _segmento_rotulo(seg: str) -> bool:
     palavras = re.findall(r"[a-z]+", seg)
     return bool(palavras) and all(w in PALAVRAS_ROTULO for w in palavras) and any(w not in {"direito", "e", "do", "da", "de", "dos", "das", "o", "a", "ementa"} for w in palavras)
@@ -297,7 +316,16 @@ RAMOS_TEMA = [
 ]
 
 
+def _texto_tema(t: dict) -> str:
+    """Questão submetida e tese: é o que o tema de fato discute."""
+    return sem_acento(f"{t.get('q', '')} {t.get('tese', '')}").strip()
+
+
 def areas_do_tema(t: dict) -> list[str]:
+    # Os "assuntos" da base do STJ são os da tabela processual do caso de origem (por exemplo,
+    # "Indenização por dano moral" num tema sobre redirecionamento da execução). Por isso a
+    # matéria vem, antes, da questão submetida e da tese; os assuntos só entram quando elas
+    # nada indicam.
     ass = t.get("ass", "")
     tops = [re.sub(r"^\d+-\s*", "", x).strip() for x in ass.split(",")]
     res = []
@@ -308,11 +336,26 @@ def areas_do_tema(t: dict) -> list[str]:
                 if re.search(rx, tn) and k not in res:
                     res.append(k)
     grupo = ORG_TEMA_GRUPO.get(t.get("org", ""), TODOS)
-    texto = sem_acento(f"{ass} {t.get('q', '')}")
-    for k, orgs, rx in TEMAS_CHAVE_RE:
-        if k not in res and (grupo is TODOS or grupo & orgs) and rx.search(texto):
-            res.append(k)
+    principal = _texto_tema(t)
+    for texto in ([principal] if principal else []) + [sem_acento(f"{ass} {t.get('q', '')}")]:
+        for k, orgs, rx in TEMAS_QUESTAO:
+            if k not in res and (grupo is TODOS or grupo & orgs) and rx.search(texto):
+                res.append(k)
+        if res:
+            break
     return res[:4]
+
+
+def subareas_do_tema(t: dict, areas: list[str]) -> list[str]:
+    """Assuntos de cada matéria pela questão e pela tese; os assuntos da base do STJ só
+    completam a matéria em que a questão e a tese não apontam nenhum assunto."""
+    principal = _texto_tema(t)
+    reserva = sem_acento(f"{t.get('ass', '')} {t.get('q', '')} {t.get('tese', '')}")
+    out: list[str] = []
+    for a in areas:
+        s = subareas(principal, [a]) if principal else []
+        out += s or subareas(reserva, [a])
+    return out[:6]
 
 
 # Submatérias: cada matéria geral tem subtemas. Só entram quando a matéria-mãe
@@ -662,7 +705,7 @@ def atualizar_temas() -> dict:
         a = areas_do_tema(t)
         if a:
             t["ar"] = a
-            sa = subareas(sem_acento(f"{t.get('ass', '')} {t.get('q', '')} {t.get('tese', '')}"), a)
+            sa = subareas_do_tema(t, a)
             if sa:
                 t["sa"] = sa
     # A base oficial traz algumas linhas repetidas: mantém uma por registro.
