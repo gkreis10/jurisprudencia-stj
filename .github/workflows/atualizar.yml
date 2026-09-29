@@ -2,9 +2,8 @@ name: Atualizar e publicar
 
 on:
   schedule:
-    # Todos os dias às 07h e às 19h (horário de Brasília = UTC-3).
+    # Todos os dias às 07h (horário de Brasília = UTC-3).
     - cron: "0 10 * * *"
-    - cron: "0 22 * * *"
   workflow_dispatch:
   push:
     branches: [main]
