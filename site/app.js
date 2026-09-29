@@ -3873,6 +3873,11 @@
       }
     }
     const paresTodos = pares.length;
+    // A partir daqui a consulta percorre o acervo: a lista anterior sai da tela, para que só
+    // apareçam resultados já confirmados para esta pesquisa.
+    AC.lista = []; $("#ac-pag").innerHTML = "";
+    $("#ac-lista").setAttribute("aria-busy", "true");
+    $("#ac-lista").innerHTML = `<li class="busca-aguarda"><span class="spinner" aria-hidden="true"></span>Procurando no acervo. Os resultados aparecem aqui assim que forem confirmados.</li>`;
     if (!ids && pares.length > 12 && (!cons.vazio || f.rl || f.c || f.a)) {
       $("#ac-info").textContent = "Consultando o índice…";
       pares = await filtrarPorIndice(cons, pares, f);
@@ -3920,7 +3925,7 @@
     };
     const prog = $("#ac-prog");
     const longo = !ids && pares.length > 240;
-    let cortado = false, falhas = 0;
+    let cortado = false, falhas = 0, examinados = pares.length;
     AC.parar = 0;
     if (!longo) {
       const pend = pares.filter(([m, o]) => !D.shards.has(`${m}/${o}`)).length;
@@ -3937,10 +3942,17 @@
         if (tk !== AC.token) return;
         prog.firstElementChild.style.width = `${(feitos / pares.length) * 100}%`;
         if (fim) return;
-        $("#ac-info").innerHTML = `Buscando em ${fmtMesL(mesAt)} · <b>${fmtInt(total)}</b> encontrado(s) até agora · ${Math.round((feitos / pares.length) * 100)}% <button type="button" class="btn btn-fant btn-peq" id="ac-parar">Parar</button>`;
+        $("#ac-info").innerHTML = `<b>Busca em andamento</b> · ${fmtInt(total)} resultado(s) confirmado(s) até agora · ${fmtInt(feitos)} de ${fmtInt(pares.length)} arquivos mensais ${pares.length < paresTodos ? "com os termos " : ""}examinados (${Math.round((feitos / pares.length) * 100)}%, agora em ${fmtMesL(mesAt)}) · a lista e a ordem ainda podem mudar <button type="button" class="btn btn-fant btn-peq" id="ac-parar">Parar</button>`;
         $("#ac-parar")?.addEventListener("click", () => { AC.parar = tk; });
       };
-      let ultimoRender = 0;
+      // Lista parcial: só com resultados confirmados, redesenhada a cada 1,5 segundo enquanto houver novos.
+      let desenhados = 0, tRender = 0;
+      const parcialLista = () => {
+        if (tk !== AC.token || res.length === desenhados || Date.now() - tRender < 1500) return;
+        desenhados = res.length; tRender = Date.now();
+        res.sort(ord); AC.lista = agrupar(res.slice(0, 500).map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos; renderLista(true);
+        $("#ac-lista").setAttribute("aria-busy", "true");
+      };
       const trab = async () => {
         while (i < pares.length && tk === AC.token && AC.parar !== tk) {
           if (ordem !== "rel" && res.length >= MAX_RES) { cortado = true; break; }
@@ -3950,17 +3962,19 @@
           if (tk !== AC.token) return;
           consumir(l); feitos++;
           if (feitos % 10 === 0) mostrar();
-          if (feitos - ultimoRender >= 60) { ultimoRender = feitos; res.sort(ord); AC.lista = agrupar(res.slice(0, 500).map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos; renderLista(true); }
+          parcialLista();
         }
       };
       mostrar();
       await Promise.all(Array.from({ length: Math.min(6, pares.length) }, trab));
       if (tk !== AC.token) return;
+      examinados = feitos;
     }
     prog.hidden = true;
     res.sort(ord); if (res.length > MAX_RES) res.length = MAX_RES;
     AC.lista = agrupar(res.map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos;
     const baseN = total > res.length ? total : AC.lista.length;
+    const nAgr = AC.lista.length;
     let nMes = 0;
     if (!f.n && mesInclui(f.p)) {
       const mes = await itensMes(f, cons, clsSel, relSel);
@@ -4002,14 +4016,18 @@
           <ol class="lista">${monos.slice(0, 60).map(cardMono).join("")}</ol>`);
     }
     const rot = f.n ? `processo ${fmtNumProc(f.n)} em todo o acervo${extra.querySelector(".item-djen, .item-radar:not(.item-mono)") ? " e no DJEN" : ""}${monos.length ? ` · ${fmtInt(monos.length)} decisão(ões) monocrática(s) abaixo` : ""}` : rotPeriodo(f.p, meses);
-    const parcial = AC.parar === tk ? " · busca interrompida" : "";
+    const interrompida = AC.parar === tk;
+    const parcial = interrompida ? ` · <b>busca interrompida</b>: ${fmtInt(examinados)} de ${fmtInt(pares.length)} arquivos mensais examinados, os resultados estão incompletos` : "";
+    const situacao = interrompida || f.n ? "" : longo ? "<b>Busca completa</b> · " : "";
     const corte = total > res.length && !cortado ? ` · exibindo os ${fmtInt(res.length)} ${ordem === "rel" ? "mais aderentes" : "mais recentes"}` : "";
-    const lidosIB = pares.length < paresTodos ? ` · ${fmtInt(pares.length)} de ${fmtInt(paresTodos)} arquivos mensais consultados` : "";
+    // Com o índice, só são lidos os arquivos mensais que contêm os termos: a busca continua completa.
+    const lidosIB = pares.length < paresTodos ? ` · ${fmtInt(paresTodos)} arquivos mensais verificados pelo índice, ${fmtInt(pares.length)} lidos por conterem os termos` : "";
+    const agrupados = total > nAgr && total <= res.length ? ` · ${fmtInt(total - nAgr)} publicação(ões) repetida(s) agrupada(s)` : "";
     // Arquivos que não puderam ser baixados: a lista está incompleta, e o usuário precisa saber.
     const avisoFalha = falhas ? `<span class="aviso-falha" role="alert">${ico("alerta")} ${falhas === 1 ? "1 arquivo mensal não pôde ser consultado" : `${fmtInt(falhas)} arquivos mensais não puderam ser consultados`}; os resultados podem estar incompletos. <button type="button" class="btn btn-claro btn-peq" id="ac-denovo">Tentar novamente</button></span>` : "";
     if (f.n && !AC.lista.length && extra.innerHTML) $("#ac-info").innerHTML = `Processo <b>${fmtNumProc(f.n)}</b>: sem acórdão no acervo. Veja abaixo ${monos.length ? "as decisões monocráticas" : "a publicação no DJEN"}${monos.length && extra.querySelector(".item-djen, .item-radar") ? " e as demais publicações" : ""}.`;
     else if (cortado) $("#ac-info").innerHTML = `Exibindo os <b>${fmtInt(res.length)}</b> acórdãos ${ordem === "julg" ? "julgados mais recentemente" : "mais recentes"} (limite da consulta; use os filtros para refinar) · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} ${explicacaoHTML(cons)}`;
-    else $("#ac-info").innerHTML = `<b>${fmtInt(baseN + nMes)}</b> resultado(s)${corte} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
+    else $("#ac-info").innerHTML = `${situacao}<b>${fmtInt(baseN + nMes)}</b> resultado(s)${corte}${agrupados} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     if (nMes) $("#ac-info").insertAdjacentHTML("beforeend", ` <span class="nota-mes">Inclui ${fmtInt(nMes)} publicado(s) em ${rotMesCorrente()}, ainda sem o arquivo mensal do STJ${f.se && cons.vazio ? "" : ", com a ementa tirada do texto integral"}.</span>`);
     if (avisoFalha) { $("#ac-info").insertAdjacentHTML("beforeend", avisoFalha); $("#ac-denovo").addEventListener("click", () => buscar()); }
     renderLista(true);
@@ -4084,7 +4102,7 @@
       const i1 = somaDias(i0, 6), na = (d) => d && d >= i0 && d <= i1, out = [];
       for (const x of t) {
         if (x.tp === "Tema" && na(x.julg) && (x.tese || x._teseAguarda)) out.push({ tp: "teses", d: x.julg, ds: [["Julgado", x.julg], ["Acórdão publicado", x.pub], ["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.tese ? limparTeseTxt(x.tese) : "Julgado; a tese será divulgada com a publicação do acórdão.", m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ: ${x.tese || "julgado; tese a publicar"}` });
-        if (na(x.afet) && x.q) out.push({ tp: "afet", d: x.afet, ds: [["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.q, m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}${/suspens/i.test(x.info || "") ? " · com suspensão de processos" : ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ (afetado): ${x.q}` });
+        if (na(x.afet) && x.q) out.push({ tp: "afet", d: x.afet, ds: [["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.q, m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}${/suspens/i.test(x.info || "") ? " · com suspensão de processos" : ""}`, ab: `t:${x.tp}|${x.n}`, txt: `${x.tp} ${x.n}/STJ (afetado): ${x.q}` });
       }
       for (const x of inf) if (na(x.d) && !/afeta/i.test(x.sec)) out.push({ tp: "info", d: x.d, ds: [["Julgado", x.julg], ["DJEN", (() => { const m = /DJEN?\s*(?:de\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(x.proc || ""); const iso = m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : ""; return iso && (!x.julg || iso >= x.julg) ? iso : ""; })()], [`Informativo ${x.ed}`, x.d]], ar: x.ar, sa: x.sa, k: x.tema.replace(/\s*Tema\s+\d[\d.]*\.?\s*$/i, "").replace(/\.$/, ""), t: x.t, m: `${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)} · ` : ""}${x.org || x.sec} · Informativo ${x.ed}`, ab: `i:${x.id}`, txt: `${x.tema} ${x.t.replace(/\n/g, " ")} (${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}, ` : ""}${x.org || x.sec}; Informativo ${x.ed})` });
       for (const r of fj) if (na(r.dj) && (r.tese || r.tj)) out.push({ tp: "julg", d: r.dj, ds: [["Julgado", r.dd], ["Publicado", r.dj]], s: r.fs ?? r.s ?? 0, ar: r.ar, sa: r.sa, k: r.as ? frase(r.as).replace(/\.\s+(?=\p{Lu})/gu, " · ") : `${r.cl} ${fmtNumProc(r.n)}`, t: limparTeseTxt(r.tese || r.tj), m: `${r.cl} ${fmtNumProc(r.n)} · ${D.orgaos[r.o] || ""}${r.rel ? ` · ${relatorFmt(r.rel)}` : ""}`, ab: `a:${r.id}`, txt: `${String(r.tese || r.tj).replace(/\n+/g, " ")} (${r.cl} ${fmtNumProc(r.n)}, ${D.orgaos[r.o] || ""})`, esc: true });
@@ -4092,7 +4110,7 @@
       const vistos = new Set();
       for (const x of pl) for (const [tp, n] of x.temas || []) {
         if (x.d > i1 && x.d <= somaDias(i1, 7) && !vistos.has(`${tp}${n}`)) { vistos.add(`${tp}${n}`); const tt = t.idx.get(`${tp}-${n}`);
-          if (tt) out.push({ tp: "prox", d: x.d, ds: [["Sessão", x.d], ["Afetado", tt.afet]], ar: tt.ar, sa: tt.sa, k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[x.o] || tt.org || ""}`, t: tt.q, m: `${x.p} · ${fmtDiaL(x.d)}`, ab: `t:${tt.n}`, txt: `${tt.tp} ${tt.n}/STJ, em pauta em ${fmtData(x.d)}: ${tt.q}` }); }
+          if (tt) out.push({ tp: "prox", d: x.d, ds: [["Sessão", x.d], ["Afetado", tt.afet]], ar: tt.ar, sa: tt.sa, k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[x.o] || tt.org || ""}`, t: tt.q, m: `${x.p} · ${fmtDiaL(x.d)}`, ab: `t:${tt.tp}|${tt.n}`, txt: `${tt.tp} ${tt.n}/STJ, em pauta em ${fmtData(x.d)}: ${tt.q}` }); }
       }
       return out;
     }
@@ -4161,7 +4179,7 @@
       if (ler) { const tt = ler.closest(".ncard").querySelector(".nota-tese"); tt.classList.toggle("aberta"); ler.textContent = tt.classList.contains("aberta") ? "Recolher" : "Continuar lendo"; return; }
       const b = e.target.closest("[data-sem]"); if (!b) return;
       const [k, v] = [b.dataset.sem.slice(0, 1), b.dataset.sem.slice(2)];
-      if (k === "t") abrirTema("Tema", +v);
+      if (k === "t") { const [tp, n] = v.includes("|") ? v.split("|") : ["Tema", v]; abrirTema(tp, +n); }
       if (k === "s") abrirSumula(+v);
       if (k === "i") { const l = await informativos(); abrirInformativo(l.idx.get(v)); }
       if (k === "a") { const r = fj.find((x) => String(x.id) === v); if (r) abrirAcordao(r); }
@@ -4916,6 +4934,9 @@
   const VERSAO = "2026.09.29";
   const NOVIDADES = [
     ["2026-09-29", [
+      "Resumo da semana: controvérsias, IAC e demais precedentes afetados ou em pauta passam a abrir o próprio precedente (antes abriam o tema repetitivo de mesmo número).",
+      "Matéria dos repetitivos e controvérsias definida pela questão submetida e pela tese. Os assuntos da tabela processual, que descrevem o caso de origem, só completam a classificação quando a questão nada indica (por exemplo, o Tema 1225 deixa de aparecer em “Dano moral”).",
+      "Pesquisa: durante a busca, a lista mostra apenas resultados já confirmados, com a contagem parcial e os arquivos examinados; ao terminar, o site indica “Busca completa” ou, se interrompida, quantos arquivos faltaram.",
       "Atualização automática uma vez por dia, às 7h (horário de Brasília).",
     ]],
     ["2026-09-28", [

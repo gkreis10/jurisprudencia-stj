@@ -1359,3 +1359,9 @@ button.mt2-grupo[aria-pressed="true"]::before { background: hsl(var(--h) 65% 45%
 @media (hover: hover) and (pointer: fine) { button.mt2-grupo:hover { background: var(--sup-2); color: var(--tx); } }
 :root[data-theme="dark"] button.mt2-grupo[aria-pressed="true"] { color: hsl(var(--h) 80% 76%); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) button.mt2-grupo[aria-pressed="true"] { color: hsl(var(--h) 80% 76%); } }
+
+/* Pesquisa: enquanto o acervo é percorrido, a lista só mostra resultados já confirmados. */
+.busca-aguarda { list-style: none; display: flex; align-items: center; gap: 10px; padding: 22px 18px; color: var(--tx-2); font-family: var(--ui); font-size: 14px; background: var(--sup); border: 1px dashed var(--linha-2); border-radius: var(--raio); }
+.spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--linha-2); border-top-color: var(--pri); animation: gira .8s linear infinite; }
+@keyframes gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
