@@ -1,6 +1,6 @@
 # Jurisprudência STJ
 
-Site público e gratuito que reúne a jurisprudência do Superior Tribunal de Justiça a partir do [Portal de Dados Abertos do STJ](https://dadosabertos.web.stj.jus.br/). Ele fica hospedado no GitHub Pages, e uma rotina do GitHub Actions o atualiza uma vez por dia, às 7h (horário de Brasília).
+Site de uso interno que reúne a jurisprudência do Superior Tribunal de Justiça a partir do [Portal de Dados Abertos do STJ](https://dadosabertos.web.stj.jus.br/). Ele fica hospedado no Cloudflare Pages, com acesso por usuário e senha, e uma rotina do GitHub Actions o atualiza uma vez por dia, às 7h (horário de Brasília).
 
 **O que o site oferece**
 
@@ -14,45 +14,13 @@ Site público e gratuito que reúne a jurisprudência do Superior Tribunal de Ju
 
 ---
 
-## Como publicar (cerca de 10 minutos, uma única vez)
+## Hospedagem e publicação
 
-### 1. Criar a conta e o repositório
-
-1. Crie uma conta gratuita em <https://github.com/signup>, se ainda não tiver uma.
-2. Acesse <https://github.com/new> e preencha:
-   - **Repository name:** `jurisprudencia-stj` (ou outro nome de sua preferência);
-   - **Public**, que é a opção necessária para o GitHub Pages gratuito;
-   - mantenha desmarcada a opção "Add a README".
-3. Clique em **Create repository**.
-
-### 2. Enviar os arquivos
-
-1. Na página do repositório recém-criado, clique no link **uploading an existing file**.
-2. Descompacte o arquivo `jurisprudencia-stj.zip` no seu computador.
-3. Abra a pasta descompactada, selecione **todo o conteúdo** (incluindo a pasta `.github`) e arraste para a área de upload do navegador.
-   - No Mac, a pasta `.github` fica oculta no Finder. Para exibi-la, use **Cmd + Shift + .** (ponto).
-   - No Windows, ative em Explorador de Arquivos → Exibir → Itens ocultos.
-4. Clique em **Commit changes**.
-
-Confira se a lista de arquivos do repositório mostra `.github/workflows/atualizar.yml`. Sem esse arquivo, a atualização automática não funciona.
-
-### 3. Ativar o GitHub Pages
-
-1. No repositório, abra **Settings → Pages**.
-2. Em **Build and deployment → Source**, escolha **GitHub Actions**.
-
-### 4. Rodar a primeira carga
-
-1. Abra a aba **Actions**. Se o GitHub pedir, clique em **I understand my workflows, go ahead and enable them**.
-2. Clique em **Atualizar e publicar**, depois em **Run workflow** e confirme em **Run workflow**.
-3. A primeira execução baixa os 12 meses de acórdãos e leva de 5 a 15 minutos. As execuções seguintes baixam apenas o que for novo.
-4. Ao terminar, o endereço do site aparece na execução e em **Settings → Pages**. O formato é `https://SEU-USUARIO.github.io/jurisprudencia-stj/`.
-
-Depois disso, não é preciso fazer mais nada: o site se atualiza sozinho.
-
-### Opcional: domínio próprio
-
-Em **Settings → Pages → Custom domain**, informe um endereço como `jurisprudencia.seudominio.com.br` e crie no seu provedor de DNS um registro `CNAME` que aponte para `SEU-USUARIO.github.io`.
+- **Repositório (GitHub, privado):** guarda o código. A rotina `.github/workflows/atualizar.yml` baixa os dados do STJ, monta o site em `_site`, confere o resultado (`scripts/teste-acesso.mjs` e `scripts/teste-site.mjs`) e publica.
+- **Site (Cloudflare Pages, projeto `jurisprudencia-stj-gkreis10`):** a função `functions/_middleware.js` exige usuário e senha em todas as páginas e em todos os arquivos de dados. A senha fica no segredo `SITE_ACCESS_PASSWORD` do projeto na Cloudflare, nunca no repositório.
+- **Credenciais da rotina (GitHub → Settings → Secrets and variables → Actions):** segredos `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID` e variável `CLOUDFLARE_DEPLOY` = `true`.
+- **Quando mudam só arquivos do site** (`site/`, `functions/`), a rotina remonta o site com os dados guardados, sem consultar o STJ. A consulta completa ocorre na execução diária e quando mudam as rotinas ou as fontes.
+- **Limites do plano gratuito da Cloudflare:** 20 mil arquivos por site e 25 MiB por arquivo. A conferência automática avisa a partir de 18 mil arquivos e bloqueia a publicação acima dos limites.
 
 ---
 
@@ -70,8 +38,9 @@ O site nunca estará mais atualizado do que a própria base aberta do STJ. Para 
 ## Manutenção
 
 - **Histórico de mudanças dos temas:** o registro começa na primeira execução e guarda os últimos 180 dias.
-- **Tamanho do acervo:** o parâmetro `--meses 12` em `.github/workflows/atualizar.yml` define quantos meses de acórdãos o site mantém. Doze meses somam cerca de 130 MB, e o GitHub Pages admite até 1 GB.
+- **Tamanho do acervo:** o parâmetro `--desde` em `.github/workflows/atualizar.yml` define desde quando o site mantém os acórdãos. O resumo de cada execução informa o espaço ocupado e a quantidade de arquivos.
 - **Falhas do portal do STJ:** quando uma fonte não responde, o site mantém os dados anteriores e a aba **Sobre** exibe o aviso. A rotina tenta de novo na execução seguinte.
+- **Falha na publicação:** se a publicação na Cloudflare falhar, a execução fica marcada com erro e o GitHub avisa por e-mail; o site continua na versão anterior.
 - **Rotina desativada:** o GitHub desativa rotinas agendadas após 60 dias sem atividade no repositório. A própria rotina se reativa a cada execução, mas, se ela parar, basta abrir **Actions → Atualizar e publicar** e clicar em **Enable workflow**.
 - **Execução local (para testes):**
   ```bash
