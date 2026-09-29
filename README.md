@@ -1,6 +1,6 @@
 # Jurisprudência STJ
 
-Site público e gratuito que reúne a jurisprudência do Superior Tribunal de Justiça a partir do [Portal de Dados Abertos do STJ](https://dadosabertos.web.stj.jus.br/). Ele fica hospedado no GitHub Pages, e uma rotina do GitHub Actions o atualiza duas vezes por dia, às 7h e às 19h (horário de Brasília).
+Site público e gratuito que reúne a jurisprudência do Superior Tribunal de Justiça a partir do [Portal de Dados Abertos do STJ](https://dadosabertos.web.stj.jus.br/). Ele fica hospedado no GitHub Pages, e uma rotina do GitHub Actions o atualiza uma vez por dia, às 7h (horário de Brasília).
 
 **O que o site oferece**
 
