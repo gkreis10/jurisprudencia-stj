@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
   actions: write
 
 concurrency:
@@ -21,21 +19,21 @@ concurrency:
 
 jobs:
   atualizar:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       # Os dados ficam em cache entre as execuções; assim, a cada dia só se
       # baixa o que for novo no Portal de Dados Abertos do STJ.
       - name: Restaurar dados anteriores
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             site/data
@@ -75,7 +73,7 @@ jobs:
 
       - name: Guardar dados
         if: always() && steps.modo.outputs.so_site != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             site/data
@@ -98,9 +96,9 @@ jobs:
       # Conferência automática do site montado: dados, todas as seções, uma pesquisa, uma busca
       # por número e uma verificação de petição. Se falhar, esta execução não publica nada e o
       # site continua na versão anterior (o GitHub avisa por e-mail).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Conferir a proteção da cópia Cloudflare
         run: node scripts/teste-acesso.mjs
@@ -110,30 +108,13 @@ jobs:
           npm install --no-save --no-audit --no-fund --silent playwright-core@1.55.0
           node scripts/teste-site.mjs _site
 
-      # Só ativa após configurar a senha como Secret no Pages e as credenciais
-      # de publicação no GitHub. A falha da cópia não interrompe o GitHub Pages.
-      - name: Publicar cópia protegida na Cloudflare
-        if: ${{ vars.CLOUDFLARE_DEPLOY == 'true' }}
-        continue-on-error: true
+      # Publicação: o site fica só na Cloudflare, protegido por usuário e senha
+      # (functions/_middleware.js). Se a publicação falhar, a execução fica marcada com erro
+      # (o GitHub avisa por e-mail) e o site continua na versão anterior.
+      - name: Publicar na Cloudflare
+        if: ${{ vars.CLOUDFLARE_DEPLOY == 'true' && github.ref == 'refs/heads/main' }}
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy _site --project-name=jurisprudencia-stj-gkreis10 --branch=main
-
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  publicar:
-    needs: atualizar
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4
