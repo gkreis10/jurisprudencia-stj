@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["site/**", "scripts/**", "fontes/**", ".github/workflows/**"]
+    paths: ["site/**", "scripts/**", "fontes/**", "functions/**", ".github/workflows/**"]
 
 permissions:
   contents: read
@@ -76,10 +76,24 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Conferir a proteção da cópia Cloudflare
+        run: node scripts/teste-acesso.mjs
+
       - name: Conferir o site antes de publicar
         run: |
           npm install --no-save --no-audit --no-fund --silent playwright-core@1.55.0
           node scripts/teste-site.mjs _site
+
+      # Só ativa após configurar a senha como Secret no Pages e as credenciais
+      # de publicação no GitHub. A falha da cópia não interrompe o GitHub Pages.
+      - name: Publicar cópia protegida na Cloudflare
+        if: ${{ vars.CLOUDFLARE_DEPLOY == 'true' }}
+        continue-on-error: true
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy _site --project-name=jurisprudencia-stj-gkreis10 --branch=main
 
       - uses: actions/configure-pages@v5
 
@@ -89,6 +103,7 @@ jobs:
 
   publicar:
     needs: atualizar
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
