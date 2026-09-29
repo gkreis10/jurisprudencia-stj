@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -41,14 +43,38 @@ jobs:
           key: dados-stj-${{ github.run_id }}
           restore-keys: dados-stj-
 
+      # Quando o envio muda só a aparência do site (pasta site/, proteção da Cloudflare ou
+      # README), não é preciso consultar o STJ de novo: o site é remontado com os dados
+      # guardados. A consulta completa continua na execução diária das 7h e sempre que
+      # mudarem as rotinas (scripts/), as fontes (fontes/) ou este arquivo.
+      - name: Verificar se é preciso consultar o STJ
+        id: modo
+        env:
+          ANTES: ${{ github.event.before }}
+        run: |
+          so_site=false
+          if [ "${{ github.event_name }}" = "push" ] && [ -f site/data/manifest.json ]; then
+            if mudou=$(git diff --name-only "$ANTES" "$GITHUB_SHA" 2>/dev/null) && [ -n "$mudou" ]; then
+              if ! printf '%s\n' "$mudou" | grep -qvE '^(site/|functions/|README\.md$)'; then
+                so_site=true
+              fi
+            fi
+          fi
+          echo "so_site=$so_site" >> "$GITHUB_OUTPUT"
+          if [ "$so_site" = true ]; then
+            echo "Só o site mudou: usa os dados guardados, sem consultar o STJ." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Instalar dependências
+        if: steps.modo.outputs.so_site != 'true'
         run: pip install pdfplumber
 
       - name: Atualizar dados
+        if: steps.modo.outputs.so_site != 'true'
         run: python scripts/atualizar.py --desde 2000-01 --dias-radar 15
 
       - name: Guardar dados
-        if: always()
+        if: always() && steps.modo.outputs.so_site != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
