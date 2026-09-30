@@ -1365,3 +1365,15 @@ button.mt2-grupo[aria-pressed="true"]::before { background: hsl(var(--h) 65% 45%
 .spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--linha-2); border-top-color: var(--pri); animation: gira .8s linear infinite; }
 @keyframes gira { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* Até quando vai cada fonte, junto do indicador da barra lateral */
+.lateral-rodape small .lat-cob { display: block; color: var(--nav-tx-2); }
+/* Selos que abrem o precedente (firmou a tese / processo vinculado) */
+button.selo-link { border: 0; font-family: inherit; cursor: pointer; }
+button.selo-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+button.selo-link:focus-visible { outline: 2px solid var(--pri); outline-offset: 2px; }
+/* Resumo da semana: outros precedentes dos mesmos processos */
+.nota-vinc { margin: 8px 0 0; font-family: var(--ui); font-size: 13px; color: var(--tx-2); }
+/* Verificar petição: por que cada sugestão apareceu */
+.cit-porque { margin: 6px 0 0; font-family: var(--ui); font-size: 12.5px; color: var(--tx-2); }
+.cit-porque b { font-weight: 600; color: var(--tx); }

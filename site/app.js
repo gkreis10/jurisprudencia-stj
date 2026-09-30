@@ -254,13 +254,13 @@
   }
   const MOTIVOS = {
     ce: "Corte Especial", secao: "Seção", afetacao: "Afetação ao rito repetitivo", eresp: "Embargos de divergência",
-    iac: "IAC / PUIL", tese: "Tese firmada", repetitivo: "Recurso repetitivo", mudanca: "Sinal de mudança de entendimento",
+    iac: "IAC / PUIL", tese: "Tese firmada", repetitivo: "Menção a recurso repetitivo", mudanca: "Sinal de mudança de entendimento",
     inedito: "Questão nova", modulacao: "Modulação de efeitos", distincao: "Distinção (distinguishing)", divergencia: "Divergência",
   };
   // O que cada marca significa (texto do cursor e da ajuda).
   const MOTIVOS_DICA = {
     afetacao: "O STJ decidiu (ou propôs) julgar a questão pelo rito dos recursos repetitivos: a tese que vier a ser firmada valerá para todos os casos iguais, e os processos sobre o tema podem ficar suspensos.",
-    repetitivo: "Julgado ligado a um tema de recurso repetitivo: aplica ou firma tese de observância obrigatória (art. 927, III, do CPC).",
+    repetitivo: "A ementa menciona o rito dos recursos repetitivos ou um tema repetitivo. O processo não consta da lista oficial de processos do tema: o julgado cita ou aplica a tese, sem tê-la firmado.",
     mudanca: "A ementa fala em superação ou mudança de entendimento (overruling): o julgado pode ter alterado a jurisprudência anterior.",
     inedito: "A ementa diz tratar de questão nova, ainda sem precedentes no STJ.",
     modulacao: "A ementa trata de modulação de efeitos: o tribunal definiu a partir de quando o entendimento vale.",
@@ -269,7 +269,30 @@
   };
   // No cartão, só as marcas objetivas que não repetem o título; as que vêm das palavras da ementa
   // ficam na página do julgado, com a explicação.
-  const MOTIVOS_CARTAO = ["afetacao", "repetitivo"], MOTIVOS_TEXTO = ["mudanca", "inedito", "modulacao", "distincao", "divergencia"];
+  const MOTIVOS_CARTAO = ["afetacao"], MOTIVOS_TEXTO = ["mudanca", "inedito", "modulacao", "distincao", "divergencia"];
+  // Relação do acórdão com os precedentes qualificados, pela lista oficial de processos de cada
+  // tema: "firmou a tese" (acórdão do próprio julgamento do tema), "processo vinculado" (o processo
+  // está na lista, mas o acórdão é outro, como embargos) ou nenhuma (a ementa só cita o tema, o que
+  // aparece na linha "Cita Tema …").
+  const REF_REP = { p: null, pt: null, t: null };
+  function prepararRefRep() {
+    if (!REF_REP.p) REF_REP.p = Promise.all([procTemas(), temas()]).then(([pt, t]) => { REF_REP.pt = pt; REF_REP.t = t; }).catch(() => {});
+    return REF_REP.p;
+  }
+  function relRepetitivo(r) {
+    if (!REF_REP.pt || !r.reg) return null;
+    const vs = REF_REP.pt.porReg.get(r.reg); if (!vs?.length) return null;
+    const firmou = vs.find((v) => { const x = REF_REP.t.idx.get(`${v.tp}-${v.n}`); return v.tp !== "Controvérsia" && x?.julg && r.dd === x.julg && !/^(EDcl|AgInt|AgRg)\b/.test(r.cl || ""); });
+    const v = firmou || vs.find((y) => y.tp === "Tema") || vs[0];
+    return { k: firmou ? "firmou" : "vinculado", tp: v.tp, n: v.n, mais: vs.length - 1 };
+  }
+  function seloRep(r) {
+    const x = relRepetitivo(r); if (!x) return "";
+    const nome = `${x.tp} ${fmtNumProc(x.n)}`;
+    return x.k === "firmou"
+      ? `<button type="button" class="selo ok selo-link" data-abrir-precedente="${esc(x.tp)}|${x.n}" title="Acórdão do julgamento que firmou a tese do ${esc(nome)}. Toque para ver a tese.">Firmou a tese · ${esc(nome)}</button>`
+      : `<button type="button" class="selo pri selo-link" data-abrir-precedente="${esc(x.tp)}|${x.n}" title="O processo consta da lista oficial de processos vinculados ao ${esc(nome)}${x.mais ? ` (e a mais ${x.mais} precedente${x.mais > 1 ? "s" : ""})` : ""}. Toque para abrir.">Processo vinculado · ${esc(nome)}</button>`;
+  }
   const seloMotivo = (k) => `<span class="selo pri" title="${esc(MOTIVOS_DICA[k] || "")}">${esc(MOTIVOS[k])}</span>`;
   const nivelAc = (s) => (s >= 10 ? "alta" : s >= 6 ? "rel" : s >= 2 ? "acomp" : "");
   const NIVEL_TX = { alta: "Sinal forte de relevância", rel: "Relevante", acomp: "Acompanhar" };
@@ -737,9 +760,18 @@
     for (const f of fs) for (const x of f.l) if (sn.has(x[0]) && (!sr.size || sr.has(x[1]) || nums.includes(x[0]))) l.push(f.r ? [...x.slice(0, 6), f.r[x[6]] || "", x[7] || "", x[8] || ""] : x);
     return { m: fs[0]?.m || [], o: fs[0]?.o || [], l };
   }
+  // Pontuação colada à palavra seguinte, sinal de quebra de linha perdida na origem. Não mexe em números
+  // ("1.234", "10:30"), siglas ("S.A.") nem abreviações seguidas de minúscula.
+  const espacarColados = (t) => String(t)
+    .replace(/([\p{Ll}\d)])([;:])(?=[\p{L}(])/gu, "$1$2 ")
+    .replace(/([\p{L}\d)])\.(?=\p{Lu}\p{Ll})/gu, "$1. ")
+    .replace(/\)(?=\p{L})/gu, ") ")
+    .replace(/(\s(?:e|ou))\((?=[a-z]\))/g, "$1 (");
   const temas = () => carregar("temas", async (t) => {
     const hist = await getJSON("data/historico_temas.json").catch(() => []);
     for (const x of t) {
+      // A base do STJ perde algumas quebras de linha ("desde que:(a)", "Seção).Vide"): devolve o espaço.
+      for (const k of ["q", "tese", "anot", "info", "delim", "ant", "leg"]) if (x[k]) x[k] = espacarColados(x[k]);
       x._n = norm([x.tp, x.n, x.q, x.tese, x.ass, x.anot, x.info, x.delim, x.leg, x.sum, x.org, x.sit].join(" "));
       x._g = grupoSituacao(x.sit);
       if (/^\*?\s*aguardando/i.test(x.tese || "")) { x._teseAguarda = x.tese.replace(/^\*\s*/, ""); x.tese = ""; }
@@ -954,7 +986,7 @@
     const [cab, ...corpo] = em.split("\n");
     const niv = nivelAc(r.s ?? 0) === "alta" ? "alta" : "";
     const salvo = !!P.salvos[`a:${r.id}`];
-    const motivos = (r.rz || []).filter((k) => MOTIVOS_CARTAO.includes(k)).slice(0, 1).map(seloMotivo).join("");
+    const motivos = (r.rz || []).filter((k) => MOTIVOS_CARTAO.includes(k)).slice(0, 1).map(seloMotivo).join("") || seloRep(r);
     const areas = seloMat(r.ar, r.sa);
     const temCorpo = corpo.length > 0;
     const dups = r._dup?.length ? `<p class="duplic" title="${esc(r._dup.map((d) => `${d.cl} ${fmtNumProc(d.n)}`).join(", "))}">+ ${r._dup.length} processo(s) com a mesma ementa</p>` : "";
@@ -1003,8 +1035,9 @@
     REG_AC.set(String(r.id), r);
     const [cab, ...corpo] = (r.em || "").split("\n");
     const salvo = !!P.salvos[`a:${r.id}`];
-    const motivos = (r.rz || []).filter((k) => MOTIVOS_CARTAO.includes(k)).map(seloMotivo).join("");
-    const mencoes = (r.rz || []).filter((k) => MOTIVOS_TEXTO.includes(k));
+    await prepararRefRep();
+    const motivos = (r.rz || []).filter((k) => MOTIVOS_CARTAO.includes(k)).map(seloMotivo).join("") + seloRep(r);
+    const mencoes = (r.rz || []).filter((k) => MOTIVOS_TEXTO.includes(k) || (k === "repetitivo" && !relRepetitivo(r)));
     const areas = seloMat(r.ar, r.sa, 3);
     const extra = [["Relator(a)", r.rel ? relatorFmt(r.rel) : ""], ["Julgamento", fmtData(r.dd)], ["Publicação", `${(r.djt || "").split(/\s/)[0] || "DJ"} ${fmtData(r.dj)}`], ["Tema", r.tema], ["Notas", r.notas], ["Informações complementares", r.info], ["Referências legislativas", (r.leg || []).join("\n")]]
       .filter(([, v]) => v).map(([l, v]) => `<dt>${l}</dt><dd>${esc(v).replace(/\n/g, "<br>")}</dd>`).join("");
@@ -1440,6 +1473,7 @@
   // nas expressões decisivas, filtros facetados e fila que aprende com a leitura.
   const FEED_TIPOS = {
     tese: { rot: "Tese firmada", selo: "Tese firmada", longo: "Tese firmada em repetitivo", cls: "ok", peso: 100 },
+    julgtema: { rot: "Julgado, tese a publicar", selo: "Julgado · tese a publicar", longo: "Tema julgado, tese ainda não publicada", cls: "acomp", peso: 88 },
     afetacao: { rot: "Tema afetado", selo: "Tema afetado", longo: "Novo tema afetado", cls: "rel", peso: 75 },
     pauta: { rot: "Em pauta", selo: "Vai a julgamento", longo: "Repetitivo em pauta", cls: "alta", peso: 70 },
     publicado: { rot: "Acórdão publicado", selo: "Acórdão publicado", longo: "Acórdão de repetitivo publicado", cls: "acomp", peso: 55 },
@@ -1469,7 +1503,9 @@
     const idade = (d) => Math.abs((new Date(hoje) - new Date(d)) / 864e5);
     const deTema = (x, extra) => ({ t: x, ar: x.ar || [], sa: x.sa || [], org: x.org || "", tese: !!x.tese, _n: norm(`${x.q || ""} ${x.tese || ""} ${x.ass || ""}`), ...extra });
     for (const x of t) {
-      if (x.julg >= desde && (x.tese || x._teseAguarda)) itens.push(deTema(x, { k: `tese:${x.tp}-${x.n}`, tipo: "tese", d: x.julg }));
+      // Tema julgado com a tese ainda por publicar não é "tese firmada": fica num tipo próprio.
+      if (x.julg >= desde && x.tese) itens.push(deTema(x, { k: `tese:${x.tp}-${x.n}`, tipo: "tese", d: x.julg }));
+      else if (x.julg >= desde && x._teseAguarda) itens.push(deTema(x, { k: `tese:${x.tp}-${x.n}`, tipo: "julgtema", d: x.julg }));
       else if (x.pub >= desde && x.tese) itens.push(deTema(x, { k: `pub:${x.tp}-${x.n}`, tipo: "publicado", d: x.pub }));
       if (x.afet >= desde && x.q) itens.push(deTema(x, { k: `afet:${x.tp}-${x.n}`, tipo: "afetacao", d: x.afet, tese: false }));
     }
@@ -1477,7 +1513,9 @@
     const vistosP = new Set();
     for (const p of pl) {
       if (!p.temas?.length || p.d > lim || p.d < hoje) continue;
-      for (const [tp, n] of p.temas) {
+      // Processo ligado a um tema e a uma controvérsia: basta o cartão do tema.
+      const alvos = p.temas.some(([tp]) => tp === "Tema") ? p.temas.filter(([tp]) => tp === "Tema") : p.temas;
+      for (const [tp, n] of alvos) {
         const x = t.idx.get(`${tp}-${n}`); const k = `pauta:${tp}-${n}:${p.d}`;
         if (x && !vistosP.has(k)) { vistosP.add(k); itens.push(deTema(x, { k, tipo: "pauta", d: p.d, p, org: D.orgaos[p.o] || x.org || "", rel: p.rel || "", tese: false })); }
       }
@@ -1520,7 +1558,7 @@
     itens.sort((a, b) => b.p0 - a.p0);
     // Intercala tipos para o ritmo da leitura não ficar monótono.
     const filas = {}; itens.forEach((i) => (filas[i.tipo] = filas[i.tipo] || []).push(i));
-    const ordem = ["tese", "informativo", "julgado", "afetacao", "informativo", "julgado", "pauta", "informativo", "julgado", "publicado", "informativo", "julgado"];
+    const ordem = ["tese", "informativo", "julgado", "julgtema", "afetacao", "informativo", "julgado", "pauta", "informativo", "julgado", "publicado", "informativo", "julgado"];
     const out = []; let vazias = 0, j = 0, ultArea = "";
     const tirar = (f, tipo) => {
       // Entre julgados, evita duas matérias iguais seguidas quando há alternativa próxima.
@@ -1580,7 +1618,7 @@
   const CONQUISTAS = [
     { id: "seq", rot: "Constância", ico: "raio", niveis: [3, 5, 10, 20, 40], valor: () => melhorSequencia(), desc: (n) => `${n} dias úteis seguidos com a meta cumprida` },
     { id: "total", rot: "Leitor assíduo", ico: "arquivo", niveis: [25, 100, 300, 700, 1500], valor: () => hab().total, desc: (n) => `${fmtInt(n)} novidades lidas` },
-    { id: "rep", rot: "Repetitivos em dia", ico: "repetitivos", niveis: [10, 40, 100, 250, 500], valor: () => ["tese", "afetacao", "publicado", "pauta"].reduce((a, k) => a + (hab().tipos[k] || 0), 0), desc: (n) => `${fmtInt(n)} teses firmadas, temas afetados e pautas de repetitivos` },
+    { id: "rep", rot: "Repetitivos em dia", ico: "repetitivos", niveis: [10, 40, 100, 250, 500], valor: () => ["tese", "julgtema", "afetacao", "publicado", "pauta"].reduce((a, k) => a + (hab().tipos[k] || 0), 0), desc: (n) => `${fmtInt(n)} teses firmadas, temas afetados e pautas de repetitivos` },
     { id: "info", rot: "Curadoria do STJ", ico: "destaques", niveis: [20, 80, 200, 500], valor: () => hab().tipos.informativo || 0, desc: (n) => `${fmtInt(n)} notas do Informativo` },
     { id: "fila", rot: "Fila em dia", ico: "semana", niveis: [1, 5, 15, 40, 100], valor: () => Object.keys(hab().zerou).length, desc: (n) => `chegou ao fim da fila em ${n} dia${n > 1 ? "s" : ""}` },
     { id: "mat", rot: "Especialista", ico: "sumulas", niveis: [30, 100, 250, 600], valor: () => Math.max(0, ...Object.values(hab().areas)), desc: (n) => `${fmtInt(n)} leituras em ${esc(AREAS[Object.entries(hab().areas).sort((a, b) => b[1] - a[1])[0]?.[0]] || "uma matéria")}` },
@@ -1680,12 +1718,12 @@
     } else if (it.t) {
       const x = it.t;
       kicker = `${x.tp} ${x.n} · ${esc(it.org || x.org || "")}`;
-      if (it.tipo === "tese" || it.tipo === "publicado") {
+      if (it.tipo === "tese" || it.tipo === "publicado" || it.tipo === "julgtema") {
         rotTexto = x.tese ? "O STJ fixou" : "Tema julgado";
         principal = x.tese ? esc(x.tese) : `Julgado em ${fmtData(x.julg)}. A tese será divulgada com a publicação do acórdão.`;
         marcar = !!x.tese;
         apoio = x.q ? `<b>Questão:</b> ${esc(x.q)}` : "";
-        meta = it.tipo === "tese" ? `Julgado em ${fmtData(x.julg)}` : `Acórdão publicado em ${fmtData(x.pub)}`;
+        meta = it.tipo === "publicado" ? `Acórdão publicado em ${fmtData(x.pub)}` : `Julgado em ${fmtData(x.julg)}`;
       } else if (it.tipo === "afetacao") {
         rotTexto = "O STJ vai decidir";
         principal = esc(x.q);
@@ -1749,7 +1787,7 @@
     const naoLidos = vis.filter((x) => !lidos()[x.k]).length;
     const por = (tps) => vis.filter((x) => tps.includes(x.tipo) && !lidos()[x.k]).length;
     const blocos = [
-      [["tese", "publicado"], "teses firmadas", "ok"], [["afetacao"], "temas afetados", "rel"],
+      [["tese", "publicado"], "teses firmadas", "ok"], [["julgtema"], "temas julgados, tese a publicar", "acomp"], [["afetacao"], "temas afetados", "rel"],
       [["pauta"], "repetitivos em pauta", "alta"], [["informativo"], "destaques do Informativo", "info"], [["julgado"], "julgados relevantes", "pri"],
     ].map(([tps, rot, cls]) => ({ tps, rot, cls, n: por(tps) })).filter((b) => b.n);
     const contA = {}; vis.forEach((x) => { if (!lidos()[x.k]) x.ar.forEach((a) => (contA[a] = (contA[a] || 0) + 1)); });
@@ -1797,7 +1835,9 @@
       <ul class="lista-ajuda">
         <li><span class="selo alta">Sinal forte de relevância</span> O site pontua cada acórdão (órgão julgador, tese registrada, afetação, menção a mudança de entendimento etc.). Com 10 pontos ou mais, o julgado recebe este selo. É uma sugestão de leitura, não a força vinculante do precedente; o cursor sobre o selo mostra os pontos.</li>
         <li><span class="selo pri">Afetação ao rito repetitivo</span> O STJ vai firmar uma tese para todos os casos iguais; os processos sobre o tema podem ficar suspensos.</li>
-        <li><span class="selo pri">Recurso repetitivo</span> Julgado ligado a um tema repetitivo, cuja tese é de observância obrigatória.</li>
+        <li><span class="selo ok">Firmou a tese · Tema N</span> Acórdão do próprio julgamento do tema repetitivo: é o precedente que fixou a tese (art. 927, III, do CPC).</li>
+        <li><span class="selo pri">Processo vinculado · Tema N</span> O processo consta da lista oficial do tema, mas o acórdão é outro (por exemplo, embargos de declaração ou julgamento anterior à afetação).</li>
+        <li><span class="nota">Cita Tema N</span> Na linha abaixo da ementa: o julgado apenas menciona o tema, sem integrá-lo.</li>
         <li>Na página do julgado, “A ementa menciona” indica, pelas palavras da ementa, <b>distinção</b> (distinguishing: o precedente não se aplica porque os fatos são diferentes), <b>divergência</b> (dissídio entre tribunais ou órgãos, muitas vezes só para dizer que não foi demonstrado), <b>mudança de entendimento</b> (overruling), <b>questão nova</b> e <b>modulação de efeitos</b>.</li>
       </ul>${COMO_BUSCAR()}`)
       : ajuda("O que é o Informativo do STJ", `
@@ -1818,7 +1858,9 @@
       <ul class="lista-ajuda">
         <li><span class="selo alta">Sinal forte de relevância</span> O site pontua cada acórdão (órgão julgador, tese registrada, afetação, menção a mudança de entendimento etc.). Com 10 pontos ou mais, o julgado recebe este selo. É uma sugestão de leitura, não a força vinculante do precedente; o cursor sobre o selo mostra os pontos.</li>
         <li><span class="selo pri">Afetação ao rito repetitivo</span> O STJ vai firmar uma tese para todos os casos iguais; os processos sobre o tema podem ficar suspensos.</li>
-        <li><span class="selo pri">Recurso repetitivo</span> Julgado ligado a um tema repetitivo, cuja tese é de observância obrigatória.</li>
+        <li><span class="selo ok">Firmou a tese · Tema N</span> Acórdão do próprio julgamento do tema repetitivo: é o precedente que fixou a tese (art. 927, III, do CPC).</li>
+        <li><span class="selo pri">Processo vinculado · Tema N</span> O processo consta da lista oficial do tema, mas o acórdão é outro (por exemplo, embargos de declaração ou julgamento anterior à afetação).</li>
+        <li><span class="nota">Cita Tema N</span> Na linha abaixo da ementa: o julgado apenas menciona o tema, sem integrá-lo.</li>
         <li>Na página do julgado, “A ementa menciona” indica, pelas palavras da ementa, <b>distinção</b> (distinguishing: o precedente não se aplica porque os fatos são diferentes), <b>divergência</b> (dissídio entre tribunais ou órgãos, muitas vezes só para dizer que não foi demonstrado), <b>mudança de entendimento</b> (overruling), <b>questão nova</b> e <b>modulação de efeitos</b>.</li>
       </ul>${COMO_BUSCAR()}`),
     repetitivos: () => ajuda("O que são os Precedentes qualificados", `
@@ -3613,7 +3655,7 @@
   }
   async function vDestaques(main, p) {
     if (p.get("aba") !== "auto") return vInformativos(main, p);
-    const ds = await destaques();
+    const [ds] = await Promise.all([destaques(), prepararRefRep()]);
     const meses = [...new Set(ds.map((r) => r.dj.slice(0, 7)))].sort().reverse();
     const f = { a: p.get("a") || "", m: p.get("m") || "todos", o: p.get("o") || "", n: p.get("n") || "", q: p.get("q") || "", t: p.get("t") === "1", s: p.get("s") || "rel" };
     main.innerHTML = `${abasDestaques("auto")}
@@ -3811,6 +3853,8 @@
   const rotPeriodo = (p, meses) => (p === "mes" ? "os publicados no mês corrente" : p === "todo" ? "todo o acervo" : /^desde:/.test(p) ? `desde ${p.slice(6)}` : /^a:\d{4}$/.test(p) ? `ano de ${p.slice(2)}` : meses.length === 1 ? fmtMesL(meses[0]) : meses.length ? `${fmtMes(meses[meses.length - 1])} a ${fmtMes(meses[0])}` : "período sem acórdãos");
   async function buscar() {
     const tk = ++AC.token;
+    const refRep = prepararRefRep();
+    AC.mostrouParcial = false;
     $("#ac-lista")?.setAttribute("aria-busy", "true");
     const f = { ...AC.f, q: $("#ac-q").value, c: (AC.f.c || "").trim(), rl: (AC.f.rl || "").trim(), n: digitos(AC.f.n) };
     gravarHash("pesquisa", { ...f, p: f.p === "todo" ? "" : f.p, s: f.s === "auto" ? "" : f.s, r: f.r ? "" : "0", x: f.x, t: f.t });
@@ -3938,21 +3982,28 @@
       // Período longo: percorre os arquivos do mais recente ao mais antigo, sem guardá-los na memória.
       prog.hidden = false; prog.firstElementChild.style.width = "0";
       let i = 0, feitos = 0, mesAt = pares[0]?.[0] || "";
+      let tInfo = 0;
       const mostrar = (fim) => {
         if (tk !== AC.token) return;
+        tInfo = Date.now();
         prog.firstElementChild.style.width = `${(feitos / pares.length) * 100}%`;
         if (fim) return;
-        $("#ac-info").innerHTML = `<b>Busca em andamento</b> · ${fmtInt(total)} resultado(s) confirmado(s) até agora · ${fmtInt(feitos)} de ${fmtInt(pares.length)} arquivos mensais ${pares.length < paresTodos ? "com os termos " : ""}examinados (${Math.round((feitos / pares.length) * 100)}%, agora em ${fmtMesL(mesAt)}) · a lista e a ordem ainda podem mudar <button type="button" class="btn btn-fant btn-peq" id="ac-parar">Parar</button>`;
+        const novos = desenhados ? res.length - desenhados : 0;
+        $("#ac-info").innerHTML = `<b>Busca em andamento</b> · ${fmtInt(total)} resultado(s) confirmado(s) · ${fmtInt(feitos)} de ${fmtInt(pares.length)} arquivos mensais ${pares.length < paresTodos ? "com os termos " : ""}examinados (${Math.round((feitos / pares.length) * 100)}%, agora em ${fmtMesL(mesAt)}) ${novos > 0 ? `<button type="button" class="btn btn-claro btn-peq" id="ac-novos">Mostrar ${fmtInt(novos)} novo(s)</button> ` : ""}<button type="button" class="btn btn-fant btn-peq" id="ac-parar">Parar</button>`;
         $("#ac-parar")?.addEventListener("click", () => { AC.parar = tk; });
+        $("#ac-novos")?.addEventListener("click", () => { desenharParcial(); mostrar(); });
       };
-      // Lista parcial: só com resultados confirmados, redesenhada a cada 1,5 segundo enquanto houver novos.
-      let desenhados = 0, tRender = 0;
-      const parcialLista = () => {
-        if (tk !== AC.token || res.length === desenhados || Date.now() - tRender < 1500) return;
-        desenhados = res.length; tRender = Date.now();
+      // Lista parcial: só com resultados confirmados. Os primeiros aparecem assim que chegam; depois,
+      // a lista fica parada (para não mudar o que o usuário está lendo) e os novos entram pelo botão
+      // "Mostrar N novo(s)" ou ao fim da busca.
+      let desenhados = 0;
+      const desenharParcial = () => {
+        if (tk !== AC.token) return;
+        desenhados = res.length; AC.mostrouParcial = true;
         res.sort(ord); AC.lista = agrupar(res.slice(0, 500).map((r) => Object.assign(r, { _dup: [] }))); AC.termos = cons.termos; renderLista(true);
         $("#ac-lista").setAttribute("aria-busy", "true");
       };
+      const parcialLista = () => { if (!desenhados && res.length) { desenharParcial(); mostrar(); } };
       const trab = async () => {
         while (i < pares.length && tk === AC.token && AC.parar !== tk) {
           if (ordem !== "rel" && res.length >= MAX_RES) { cortado = true; break; }
@@ -3961,7 +4012,7 @@
           try { l = D.shards.has(`${m}/${o}`) ? await shard(m, o) : await getJSONgz(`data/acordaos/${m}/${o}.json`, ctrl.signal); } catch { if (!ctrl.signal.aborted && tk === AC.token) falhas++; }
           if (tk !== AC.token) return;
           consumir(l); feitos++;
-          if (feitos % 10 === 0) mostrar();
+          if (feitos % 10 === 0 || Date.now() - tInfo > 1000) mostrar();
           parcialLista();
         }
       };
@@ -4030,7 +4081,16 @@
     else $("#ac-info").innerHTML = `${situacao}<b>${fmtInt(baseN + nMes)}</b> resultado(s)${corte}${agrupados} · ${rot}${lidosIB}${parcial}${f.r ? " · rotina oculta" : ""} · ${ordem === "rel" ? "por relevância" : ordem === "julg" ? "por data de julgamento" : "mais recentes primeiro"} ${explicacaoHTML(cons)}`;
     if (nMes) $("#ac-info").insertAdjacentHTML("beforeend", ` <span class="nota-mes">Inclui ${fmtInt(nMes)} publicado(s) em ${rotMesCorrente()}, ainda sem o arquivo mensal do STJ${f.se && cons.vazio ? "" : ", com a ementa tirada do texto integral"}.</span>`);
     if (avisoFalha) { $("#ac-info").insertAdjacentHTML("beforeend", avisoFalha); $("#ac-denovo").addEventListener("click", () => buscar()); }
-    renderLista(true);
+    await refRep; if (tk !== AC.token) return;
+    // Se o usuário já está lendo a lista parcial, ela não é trocada de repente: um botão aplica a
+    // ordem final.
+    const ulF = $("#ac-lista");
+    const lendo = AC.mostrouParcial && window.scrollY > ulF.getBoundingClientRect().top + window.scrollY - 160;
+    if (lendo) {
+      $("#ac-info").insertAdjacentHTML("beforeend", ` <button type="button" class="btn btn-claro btn-peq" id="ac-final">Ver a lista completa na ordem final</button>`);
+      ulF.removeAttribute("aria-busy");
+      $("#ac-final").addEventListener("click", () => { renderLista(true); ulF.scrollIntoView({ block: "start" }); });
+    } else renderLista(true);
   }
   // Acórdãos do mês corrente: publicados no DJEN e ainda fora do arquivo mensal do STJ (que traz a
   // ementa). Entram na mesma lista da Pesquisa, com etiqueta própria; os que já têm o texto integral
@@ -4086,11 +4146,13 @@
   const fmtCurta = (iso) => { const d = new Date(iso + "T12:00:00Z"); return `${d.getUTCDate()} de ${MESES_L[d.getUTCMonth()]}`; };
   const TIPOS_SEM = {
     teses: { rot: "Teses firmadas", selo: "Tese firmada", cls: "ok", longo: "Teses firmadas em repetitivos" },
+    julgtema: { rot: "Julgados, tese a publicar", selo: "Julgado · tese a publicar", cls: "acomp", longo: "Temas julgados, com a tese ainda por publicar" },
     info: { rot: "Informativo", selo: "Informativo", cls: "info", longo: "Notas do Informativo do STJ" },
     afet: { rot: "Temas afetados", selo: "Tema afetado", cls: "rel", longo: "Novos temas afetados" },
     julg: { rot: "Julgados com tese", selo: "Julgado", cls: "pri", longo: "Julgados com tese publicados" },
     sum: { rot: "Súmulas", selo: "Súmula", cls: "acomp", longo: "Súmulas aprovadas" },
-    prox: { rot: "Em pauta", selo: "Em pauta", cls: "alta", longo: "Repetitivos em pauta na semana seguinte" },
+    prox: { rot: "Temas em pauta", selo: "Em pauta", cls: "alta", longo: "Temas repetitivos em pauta na semana seguinte" },
+    proxc: { rot: "Controvérsias em pauta", selo: "Em pauta", cls: "alta", longo: "Controvérsias e outros precedentes em pauta na semana seguinte" },
   };
   async function vSemana(main, p) {
     const hoje = hojeISO(), esta = segundaDe(hoje);
@@ -4101,16 +4163,32 @@
     function novidades(i0) {
       const i1 = somaDias(i0, 6), na = (d) => d && d >= i0 && d <= i1, out = [];
       for (const x of t) {
-        if (x.tp === "Tema" && na(x.julg) && (x.tese || x._teseAguarda)) out.push({ tp: "teses", d: x.julg, ds: [["Julgado", x.julg], ["Acórdão publicado", x.pub], ["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.tese ? limparTeseTxt(x.tese) : "Julgado; a tese será divulgada com a publicação do acórdão.", m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ: ${x.tese || "julgado; tese a publicar"}` });
+        if (x.tp === "Tema" && na(x.julg) && (x.tese || x._teseAguarda)) out.push({ tp: x.tese ? "teses" : "julgtema", d: x.julg, ds: [["Julgado", x.julg], ["Acórdão publicado", x.pub], ["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.tese ? limparTeseTxt(x.tese) : "Julgado; a tese será divulgada com a publicação do acórdão.", m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ: ${x.tese || "julgado; tese a publicar"}` });
         if (na(x.afet) && x.q) out.push({ tp: "afet", d: x.afet, ds: [["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.q, m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}${/suspens/i.test(x.info || "") ? " · com suspensão de processos" : ""}`, ab: `t:${x.tp}|${x.n}`, txt: `${x.tp} ${x.n}/STJ (afetado): ${x.q}` });
       }
       for (const x of inf) if (na(x.d) && !/afeta/i.test(x.sec)) out.push({ tp: "info", d: x.d, ds: [["Julgado", x.julg], ["DJEN", (() => { const m = /DJEN?\s*(?:de\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(x.proc || ""); const iso = m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : ""; return iso && (!x.julg || iso >= x.julg) ? iso : ""; })()], [`Informativo ${x.ed}`, x.d]], ar: x.ar, sa: x.sa, k: x.tema.replace(/\s*Tema\s+\d[\d.]*\.?\s*$/i, "").replace(/\.$/, ""), t: x.t, m: `${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)} · ` : ""}${x.org || x.sec} · Informativo ${x.ed}`, ab: `i:${x.id}`, txt: `${x.tema} ${x.t.replace(/\n/g, " ")} (${x.p?.[0] ? `${x.p[0].cl} ${fmtNumProc(x.p[0].n)}, ` : ""}${x.org || x.sec}; Informativo ${x.ed})` });
       for (const r of fj) if (na(r.dj) && (r.tese || r.tj)) out.push({ tp: "julg", d: r.dj, ds: [["Julgado", r.dd], ["Publicado", r.dj]], s: r.fs ?? r.s ?? 0, ar: r.ar, sa: r.sa, k: r.as ? frase(r.as).replace(/\.\s+(?=\p{Lu})/gu, " · ") : `${r.cl} ${fmtNumProc(r.n)}`, t: limparTeseTxt(r.tese || r.tj), m: `${r.cl} ${fmtNumProc(r.n)} · ${D.orgaos[r.o] || ""}${r.rel ? ` · ${relatorFmt(r.rel)}` : ""}`, ab: `a:${r.id}`, txt: `${String(r.tese || r.tj).replace(/\n+/g, " ")} (${r.cl} ${fmtNumProc(r.n)}, ${D.orgaos[r.o] || ""})`, esc: true });
       for (const x of sm) if (na(x.julg) || na(x.pub)) out.push({ tp: "sum", d: x.julg || x.pub, ds: [["Aprovada", x.julg], ["Publicada", x.pub]], ar: x.ar, sa: x.sa, k: `Súmula ${x.n} · ${x.org || ""}`, t: x.t, m: `Súmula ${x.n}/STJ · ${x.org || ""}`, ab: `s:${x.n}`, txt: `Súmula ${x.n}/STJ: ${x.t}` });
-      const vistos = new Set();
-      for (const x of pl) for (const [tp, n] of x.temas || []) {
-        if (x.d > i1 && x.d <= somaDias(i1, 7) && !vistos.has(`${tp}${n}`)) { vistos.add(`${tp}${n}`); const tt = t.idx.get(`${tp}-${n}`);
-          if (tt) out.push({ tp: "prox", d: x.d, ds: [["Sessão", x.d], ["Afetado", tt.afet]], ar: tt.ar, sa: tt.sa, k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[x.o] || tt.org || ""}`, t: tt.q, m: `${x.p} · ${fmtDiaL(x.d)}`, ab: `t:${tt.tp}|${tt.n}`, txt: `${tt.tp} ${tt.n}/STJ, em pauta em ${fmtData(x.d)}: ${tt.q}` }); }
+      // Em pauta na semana seguinte: um cartão por grupo de processos que compartilham precedentes
+      // (o mesmo processo pode estar ligado a um tema e a uma controvérsia; vários recursos de um
+      // mesmo tema costumam ir juntos à sessão). Temas repetitivos e demais precedentes ficam em
+      // seções separadas.
+      const semanaPl = pl.filter((x) => x.d > i1 && x.d <= somaDias(i1, 7) && (x.temas || []).some(([tp, n]) => t.idx.has(`${tp}-${n}`)));
+      const grupos = [];
+      for (const x of semanaPl) {
+        const ks = x.temas.filter(([tp, n]) => t.idx.has(`${tp}-${n}`)).map(([tp, n]) => `${tp}-${n}`);
+        const juntos = grupos.filter((g) => ks.some((k) => g.ks.has(k)));
+        const g = juntos[0] || { ks: new Set(), procs: new Map(), d: x.d, o: x.o };
+        if (!juntos.length) grupos.push(g);
+        for (const o of juntos.slice(1)) { o.ks.forEach((k) => g.ks.add(k)); o.procs.forEach((v, k) => g.procs.set(k, v)); grupos.splice(grupos.indexOf(o), 1); }
+        ks.forEach((k) => g.ks.add(k)); g.procs.set(x.reg || x.p, x.p); if (x.d < g.d) { g.d = x.d; g.o = x.o; }
+      }
+      for (const g of grupos) {
+        const prec = [...g.ks].map((k) => t.idx.get(k)).sort((a, b) => (a.tp !== "Tema") - (b.tp !== "Tema") || b.n - a.n);
+        const tt = prec[0], outros = prec.slice(1), procs = [...g.procs.values()].map((x) => String(x).replace(/\d{4,}/, (n) => fmtNumProc(n)));
+        out.push({ tp: tt.tp === "Tema" ? "prox" : "proxc", d: g.d, ds: [["Sessão", g.d], ["Afetado", tt.afet]], ar: tt.ar, sa: tt.sa, k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[g.o] || tt.org || ""}`, t: tt.q || "", m: `${procs.join(", ")} · ${fmtDiaL(g.d)}`, ab: `t:${tt.tp}|${tt.n}`,
+          vinc: outros.map((o) => ({ ab: `t:${o.tp}|${o.n}`, rot: `${o.tp} ${fmtNumProc(o.n)}` })),
+          txt: `${tt.tp} ${tt.n}/STJ${outros.length ? ` (também ${outros.map((o) => `${o.tp} ${o.n}`).join(", ")})` : ""}, em pauta em ${fmtData(g.d)} (${procs.join(", ")}): ${tt.q || ""}` });
       }
       return out;
     }
@@ -4147,6 +4225,7 @@
         <h3 class="nota-tema"><button type="button" data-sem="${esc(it.ab)}">${esc(it.k)}</button></h3>
         <div class="nota-tese${it.t.length > 600 ? " longa" : ""}">${it.t.split("\n").map((z) => `<p>${esc(z)}</p>`).join("")}</div>
         ${it.t.length > 600 ? `<button type="button" class="nota-mais" data-sem-ler>Continuar lendo</button>` : ""}
+        ${it.vinc?.length ? `<p class="nota-vinc">Os mesmos processos também estão ligados a ${it.vinc.map((v) => `<button type="button" class="link-acao" data-sem="${esc(v.ab)}">${esc(v.rot)}</button>`).join(", ")}</p>` : ""}
         <div class="nota-rodape"><span class="nota-proc">${esc(it.m)}</span><span class="dir"><button type="button" class="link-acao" data-sem="${esc(it.ab)}">Abrir ${ico("seta")}</button></span></div></li>`; };
     function desenhar() {
       gravarHash("semana", { s: ini === esta ? "" : ini, a: f.a, tp: f.tp.join(","), g: f.g === "tipo" ? "" : f.g });
@@ -4620,8 +4699,16 @@
     const tf = new Map(); for (const w of tokens(texto.slice(0, 60000))) tf.set(w, (tf.get(w) || 0) + 1);
     const q = new Map(); let n2 = 0; for (const [w, c] of tf) { const p = (1 + Math.log(c)) * idf(w); q.set(w, p); n2 += p * p; }
     const qn = Math.sqrt(n2) || 1;
-    return pesos.map((d, i) => { let s = 0; for (const [w, p] of q) { const x = d.v.get(w); if (x) s += x * p; } return { t: docs[i], s: s / (d.n * qn) }; })
-      .filter((x) => x.s > 0.12 && x.t._g !== "cancelado").sort((a, b) => b.s - a.s).slice(0, k);
+    // Palavras do texto na forma original, para explicar cada sugestão.
+    const orig = new Map(); for (const w of texto.slice(0, 60000).match(/[\p{L}\p{N}]+/gu) || []) { const k2 = norm(w); if (!orig.has(k2)) orig.set(k2, w.toLowerCase()); }
+    return pesos.map((d, i) => {
+      let s = 0; const contrib = [];
+      for (const [w, p] of q) { const x = d.v.get(w); if (x) { s += x * p; contrib.push([w, x * p]); } }
+      contrib.sort((a, b) => b[1] - a[1]);
+      return { t: docs[i], s: s / (d.n * qn), comuns: contrib.length, termos: contrib.slice(0, 4).map(([w]) => orig.get(w) || w) };
+    })
+      // Duas palavras em comum, no mínimo: uma só costuma ser coincidência.
+      .filter((x) => x.s > 0.12 && x.comuns >= 2 && x.t._g !== "cancelado").sort((a, b) => b.s - a.s).slice(0, k);
   }
   // Bibliotecas de leitura de PDF e DOCX hospedadas no próprio site (versões fixas, conferidas pelo hash):
   // nenhum código de terceiros é carregado durante a análise do documento.
@@ -4877,7 +4964,11 @@
       return `<div class="cit"><span class="cit-tit"><button type="button" class="link-acao" data-vf-sum="${s.n}">Súmula ${s.n}/STJ</button></span>${sit}<div class="cit-txt">${esc(s.t)}${obs}</div>${ondeHTML(c)}</div>`;
     });
     const outros = [...temasOutros.values(), ...sumOutras.values()];
-    const sem = await temasSemelhantes(txt, 6);
+    // Sugestões por semelhança só fazem sentido com texto de mérito suficiente: as citações e as
+    // palavras genéricas não contam.
+    const semCitacoes = txt.replace(/\b(tema|temas|controv[ée]rsia|iac|s[úu]mulas?|resp|aresp|agint|agrg|edcl)\b[^.;\n]{0,40}/gi, " ");
+    const poucoTexto = new Set(tokens(semCitacoes)).size < 25;
+    const sem = poucoTexto ? [] : await temasSemelhantes(txt, 6);
     const jaCit = new Set(citTemas.keys());
     const sugest = sem.filter((x) => !jaCit.has(`${x.t.tp}-${x.t.n}`));
     const nada = !citTemas.size && !citProc.size && !citSum.size;
@@ -4902,7 +4993,8 @@
       ${citSum.size ? `<div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 6px">Súmulas do STJ citadas</h3>${linhasSum.join("")}</div>` : ""}
       ${outros.length ? `<div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 2px">Citações de outros tribunais</h3><p class="nota" style="margin-bottom:8px">Identificadas no texto, mas não conferidas: esta base cobre apenas o STJ.</p><div class="chips">${outros.map((o) => `<span class="selo">${esc(o.rot)}${o.oc.length > 1 ? ` · ${o.oc.length}×` : ""}</span>`).join("")}</div></div>` : ""}
       <div class="card card-pad" style="margin-top:12px"><h3 style="margin:0 0 2px">Precedentes qualificados com assunto parecido</h3><p class="nota" style="margin-bottom:6px">Sugestões automáticas por semelhança de palavras, que não foram citadas no texto. Confira a pertinência.</p>
-        ${sugest.length ? sugest.map((x) => `<div class="cit" data-tema="${esc(x.t.tp)}|${x.t.n}"><span class="cit-tit"><button type="button" class="link-acao" data-abrir-tema>${esc(x.t.tp)} ${x.t.n}</button></span>${seloSit(x.t.sit)}<div class="cit-txt">${esc(x.t.tese ? "Tese: " + x.t.tese : x.t.q)}</div></div>`).join("") : '<p class="nota">Nenhuma sugestão com semelhança suficiente.</p>'}</div>
+        ${poucoTexto ? '<p class="nota">O texto é curto demais para comparar: as sugestões aparecem quando há ao menos um parágrafo sobre o mérito (as citações não contam).</p>'
+          : sugest.length ? sugest.map((x) => `<div class="cit" data-tema="${esc(x.t.tp)}|${x.t.n}"><span class="cit-tit"><button type="button" class="link-acao" data-abrir-tema>${esc(x.t.tp)} ${x.t.n}</button></span>${seloSit(x.t.sit)}<div class="cit-txt">${esc(x.t.tese ? "Tese: " + x.t.tese : x.t.q)}<p class="cit-porque">Em comum com o texto: ${x.termos.map((w) => `<b>${esc(w)}</b>`).join(", ")}</p></div></div>`).join("") : '<p class="nota">Nenhuma sugestão com semelhança suficiente.</p>'}</div>
       <div class="acoes" style="margin-top:12px"><button type="button" class="btn btn-claro btn-peq" id="vf-copiar">${ico("copiar")} Copiar relatório</button></div>`;
     $$("[data-tema-direto]", res).forEach((b) => b.addEventListener("click", () => { const [tp, n] = b.dataset.temaDireto.split("|"); abrirTema(tp, +n); }));
     $$("[data-vf-sum]", res).forEach((b) => b.addEventListener("click", () => abrirSumula(+b.dataset.vfSum)));
@@ -4931,8 +5023,17 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.09.29";
+  const VERSAO = "2026.09.30";
   const NOVIDADES = [
+    ["2026-09-30", [
+      "Tema julgado com a tese ainda por publicar deixa de contar como “tese firmada”: no Atualize-se e no Resumo da semana ganha rótulo próprio, “Julgado · tese a publicar”.",
+      "Selos dos acórdãos pela lista oficial de processos de cada tema: “Firmou a tese” (o acórdão do julgamento do tema) e “Processo vinculado” (outro acórdão do mesmo processo, como embargos). Quando o julgado só cita um tema, isso aparece na linha “Cita Tema …”. Os selos abrem o precedente.",
+      "Resumo da semana: a pauta agrupa os processos que vão juntos a julgamento e separa temas repetitivos de controvérsias; no Atualize-se, processo ligado a tema e controvérsia aparece uma vez só.",
+      "Barra lateral e rodapé mostram até quando vai cada fonte principal (acórdãos até o último arquivo mensal do STJ; DJEN até a última publicação lida).",
+      "Verificar petição: com texto curto, o site não sugere precedentes por semelhança; nas sugestões, mostra as palavras em comum que as motivaram.",
+      "Pesquisa: durante a busca, a lista que você está lendo não muda de lugar; os novos resultados entram pelo botão “Mostrar N novo(s)” ou ao fim da busca.",
+      "Repetitivos: corrigidos espaços que faltavam em questões, teses e anotações vindas da base do STJ (por exemplo, “desde que:(a)”).",
+    ]],
     ["2026-09-29", [
       "Resumo da semana: controvérsias, IAC e demais precedentes afetados ou em pauta passam a abrir o próprio precedente (antes abriam o tema repetitivo de mesmo número).",
       "Matéria dos repetitivos e controvérsias definida pela questão submetida e pela tese. Os assuntos da tabela processual, que descrevem o caso de origem, só completam a classificação quando a questão nada indica (por exemplo, o Tema 1225 deixa de aparecer em “Dano moral”).",
@@ -4998,7 +5099,7 @@
       <p>No Atualize-se entram apenas julgados com uma tese legível: a tese jurídica ou os itens da tese de julgamento com conteúdo próprio. Ficam de fora os embargos de declaração, os agravos em recurso extraordinário, os recursos não conhecidos ou desprovidos sem tese e os julgados de repetitivo cuja tese já aparece como “tese firmada”. Esses acórdãos continuam nos Destaques e na Pesquisa. A tese de julgamento de cada acórdão é lida item por item. Saem da fila os julgados em que todos os itens apenas aplicam óbices ou entendimentos consolidados (Súmulas 5, 7, 83, 182, 211, 282 e 284, prequestionamento, embargos de declaração, prisão preventiva por fundamentação usual, dosimetria), e perdem posição os que repetem em série a mesma tese. Quando só parte dos itens tem conteúdo próprio, o cartão mostra apenas esses itens; a tese completa continua na ementa.</p>
       <p>Com 10 pontos ou mais, o acórdão recebe o selo <b>sinal forte de relevância</b>, o único exibido nos cartões. As faixas de 6 a 9 pontos (relevante) e de 2 a 5 (acompanhar) não aparecem como selo, mas continuam servindo para ordenar a lista e para o filtro de relevância dos Destaques. A pontuação indica prioridade de leitura, e não a força vinculante do precedente; passe o cursor sobre o selo para ver os pontos de cada acórdão. A área do direito é identificada pelas palavras da verbetação. É uma triagem para orientar a leitura, e não uma avaliação jurídica.</p>
       <h3 style="font-family:var(--ui)">O que significam as marcas dos julgados</h3>
-      <p>Nos cartões aparecem só duas marcas objetivas: <b>Afetação ao rito repetitivo</b> (o STJ vai firmar uma tese para todos os casos iguais, e os processos sobre o tema podem ficar suspensos) e <b>Recurso repetitivo</b> (julgado ligado a um tema repetitivo, de observância obrigatória pelo art. 927, III, do CPC). Na página do julgado, o quadro “A ementa menciona” reúne as indicações tiradas das palavras da ementa, que servem de pista e devem ser conferidas no texto:</p>
+      <p>Nos cartões aparecem só duas marcas objetivas: <b>Afetação ao rito repetitivo</b> (o STJ vai firmar uma tese para todos os casos iguais, e os processos sobre o tema podem ficar suspensos); <b>Firmou a tese</b> (acórdão do próprio julgamento de um tema repetitivo, de observância obrigatória pelo art. 927, III, do CPC); e <b>Processo vinculado</b> (o processo consta da lista oficial do tema, mas o acórdão é outro, como embargos de declaração). As duas últimas vêm da lista oficial de processos de cada tema, não das palavras da ementa; quando o julgado só cita um tema, isso aparece na linha “Cita Tema …”. Na página do julgado, o quadro “A ementa menciona” reúne as indicações tiradas das palavras da ementa, que servem de pista e devem ser conferidas no texto:</p>
       <ul>
         <li><b>Distinção (distinguishing):</b> o julgado explica por que um precedente não se aplica ao caso, por serem os fatos diferentes.</li>
         <li><b>Divergência:</b> a ementa trata de dissídio jurisprudencial ou de embargos de divergência. Com frequência, é apenas para dizer que a divergência não foi demonstrada.</li>
@@ -5119,16 +5220,20 @@
     D.orgaos = D.man.orgaos;
     const q = new Date(D.man.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const defas = situacaoFontes(D.man).filter((x) => x.defasada);
-    $("#lat-atualizado").innerHTML = `Verificado em ${esc(q)}${defas.length ? `<a class="lat-defas" href="#sobre?s=fontes" title="${esc(defas.map((x) => x.nome).join(", "))}">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a class="lat-fontes" href="#sobre?s=fontes">ver cada fonte</a>`}`;
+    // Até quando vai cada fonte principal: "verificado hoje" não quer dizer que tudo seja de hoje.
+    const ultMesAcervo = [...(D.man.meses || [])].map((x) => x.m).sort().pop();
+    const ultDjen = D.man.radar?.dias?.[D.man.radar.dias.length - 1];
+    const cobertura = [ultMesAcervo ? `acórdãos até ${fmtMes(ultMesAcervo)}` : "", ultDjen ? `DJEN até ${ultDjen.slice(8, 10)}/${ultDjen.slice(5, 7)}` : ""].filter(Boolean).join(" · ");
+    $("#lat-atualizado").innerHTML = `Verificado em ${esc(q)}${cobertura ? `<span class="lat-cob" title="Acórdãos: último arquivo mensal publicado pelo STJ. DJEN: publicações mais recentes lidas. Os mais recentes aparecem também na Pesquisa, sem a ementa completa.">${esc(cobertura[0].toUpperCase() + cobertura.slice(1))}</span>` : ""}${defas.length ? `<a class="lat-defas" href="#sobre?s=fontes" title="${esc(defas.map((x) => x.nome).join(", "))}">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a class="lat-fontes" href="#sobre?s=fontes">ver cada fonte</a>`}`;
     // No celular a barra lateral não aparece: a situação da base vai também para o rodapé.
-    $("#rod-atualizado").innerHTML = `Versão ${VERSAO} (<a href="#sobre?s=novidades">novidades</a>) · Base verificada em ${esc(q)} · ${defas.length ? `<a class="defas" href="#sobre?s=fontes">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a href="#sobre?s=fontes">situação de cada fonte</a>`}.`;
+    $("#rod-atualizado").innerHTML = `Versão ${VERSAO} (<a href="#sobre?s=novidades">novidades</a>) · Base verificada em ${esc(q)}${cobertura ? ` (${esc(cobertura)})` : ""} · ${defas.length ? `<a class="defas" href="#sobre?s=fontes">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a href="#sobre?s=fontes">situação de cada fonte</a>`}.`;
     window.addEventListener("hashchange", rotear);
     await rotear();
     atualizarContadorSalvos();
     // Contadores do menu (radar e leituras) dependem das bases completas: ficam para depois da tela aberta.
     const depois = window.requestIdleCallback || ((f) => setTimeout(f, 600));
     depois(() => {
-      atualizarContadorRadar(); atualizarContadorFeed();
+      atualizarContadorRadar(); atualizarContadorFeed(); prepararRefRep();
       conferirMudancasSalvos().then(({ novas }) => {
         if (!novas.length) return;
         const x = P.salvos[novas[0]];
