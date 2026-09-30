@@ -17,10 +17,11 @@
 <a class="pular" href="#view">Pular para o conteúdo</a>
 
 <aside class="lateral" aria-label="Navegação principal">
-  <a class="marca" href="#painel" aria-label="Radar STJ — início">
+  <button type="button" class="marca" id="marca" aria-haspopup="menu" aria-expanded="false" aria-label="Radar STJ. Trocar o tribunal exibido" title="Trocar o tribunal exibido: STJ, STF ou os dois">
     <span class="marca-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v16M6.5 7h11M6.5 7 3.5 13h6zM17.5 7l-3 6h6z"/></svg></span>
-    <span class="marca-txt"><b>Radar STJ</b><small>Jurisprudência em movimento</small></span>
-  </a>
+    <span class="marca-txt"><b id="marca-nome">Radar STJ</b><small>Jurisprudência em movimento</small></span>
+    <svg class="marca-seta" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+  </button>
   <nav class="menu" id="menu"></nav>
   <div class="lateral-rodape">
     <div class="fonte-ok"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.4 3.1 8.4 7.5 9.5 4.4-1.1 7.5-5.1 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/></svg>
@@ -32,7 +33,7 @@
   <header class="topo" id="topo">
     <div class="topo-in">
       <div class="topo-tit">
-        <p class="sobretitulo" id="topo-sobre">Radar STJ</p>
+        <p class="sobretitulo topo-sobre-linha"><button type="button" class="trib-movel" id="trib-movel" aria-haspopup="menu" aria-expanded="false" title="Trocar o tribunal exibido"><span id="trib-movel-nome">Radar STJ</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button><span id="topo-sobre">Radar STJ</span></p>
         <h1 id="topo-titulo" tabindex="-1">Carregando…</h1>
       </div>
       <button type="button" class="btn btn-claro topo-busca" id="topo-busca" aria-label="Pesquisar (atalho: /)">
@@ -42,7 +43,7 @@
     </div>
   </header>
   <main id="view" class="view" tabindex="-1"></main>
-  <footer class="rodape">Fonte: Portal de Dados Abertos do Superior Tribunal de Justiça. Projeto independente, sem vínculo com o STJ. A relevância é calculada automaticamente; confira sempre o inteiro teor oficial. <span id="rod-atualizado"></span></footer>
+  <footer class="rodape"><span id="rod-fonte">Fonte: Portal de Dados Abertos do Superior Tribunal de Justiça. Projeto independente, sem vínculo com o STJ. A relevância é calculada automaticamente; confira sempre o inteiro teor oficial.</span> <span id="rod-atualizado"></span></footer>
 </div>
 
 <nav class="barra-inf" id="barra-inf" aria-label="Navegação"></nav>

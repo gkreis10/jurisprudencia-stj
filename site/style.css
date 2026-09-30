@@ -1377,3 +1377,48 @@ button.selo-link:focus-visible { outline: 2px solid var(--pri); outline-offset: 
 /* Verificar petição: por que cada sugestão apareceu */
 .cit-porque { margin: 6px 0 0; font-family: var(--ui); font-size: 12.5px; color: var(--tx-2); }
 .cit-porque b { font-weight: 600; color: var(--tx); }
+
+/* Seletor de tribunal (STJ, STF ou os dois): no alto do menu e, no celular, acima do título. */
+button.marca { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; border-radius: 12px; margin: 0 0 12px; padding: 6px 8px; transition: background-color 160ms ease, transform 160ms var(--ease-out); }
+button.marca:active { transform: scale(0.98); }
+button.marca:focus-visible { outline: 2px solid #8fb0ff; outline-offset: 2px; }
+.marca-txt { flex: 1; min-width: 0; }
+.marca-seta { width: 18px; height: 18px; flex: none; stroke: var(--nav-tx-2); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms var(--ease-out); }
+button.marca[aria-expanded="true"] { background: var(--nav-2); }
+button.marca[aria-expanded="true"] .marca-seta { transform: rotate(180deg); }
+@media (hover: hover) and (pointer: fine) { button.marca:hover { background: var(--nav-2); } button.marca:hover .marca-seta { stroke: #fff; } }
+html[data-tribunal="stf"] .marca-ico { background: linear-gradient(145deg, #2f9e78, #1c6e53); }
+html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b6cf0 0 50%, #2f9e78 50% 100%); }
+.topo-sobre-linha { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.topo-sobre-linha > #topo-sobre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trib-movel { display: none; align-items: center; gap: 2px; border: 1px solid var(--linha-2); background: var(--sup); color: var(--tx-2); font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 5px 3px 8px; border-radius: 99px; cursor: pointer; white-space: nowrap; }
+.trib-movel svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.trib-movel[aria-expanded="true"] { border-color: var(--pri); color: var(--pri); }
+@media (max-width: 860px) { .trib-movel { display: inline-flex; } .trib-movel + #topo-sobre::before { content: "·"; margin-right: 8px; color: var(--tx-3); } }
+.trib-menu { position: fixed; z-index: 80; width: 320px; max-width: calc(100vw - 16px); background: var(--sup); color: var(--tx); border: 1px solid var(--linha); border-radius: var(--raio); box-shadow: var(--sombra-3); padding: 8px; animation: entra 160ms var(--ease-out); }
+.trib-menu[hidden] { display: none; }
+.trib-menu-tit { margin: 4px 8px 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--tx-3); }
+.trib-menu-nota { margin: 6px 8px 4px; font-size: 12px; color: var(--tx-3); }
+.trib-op { display: flex; align-items: flex-start; gap: 10px; width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; padding: 9px 8px; border-radius: 10px; cursor: pointer; }
+.trib-op b { display: block; font-size: 14.5px; }
+.trib-op small { display: block; font-size: 12.5px; color: var(--tx-3); line-height: 1.35; margin-top: 2px; }
+.trib-op-marca { flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; border: 2px solid var(--linha-2); display: grid; place-items: center; }
+.trib-op[aria-checked="true"] { background: var(--pri-bg); }
+.trib-op[aria-checked="true"] .trib-op-marca { border-color: var(--pri); }
+.trib-op[aria-checked="true"] .trib-op-marca::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--pri); }
+.trib-op:focus-visible { outline: 2px solid var(--pri); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .trib-op:not([aria-checked="true"]):hover { background: var(--sup-2); } }
+.trib-opcoes { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--linha); border-radius: var(--raio); padding: 4px; background: var(--sup); }
+/* Selo do tribunal nos cartões, quando os dois tribunais estão na tela. */
+.selo.trib { font-size: 10.5px; letter-spacing: .06em; padding: 4px 7px; }
+.selo.trib-stj { background: var(--pri-bg); color: var(--pri); }
+.selo.trib-stf { background: #e3f4ed; color: #1c6e53; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .selo.trib-stf { background: #14302a; color: #7fd4b4; } }
+:root[data-theme="dark"] .selo.trib-stf { background: #14302a; color: #7fd4b4; }
+.menu a.menu-ext svg.ext { width: 14px; height: 14px; margin-left: auto; opacity: .6; }
+.cp-trib { margin-bottom: 14px; }
+.cp-stf-turmas { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); margin-bottom: 0; }
+.lista-rel p { margin: 4px 0; }
+.topo-tit { min-width: 0; flex: 1 1 auto; }
+.topo-sobre-linha { overflow: hidden; }
+.evento-tit .selo.trib { margin-right: 6px; vertical-align: 1px; }
