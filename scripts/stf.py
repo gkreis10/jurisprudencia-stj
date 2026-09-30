@@ -21,14 +21,30 @@ import re
 import ssl
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import atualizar as A  # noqa: E402
-import composicao as C  # noqa: E402
+# As rotinas do STJ (atualizar, composicao) só são carregadas quando necessárias; a coleta do
+# registro (--coletar) roda sem elas, com apenas este arquivo e fontes/stf/.
+SO_REGISTRO = False
+
+
+def sem_acento(s: str) -> str:
+    return unicodedata.normalize("NFD", s or "").encode("ascii", "ignore").decode().lower()
+
+
+def _A():
+    import atualizar
+    return atualizar
+
+
+def _C():
+    import composicao
+    return composicao
 
 RAIZ = Path(__file__).resolve().parent.parent
 FONTE = RAIZ / "fontes" / "stf"
@@ -137,19 +153,22 @@ RAMO_STF = [
 
 
 def areas_stf(ass: list[str], texto: str) -> tuple[list[str], list[str]]:
+    if SO_REGISTRO:
+        return [], []
+    A = _A()
     ar: list[str] = []
     for a in ass:
-        top = A.sem_acento(a.split("|")[0]).strip()
+        top = sem_acento(a.split("|")[0]).strip()
         top = re.sub(r"^\d+-\s*", "", top)
         k = next((k for k, rx in RAMO_STF if re.search(rx, top)), "")
-        if k == "civil" and re.search(r"\|\s*familia|\|\s*sucess", A.sem_acento(a)):
+        if k == "civil" and re.search(r"\|\s*familia|\|\s*sucess", sem_acento(a)):
             k = "familia"
         if k and k not in ar:
             ar.append(k)
     if not ar:  # sem assunto: tenta pela redação, como nos temas do STJ
         ar = A.areas_do_tema({"q": texto, "org": ""})
     ar = ar[:4]
-    t = A.sem_acento(texto)
+    t = sem_acento(texto)
     sa: list[str] = []
     for a in ar:
         if a in A.SUBAREAS_RE:
@@ -189,7 +208,7 @@ def ler_temas(pagina: str) -> list[dict]:
             x["inc"] = m.group(1)
         if pron:
             x["pron"] = pron.group(1)
-        if "reafirma" in A.sem_acento(x["rgt"]).lower():
+        if "reafirma" in sem_acento(x["rgt"]).lower():
             x["reaf"] = 1
         out.append({k: v for k, v in x.items() if v not in ("", [], None)})
     return out
@@ -207,6 +226,7 @@ def tese_do_tema(n: int) -> str:
 # acesso a partir dos servidores da rotina. Um tema por linha, para as atualizações terem diferenças pequenas.
 REGISTRO_TEMAS = FONTE / "temas.json"
 REGISTRO_SUMULAS = FONTE / "sumulas.json"
+REGISTRO_HISTORICO = FONTE / "historico.json"
 CAMPOS_REGISTRO = ["n", "q", "desc", "lc", "rel", "rgs", "rgt", "rgd", "sit", "sitd", "dtese", "ass", "inc", "pron", "reaf", "tese"]
 
 
@@ -227,7 +247,21 @@ def exportar_registro() -> None:
     cache.pop("atualizado", None)
     if len(cache) >= 700:
         REGISTRO_SUMULAS.write_text(json_linhas({"atualizado": HOJE, **dict(sorted(cache.items(), key=lambda kv: (not kv[1].get("v"), kv[1]["n"])))}), encoding="utf-8")
+    hist = ler(SAIDA / "stf-historico.json", None)
+    if isinstance(hist, list) and (hist or REGISTRO_HISTORICO.exists()):
+        REGISTRO_HISTORICO.write_text(json_linhas(hist), encoding="utf-8")
     log(f"Registro do STF gravado: {len(temas)} temas, {len(cache)} súmulas.")
+
+
+def preparar_base() -> None:
+    """Base das novidades quando a coleta roda fora do GitHub: o registro vira a 'execução anterior'."""
+    reg = ler(REGISTRO_TEMAS, {})
+    if not reg.get("temas"):
+        raise SystemExit("registro de temas ausente")
+    gravar(CACHE / "stf-temas-anterior.json", reg["temas"])
+    hist = ler(REGISTRO_HISTORICO, [])
+    gravar(CACHE / "stf-historico.json", hist if isinstance(hist, list) else [])
+    log(f"Base preparada: {len(reg['temas'])} temas do registro de {reg.get('atualizado', '?')}; {len(hist)} evento(s) de histórico.")
 
 
 def temas_do_registro(e: Exception) -> dict:
@@ -246,7 +280,8 @@ def temas_do_registro(e: Exception) -> dict:
         temas.append(x)
     temas.sort(key=lambda t: -t["n"])
     gravar(SAIDA / "stf-temas.json", temas)
-    gravar(SAIDA / "stf-historico.json", ler(CACHE / "stf-historico.json", []))
+    hist = ler(REGISTRO_HISTORICO, None)
+    gravar(SAIDA / "stf-historico.json", hist if isinstance(hist, list) else ler(CACHE / "stf-historico.json", []))
     return {"temas": len(temas), "origem": "registro", "dataRegistro": reg.get("atualizado", "")}
 
 
@@ -441,9 +476,9 @@ def _miolo(t: str) -> tuple[str, str]:
 
 
 def _acha(linha: str, ministros: list[dict]) -> str:
-    b = A.sem_acento(linha).lower()
+    b = sem_acento(linha).lower()
     for m in ministros:
-        if any(A.sem_acento(v).lower() in b for v in [m["curto"], *m.get("variantes", [])]):
+        if any(sem_acento(v).lower() in b for v in [m["curto"], *m.get("variantes", [])]):
             return m["id"]
     return ""
 
@@ -457,7 +492,7 @@ def ler_composicao_atual(t: str, ministros: list[dict]) -> tuple[list[str], dict
         mid = _acha(l, ministros)
         # Nome depois de "Ministro"/"Ministra" que não está no registro: ministro novo (posse recente).
         if not mid and i and linhas[i - 1] in ("Ministro", "Ministra") and re.fullmatch(r"[A-ZÀ-Ý][\wÀ-ÿ'.]+(?: [\wÀ-ÿ'.]+){1,5}", l):
-            novo = {"id": re.sub(r"[^a-z0-9]+", "-", A.sem_acento(l).lower()).strip("-"), "curto": l, "nome": l, "genero": "f" if linhas[i - 1] == "Ministra" else "m", "posse": "9999-12-31", "novo": True}
+            novo = {"id": re.sub(r"[^a-z0-9]+", "-", sem_acento(l).lower()).strip("-"), "curto": l, "nome": l, "genero": "f" if linhas[i - 1] == "Ministra" else "m", "posse": "9999-12-31", "novo": True}
             ministros.append(novo)
             mid = novo["id"]
             log(f"  AVISO: ministro(a) do STF fora do registro: {l}. Acrescente-o(a) em fontes/stf/ministros.json.")
@@ -476,7 +511,7 @@ def ler_turmas(t: str, ministros: list[dict]) -> dict:
     out: dict = {"primeira-turma": [], "segunda-turma": []}
     atual = None
     for l in (l.strip() for l in corpo.split("\n")):
-        b = A.sem_acento(l).lower()
+        b = sem_acento(l).lower()
         if re.fullmatch(r"primeira turma", b):
             atual = "primeira-turma"
             continue
@@ -500,7 +535,7 @@ def foto_wd(qid: str, cache: dict) -> dict | None:
     if qid in cache:
         return cache[qid] or None
     try:
-        ent = C._wd(f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json")["entities"][qid]
+        ent = _C()._wd(f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json")["entities"][qid]
     except Exception as e:  # noqa: BLE001
         log(f"  Wikidata {qid}: {e}")
         return None
@@ -547,7 +582,7 @@ def atualizar_composicao() -> dict:
         for k in ("primeira-turma", "segunda-turma"):
             if any(x["id"] == m["id"] for x in turmas.get(k, [])):
                 orgs.append({"id": k, "nome": nome_turma[k], **({"cargo": "Presidente"} if presid_turma.get(k) == m["id"] else {})})
-        foto = C.foto_local(foto_wd(m["wd"], cache_fotos)) if m.get("wd") else None
+        foto = _C().foto_local(foto_wd(m["wd"], cache_fotos)) if m.get("wd") else None
         if not foto:
             ant = next((x for x in anterior.get("ministros", []) if x["id"] == m["id"]), {})
             if ant.get("foto") and (RAIZ / "site" / ant["foto"]["url"]).exists():
@@ -589,12 +624,32 @@ def main():
     ap.add_argument("--minutos", type=int, default=25, help="tempo máximo para baixar teses e enunciados")
     ap.add_argument("--so", default="", help="temas, sumulas ou composicao (padrão: todos)")
     ap.add_argument("--exportar", action="store_true", help="grava o registro em fontes/stf/ (temas e súmulas)")
+    ap.add_argument("--coletar", action="store_true", help="coleta temas e súmulas só para o registro (fora do GitHub), sem as rotinas do STJ, e já o exporta")
+    ap.add_argument("--preparar", action="store_true", help="usa o registro como base de comparação (coleta fora do GitHub)")
     args = ap.parse_args()
     if args.exportar:
         return exportar_registro()
-    global TEMPO_MAX
+    if args.preparar:
+        return preparar_base()
+    global TEMPO_MAX, SO_REGISTRO
     TEMPO_MAX = args.minutos * 60
     res = {}
+    if args.coletar:
+        SO_REGISTRO = True
+        preparar_base()
+        for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas))):
+            try:
+                res[nome] = f()
+            except Exception as e:  # noqa: BLE001
+                log(f"STF ({nome}): falhou: {e}")
+                res[nome] = {"erro": str(e)[:200]}
+        falhou = [n for n, r in res.items() if "erro" in r or r.get("origem") == "registro"]
+        if falhou:
+            log(f"COLETA NÃO REALIZADA: portal do STF indisponível para {', '.join(falhou)}; registro mantido.")
+            raise SystemExit(2)
+        exportar_registro()
+        log("COLETA CONCLUÍDA: " + json.dumps(res, ensure_ascii=False))
+        return
     for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas)), ("composicao", atualizar_composicao)):
         if args.so and nome != args.so:
             continue
