@@ -11,6 +11,7 @@ Site de uso interno que reúne a jurisprudência do Superior Tribunal de Justiç
 - **Repetitivos:** temas, controvérsias, IAC, SIRDR e PUIL, com linha do tempo, processos vinculados, UF de origem e a indicação de quais estão em pauta.
 - **Pautas:** o que vai a julgamento nos próximos dias, com busca por processo, OAB ou advogado (sem os nomes das partes), e os acórdãos publicados no DJEN.
 - **Verificar petição:** confere os temas, os precedentes e as súmulas citados em um texto ou arquivo (PDF, DOCX, TXT) e sugere precedentes qualificados com assunto parecido. Tudo roda no navegador.
+- **STF:** o nome do site, no alto do menu, escolhe o tribunal exibido: **Radar STJ** (padrão), **Radar STF** ou **Radar STJ · STF**. No STF entram os temas de repercussão geral, as súmulas e súmulas vinculantes e a composição (Plenário e Turmas, com fotos); a escolha fica guardada no navegador.
 
 ---
 
@@ -32,6 +33,7 @@ Site de uso interno que reúne a jurisprudência do Superior Tribunal de Justiç
 | Precedentes qualificados | diária | 1 dia |
 | Metadados das íntegras (DJEN) | diária | cerca de 2 semanas |
 | Pautas futuras | diária | 1 dia |
+| STF: temas de repercussão geral, súmulas e composição | páginas oficiais do STF, conferidas diariamente | 1 dia |
 
 O site nunca estará mais atualizado do que a própria base aberta do STJ. Para acompanhar julgados do mesmo dia, continue usando o Informativo de Jurisprudência e o acompanhamento processual.
 
@@ -42,6 +44,8 @@ O site nunca estará mais atualizado do que a própria base aberta do STJ. Para 
 - **Falhas do portal do STJ:** quando uma fonte não responde, o site mantém os dados anteriores e a aba **Sobre** exibe o aviso. A rotina tenta de novo na execução seguinte.
 - **Falha na publicação:** se a publicação na Cloudflare falhar, a execução fica marcada com erro e o GitHub avisa por e-mail; o site continua na versão anterior.
 - **Rotina desativada:** o GitHub desativa rotinas agendadas após 60 dias sem atividade no repositório. A própria rotina se reativa a cada execução, mas, se ela parar, basta abrir **Actions → Atualizar e publicar** e clicar em **Enable workflow**.
+- **STF (`scripts/stf.py`):** lê a lista oficial de temas de repercussão geral (`todostemas.asp`), as teses (`verTeseTema.asp`, só as novas), as súmulas (`sumariosumulas.asp`, só as novas ou alteradas) e as páginas de composição. O portal do STF envia a cadeia de certificados incompleta; o certificado intermediário oficial fica em `fontes/stf/`. Se o STF não responder, o site mantém os dados anteriores. A pesquisa de acórdãos do STF tem proteção contra robôs e não é usada.
+- **Ministro novo no STF:** a rotina avisa no registro da execução ("ministro(a) do STF fora do registro") e já o exibe, sem data de posse nem foto. Para completar, acrescente-o em `fontes/stf/ministros.json` (nome, data da posse e identificador do Wikidata).
 - **Execução local (para testes):**
   ```bash
   python3 scripts/atualizar.py
@@ -52,6 +56,8 @@ O site nunca estará mais atualizado do que a própria base aberta do STJ. Para 
 
 ```
 scripts/atualizar.py            baixa e prepara os dados (somente biblioteca padrão do Python)
+scripts/stf.py                  dados do STF (repercussão geral, súmulas e composição)
+fontes/stf/                     registro dos ministros do STF, teses e súmulas já coletadas, certificado intermediário
 site/index.html, app.js, style.css   o site (estático, sem dependências)
 .github/workflows/atualizar.yml  rotina diária de atualização e publicação
 ```
