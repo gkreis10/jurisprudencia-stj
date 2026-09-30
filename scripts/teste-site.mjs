@@ -158,6 +158,61 @@ try {
 } catch (e) { falha(`verificar: ${e.message.split("\n")[0]}`); }
 for (const e of [...new Set(errosPag)]) falha(`pesquisa/verificar: ${e}`);
 
+// ---------------------------------------------------------------- 5. STF
+// Os dados do STF vêm de outra fonte: se ainda não existirem, o teste só avisa (o STJ continua publicável).
+console.log("5. Modos STF e STJ + STF");
+if (tam("data/stf-temas.json") < 0) avisos.push("dados do STF ausentes (data/stf-temas.json): modos STF não conferidos");
+else {
+  try {
+    const rg = json("data/stf-temas.json"), sf = tam("data/stf-sumulas.json") > 0 ? json("data/stf-sumulas.json") : [], cp = tam("data/stf-composicao.json") > 0 ? json("data/stf-composicao.json") : { ministros: [] };
+    if (rg.length < 1000) falha(`stf-temas.json: ${rg.length} temas (mínimo 1.000)`); else ok(`stf-temas.json: ${rg.length} temas, ${rg.filter((x) => x.tese).length} com tese`);
+    // Na carga inicial, as súmulas entram aos poucos: abaixo do esperado, só avisa.
+    if (sf.length < 700) avisos.push(`stf-sumulas.json: ${sf.length} súmulas (esperadas mais de 700; carga inicial em andamento?)`); else ok(`stf-sumulas.json: ${sf.length} súmulas (${sf.filter((x) => x.v).length} vinculantes)`);
+    if (cp.ministros.length < 8) falha(`stf-composicao.json: ${cp.ministros.length} ministros`); else ok(`stf-composicao.json: ${cp.ministros.length} ministros, ${cp.ministros.filter((m) => m.foto).length} com foto`);
+    // A escolha do tribunal é gravada antes de o site carregar (o site regrava as preferências ao sair da página).
+    await page.addInitScript(() => {
+      const t = sessionStorage.getItem("teste-trib"); if (!t) return;
+      try { const o = JSON.parse(localStorage.getItem("radar-stj.v1") || "{}"); o.trib = t; localStorage.setItem("radar-stj.v1", JSON.stringify(o)); } catch { /* sem armazenamento */ }
+    });
+    const modo = async (t) => {
+      await page.goto(BASE + "#painel");
+      await page.evaluate((t) => sessionStorage.setItem("teste-trib", t), t);
+      await page.reload(); await esperarTela();
+    };
+    for (const t of ["stf", "ambos"]) {
+      await modo(t);
+      const marca = await page.$eval("#marca-nome", (e) => e.textContent);
+      if (marca !== (t === "stf" ? "Radar STF" : "Radar STJ · STF")) falha(`modo ${t}: marca "${marca}"`);
+      const rotasT = await page.evaluate(() => [...document.querySelectorAll("#menu a[data-v]")].map((a) => a.dataset.v));
+      for (const r of rotasT) {
+        errosPag.length = 0;
+        try {
+          await page.goto(BASE + "#" + r); await esperarTela();
+          const txt = await page.$eval("#view", (v) => v.textContent);
+          if (/Não foi possível carregar os dados/.test(txt)) falha(`${t}/${r}: tela de erro`);
+          await acessibilidade(`${t}/${r}`);
+        } catch (e) { falha(`${t}/${r}: não abriu (${e.message.split("\n")[0]})`); }
+        for (const e of [...new Set(errosPag)]) falha(`${t}/${r}: ${e}`);
+      }
+      if (t === "stf" && rotasT.includes("pesquisa")) falha("modo stf: Pesquisa do STJ no menu");
+      if (t === "ambos" && !rotasT.includes("pesquisa")) falha("modo ambos: Pesquisa ausente do menu");
+      ok(`modo ${t}: ${rotasT.length} seções`);
+    }
+    // Conferência de citações do STF (modo STJ + STF) e composição com as duas abas.
+    const rgT = rg.find((x) => x.tese) || { n: 69 }, sv = sf.find((x) => x.v) || null;
+    await page.goto(BASE + "#verificar"); await page.waitForSelector("#vf-txt");
+    await page.fill("#vf-txt", `Conforme o Tema ${rgT.n} da repercussão geral e a Súmula Vinculante ${sv?.n || 13}, além do Tema 1 do STJ. Texto de teste suficiente para a verificação automática.`);
+    await page.click("#vf-ok"); await page.waitForSelector("#vf-copiar", { timeout: 60000 });
+    const tv = await page.$eval("#vf-res", (e) => e.innerText);
+    if (!new RegExp(`Tema ${rgT.n}/STF`).test(tv)) falha(`verificar (STF): Tema ${rgT.n}/STF não conferido`);
+    else if (sv && !new RegExp(`Súmula Vinculante ${sv.n}/STF`).test(tv)) falha(`verificar (STF): Súmula Vinculante ${sv.n} não conferida`);
+    else ok("verificar petição com citações do STF");
+    await page.goto(BASE + "#composicao?t=stf"); await esperarTela();
+    if (!(await page.$("#view [data-min]"))) falha("composição do STF sem ministros"); else ok("composição do STF");
+  } catch (e) { falha(`STF: ${e.message.split("\n")[0]}`); }
+  for (const e of [...new Set(errosPag)]) falha(`STF: ${e}`);
+}
+
 await browser.close();
 fim();
 
