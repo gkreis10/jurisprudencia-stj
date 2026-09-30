@@ -170,7 +170,7 @@ def ler_temas(pagina: str) -> list[dict]:
             continue
         titulo = uma_linha((re.search(r"<a[^>]*>([\s\S]*?)</a>", tds[1]) or [None, ""])[1])
         dicas = re.findall(r'title="([^"]*)"><strong>([^<]*)</strong>', tds[1])
-        desc = next((uma_linha(d) for d, rot in dicas if "Descri" in rot), "")
+        desc = re.sub(r"^Descri[çc][ãa]o:\s*", "", next((uma_linha(d) for d, rot in dicas if "Descri" in rot), ""))
         ass = next(([uma_linha(x) for x in re.split(r"<br\s*/?>", html.unescape(d)) if x.strip()] for d, rot in dicas if "Assunto" in rot), [])
         lc = uma_linha((re.search(r'detalhe\.asp\?incidente=\d+[^>]*>([\s\S]*?)</a>', tds[2]) or [None, ""])[1])
         pron = re.search(r"verPronunciamento\.asp\?pronunciamento=(\d+)", tds[2])
@@ -203,12 +203,62 @@ def tese_do_tema(n: int) -> str:
     return textos[-1] if len(textos) >= 3 else ""
 
 
+# Registro dos temas (com as teses) guardado no repositório: usado quando o portal do STF recusa o
+# acesso a partir dos servidores da rotina. Um tema por linha, para as atualizações terem diferenças pequenas.
+REGISTRO_TEMAS = FONTE / "temas.json"
+REGISTRO_SUMULAS = FONTE / "sumulas.json"
+CAMPOS_REGISTRO = ["n", "q", "desc", "lc", "rel", "rgs", "rgt", "rgd", "sit", "sitd", "dtese", "ass", "inc", "pron", "reaf", "tese"]
+
+
+def json_linhas(obj) -> str:
+    if isinstance(obj, dict):
+        return "{\n" + ",\n".join(f"{json.dumps(k, ensure_ascii=False)}:{json.dumps(v, ensure_ascii=False, separators=(',', ':'))}" for k, v in obj.items()) + "\n}\n"
+    return "[\n" + ",\n".join(json.dumps(x, ensure_ascii=False, separators=(",", ":")) for x in obj) + "\n]\n"
+
+
+def exportar_registro() -> None:
+    """Grava em fontes/stf/ o retrato atual (temas com teses e súmulas), a partir dos dados coletados."""
+    temas = ler(SAIDA / "stf-temas.json", [])
+    if len(temas) >= 1000:
+        reg = [{k: x[k] for k in CAMPOS_REGISTRO if k in x} for x in temas]
+        linhas = ",\n".join(json.dumps(x, ensure_ascii=False, separators=(",", ":")) for x in reg)
+        REGISTRO_TEMAS.write_text(f'{{\n"atualizado":"{HOJE}",\n"temas":[\n{linhas}\n]\n}}\n', encoding="utf-8")
+    cache = {**ler(REGISTRO_SUMULAS, {}), **ler(CACHE / "stf-sumulas.json", {})}
+    cache.pop("atualizado", None)
+    if len(cache) >= 700:
+        REGISTRO_SUMULAS.write_text(json_linhas({"atualizado": HOJE, **dict(sorted(cache.items(), key=lambda kv: (not kv[1].get("v"), kv[1]["n"])))}), encoding="utf-8")
+    log(f"Registro do STF gravado: {len(temas)} temas, {len(cache)} súmulas.")
+
+
+def temas_do_registro(e: Exception) -> dict:
+    reg = ler(REGISTRO_TEMAS, {})
+    if not reg.get("temas"):
+        raise e
+    log(f"  temas do STF: {e}; usando o registro de {reg.get('atualizado', '?')}")
+    temas = []
+    for x0 in reg["temas"]:
+        x = {"tp": "RG", **x0}
+        ass = [a.strip() for a in str(x.get("ass", "")).split(";") if a.strip()]
+        x["ar"], x["sa"] = areas_stf(ass, f"{x['q']} {x.get('desc', '')} {x.get('tese', '')}")
+        for k in ("ar", "sa"):
+            if not x[k]:
+                del x[k]
+        temas.append(x)
+    temas.sort(key=lambda t: -t["n"])
+    gravar(SAIDA / "stf-temas.json", temas)
+    gravar(SAIDA / "stf-historico.json", ler(CACHE / "stf-historico.json", []))
+    return {"temas": len(temas), "origem": "registro", "dataRegistro": reg.get("atualizado", "")}
+
+
 def atualizar_temas(limite_teses: int) -> dict:
-    pagina = decodificar(baixar(URL_TEMAS, 180))
-    temas = ler_temas(pagina)
-    if len(temas) < 1000:
-        raise RuntimeError(f"lista de temas do STF incompleta ({len(temas)})")
-    semente = ler(FONTE / "teses.json", {})
+    try:
+        pagina = decodificar(baixar(URL_TEMAS, 180))
+        temas = ler_temas(pagina)
+        if len(temas) < 1000:
+            raise RuntimeError(f"lista de temas do STF incompleta ({len(temas)})")
+    except Exception as e:  # noqa: BLE001
+        return temas_do_registro(e)
+    semente = {str(x["n"]): {"d": x["dtese"], "t": x["tese"]} for x in ler(REGISTRO_TEMAS, {}).get("temas", []) if x.get("tese") and x.get("dtese")}
     cache = {**semente, **ler(CACHE / "stf-teses.json", {})}
     novas = 0
     for x in sorted(temas, key=lambda t: -t["n"]):
@@ -323,8 +373,10 @@ def sumula_detalhe(base: int, sid: str) -> dict:
 
 
 def atualizar_sumulas(limite: int) -> dict:
-    semente = ler(FONTE / "sumulas.json", {})
+    semente = ler(REGISTRO_SUMULAS, {})
+    data_reg = semente.pop("atualizado", "")
     cache = {**semente, **ler(CACHE / "stf-sumulas.json", {})}
+    sem_acesso = []
     lista = []
     for base, vinc in ((26, True), (30, False)):  # vinculantes primeiro
         try:
@@ -332,6 +384,7 @@ def atualizar_sumulas(limite: int) -> dict:
         except Exception as e:  # noqa: BLE001
             log(f"  lista de súmulas do STF (base {base}): {e}")
             itens = []
+            sem_acesso.append(base)
         if not itens:  # sem acesso: mantém o que já se tem
             itens = [{"id": v["id"], "n": v["n"], "st": v.get("st", "")} for v in cache.values() if bool(v.get("v")) == vinc]
         for it in itens:
@@ -370,7 +423,9 @@ def atualizar_sumulas(limite: int) -> dict:
     if out:
         gravar(SAIDA / "stf-sumulas.json", out)
     log(f"STF: {sum(1 for s in out if not s['v'])} súmulas e {sum(1 for s in out if s['v'])} súmulas vinculantes; {baixadas} enunciado(s) baixado(s).")
-    return {"sumulas": len(out), "baixadas": baixadas}
+    if not out:
+        raise RuntimeError("portal do STF indisponível e sem registro de súmulas")
+    return {"sumulas": len(out), "baixadas": baixadas, **({"origem": "registro", "dataRegistro": data_reg} if len(sem_acesso) == 2 else {})}
 
 
 # ------------------------------------------------------------------ composição
@@ -533,7 +588,10 @@ def main():
     ap.add_argument("--sumulas", type=int, default=1000, help="máximo de enunciados de súmula baixados nesta execução")
     ap.add_argument("--minutos", type=int, default=25, help="tempo máximo para baixar teses e enunciados")
     ap.add_argument("--so", default="", help="temas, sumulas ou composicao (padrão: todos)")
+    ap.add_argument("--exportar", action="store_true", help="grava o registro em fontes/stf/ (temas e súmulas)")
     args = ap.parse_args()
+    if args.exportar:
+        return exportar_registro()
     global TEMPO_MAX
     TEMPO_MAX = args.minutos * 60
     res = {}
@@ -555,7 +613,12 @@ def main():
         stf = {}
         for nome in ("temas", "sumulas", "composicao"):
             r = res.get(nome)
-            if r and "erro" not in r and r.get("origem") != "anterior":
+            reg = r and "erro" not in r and r.get("origem") in ("registro", "registro do Radar")
+            if reg and ant.get(nome) and ant[nome].get("origem") != "registro":
+                stf[nome] = ant[nome]  # a última coleta direta continua valendo
+            elif reg:
+                stf[nome] = {"em": (r.get("dataRegistro") or HOJE) + "T12:00:00+00:00", "origem": "registro", **{k: v for k, v in r.items() if k not in ("origem", "dataRegistro")}}
+            elif r and "erro" not in r and r.get("origem") != "anterior":
                 stf[nome] = {"em": agora, **{k: v for k, v in r.items() if k != "origem"}}
             elif ant.get(nome):
                 stf[nome] = ant[nome]
