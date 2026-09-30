@@ -1422,3 +1422,4 @@ html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b
 .topo-tit { min-width: 0; flex: 1 1 auto; }
 .topo-sobre-linha { overflow: hidden; }
 .evento-tit .selo.trib { margin-right: 6px; vertical-align: 1px; }
+.trib-op[disabled] { opacity: .55; cursor: not-allowed; }

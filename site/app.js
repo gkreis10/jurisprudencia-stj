@@ -116,7 +116,9 @@
     stf: { rot: "Radar STF", nome: "Supremo Tribunal Federal", desc: "Repercussão geral, súmulas e composição do STF" },
     ambos: { rot: "Radar STJ · STF", nome: "Os dois tribunais", desc: "Tudo do STJ, com a repercussão geral, as súmulas e a composição do STF" },
   };
-  const trib = () => (TRIBS[P.trib] ? P.trib : "stj");
+  // Enquanto os dados do STF não chegam ao site (primeira coleta), só o STJ fica disponível.
+  const stfPronto = () => !D.man || !!D.man.stf?.temas;
+  const trib = () => { const t = TRIBS[P.trib] ? P.trib : "stj"; return t !== "stj" && !stfPronto() ? "stj" : t; };
   const comSTJ = () => trib() !== "stf";
   const comSTF = () => trib() !== "stj";
   const ambos = () => trib() === "ambos";
@@ -2721,8 +2723,8 @@
     };
   }
   // ======================================================= seletor de tribunal
-  const opcoesTrib = () => Object.entries(TRIBS).map(([k, t]) => `<button type="button" class="trib-op" role="menuitemradio" aria-checked="${k === trib()}" data-trib="${k}">
-      <span class="trib-op-marca" aria-hidden="true"></span><span><b>${esc(t.rot)}</b><small>${esc(t.desc)}</small></span></button>`).join("");
+  const opcoesTrib = () => Object.entries(TRIBS).map(([k, t]) => { const off = k !== "stj" && !stfPronto(); return `<button type="button" class="trib-op" role="menuitemradio" aria-checked="${k === trib()}" data-trib="${k}"${off ? ' disabled aria-disabled="true"' : ""}>
+      <span class="trib-op-marca" aria-hidden="true"></span><span><b>${esc(t.rot)}</b><small>${esc(off ? "Em preparação: os dados do STF chegam na próxima atualização." : t.desc)}</small></span></button>`; }).join("");
   function abrirMenuTrib(botao) {
     let m = $("#trib-menu");
     if (m && !m.hidden) return fecharMenuTrib();
@@ -5674,9 +5676,10 @@
       { nome: "Jurisprudência em Teses", dado: m.teses?.ultimaData, rot: m.teses?.ultima ? `edição ${m.teses.ultima}, de` : "", verif: m.teses?.coletadoEm, lim: 14, auto: false },
       { nome: "Composição do Tribunal", dado: "", verif: m.composicao?.em, auto: true },
       ...(m.stf ? [
-        { nome: "STF · Repercussão geral", dado: "", extra: m.stf.temas?.temas ? `${fmtInt(m.stf.temas.temas)} temas` : "", verif: m.stf.temas?.em, auto: true },
-        { nome: "STF · Súmulas", dado: "", extra: m.stf.sumulas?.sumulas ? `${fmtInt(m.stf.sumulas.sumulas)} súmulas` : "", verif: m.stf.sumulas?.em, auto: true },
-        { nome: "STF · Composição", dado: "", verif: m.stf.composicao?.em, auto: true },
+        // Quando o portal do STF recusa a rotina automática, vale o registro coletado à parte (semanal).
+        { nome: "STF · Repercussão geral", dado: "", extra: m.stf.temas?.temas ? `${fmtInt(m.stf.temas.temas)} temas` : "", verif: m.stf.temas?.em, auto: m.stf.temas?.origem !== "registro", lim: 10 },
+        { nome: "STF · Súmulas", dado: "", extra: m.stf.sumulas?.sumulas ? `${fmtInt(m.stf.sumulas.sumulas)} súmulas` : "", verif: m.stf.sumulas?.em, auto: m.stf.sumulas?.origem !== "registro", lim: 10 },
+        { nome: "STF · Composição", dado: "", verif: m.stf.composicao?.em, auto: m.stf.composicao?.origem !== "registro", lim: 10 },
       ] : []),
     ];
     for (const x of L) {
@@ -5715,6 +5718,7 @@
     try { D.man = await getJSON("data/manifest.json"); }
     catch { $("#view").innerHTML = vazio("alerta", "A base ainda não foi gerada", "Rode a rotina de atualização (veja o README)."); return; }
     D.orgaos = D.man.orgaos;
+    if (!stfPronto() && TRIBS[P.trib] && P.trib !== "stj") { aplicarTrib(); montarNav(); }
     const q = new Date(D.man.atualizadoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const defas = situacaoFontes(D.man).filter((x) => x.defasada);
     // Até quando vai cada fonte principal: "verificado hoje" não quer dizer que tudo seja de hoje.
