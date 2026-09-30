@@ -71,6 +71,12 @@ jobs:
         if: steps.modo.outputs.so_site != 'true'
         run: python scripts/atualizar.py --desde 2000-01 --dias-radar 15
 
+      # STF: temas de repercussão geral, súmulas e composição (páginas oficiais do Supremo).
+      # Se o portal do STF não responder, o site mantém os dados da execução anterior.
+      - name: Atualizar dados do STF
+        if: steps.modo.outputs.so_site != 'true'
+        run: python scripts/stf.py --minutos 50
+
       - name: Guardar dados
         if: always() && steps.modo.outputs.so_site != 'true'
         uses: actions/cache/save@v5
