@@ -1,0 +1,27 @@
+{
+"conferido":"2026-10-01",
+"presenciais":[
+{"d":"2026-10-01","o":"TP","nome":"Plenário","ini":"2026-10-01 14:00","tipo":"extraordinária","num":"29/2026","itens":[{"cl":"ADC","num":"90","rel":"Dias Toffoli","res":"1. Trata-se de Ação Declaratória de Constitucionalidade ajuizada pela Confederação Nacional das Empresas de Seguros Gerais, Previdência Privada e Vida, Saúde Suplementar e Capitalização (CNSEG), com pedido de Medida Cautelar, por meio da qual se objetiva a interpretação conforme do § 3º do art. 15...","vista":"Alexandre de Moraes"},{"cl":"RE","num":"630852","rel":"Rosa Weber","res":"1. Trata-se de recurso extraordinário, com fundamento no art. 102, III, 'a', da Constituição Federal, envolvendo discussão acerca da aplicação do Estatuto do Idoso a contrato de plano de saúde firmado anteriormente a sua vigência. 2. O acórdão recorrido entendeu que \"prepondera na questão 'sub ju...","dest":"Gilmar Mendes","rg":1},{"cl":"RE","num":"835818","rel":"Marco Aurélio","res":"1. Trata-se de recurso extraordinário em que se discute, à luz dos arts. 150, § 6º, e 195, I, b, da Constituição Federal, a possibilidade de excluir da base de cálculo da Contribuição ao PIS e da COFINS os valores referentes a créditos presumidos do Imposto sobre a Circulação de Mercadorias e Serv...","dest":"Gilmar Mendes","rg":1},{"cl":"RE","num":"1141156","rel":"Edson Fachin","res":"1. Trata-se de Recursos Extraordinários interpostos contra decisão do Superior Tribunal de Justiça, assim ementada: \"RECURSO ESPECIAL REPRESENTATIVO DA CONTROVÉRSIA. ART. 543-CPC. DEPÓSITO JUDICIAL. CORREÇÃO MONETÁRIA. EXPURGOS INFLACIONÁRIOS. INCLUSÃO. NECESSIDADE. DECRETO-LEI Nº 1.737/79. ATUAL...","rg":1}]}
+],
+"virtuais":[
+{"ini":"2026-09-25","fim":"2026-10-02","TP":125,"1T":216,"2T":256},
+{"ini":"2026-10-02","fim":"2026-10-09","TP":177,"1T":241,"2T":258},
+{"ini":"2026-10-09","fim":"2026-10-19","TP":199,"1T":206,"2T":293},
+{"ini":"2026-10-16","fim":"2026-10-23","TP":5,"1T":0,"2T":2}
+],
+"temas":[
+{"tema":208,"cl":"RE","num":"601220","ini":"2026-09-18","fim":"2026-09-25","o":"TP","amb":"virtual"},
+{"tema":1483,"cl":"RE","num":"1616922","ini":"2026-09-18","fim":"2026-09-25","o":"TP","amb":"virtual"},
+{"tema":1484,"cl":"RE","num":"1620626","ini":"2026-09-18","fim":"2026-09-25","o":"TP","amb":"virtual"},
+{"tema":1485,"cl":"ARE","num":"1600294","ini":"2026-09-18","fim":"2026-09-25","o":"TP","amb":"virtual"},
+{"tema":441,"cl":"RE","num":"660968","ini":"2026-09-25","fim":"2026-10-02","o":"TP","amb":"virtual"},
+{"tema":1486,"cl":"RE","num":"1555476","ini":"2026-09-25","fim":"2026-10-02","o":"TP","amb":"virtual"},
+{"tema":1487,"cl":"ARE","num":"1620532","ini":"2026-09-25","fim":"2026-10-02","o":"TP","amb":"virtual"},
+{"tema":1071,"cl":"RE","num":"1050597","ini":"2026-09-30","fim":"2026-09-30","o":"TP","amb":"presencial"},
+{"tema":381,"cl":"RE","num":"630852","ini":"2026-10-01","fim":"2026-10-01","o":"TP","amb":"presencial"},
+{"tema":843,"cl":"RE","num":"835818","ini":"2026-10-01","fim":"2026-10-01","o":"TP","amb":"presencial"},
+{"tema":1016,"cl":"RE","num":"1141156","ini":"2026-10-01","fim":"2026-10-01","o":"TP","amb":"presencial"},
+{"tema":1455,"cl":"ARE","num":"1593784","ini":"2026-10-02","fim":"2026-10-09","o":"TP","amb":"virtual"},
+{"tema":1348,"cl":"RE","num":"1495108","ini":"2026-10-09","fim":"2026-10-19","o":"TP","amb":"virtual"}
+]
+}
