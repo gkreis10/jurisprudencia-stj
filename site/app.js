@@ -5988,7 +5988,7 @@
         { nome: "STF · Repercussão geral", dado: "", extra: m.stf.temas?.temas ? `${fmtInt(m.stf.temas.temas)} temas` : "", verif: m.stf.temas?.em, auto: m.stf.temas?.origem !== "registro", lim: 10 },
         { nome: "STF · Súmulas", dado: "", extra: m.stf.sumulas?.sumulas ? `${fmtInt(m.stf.sumulas.sumulas)} súmulas` : "", verif: m.stf.sumulas?.em, auto: m.stf.sumulas?.origem !== "registro", lim: 10 },
         { nome: "STF · Informativo", dado: "", extra: m.stf.informativos?.julgados ? `${fmtInt(m.stf.informativos.julgados)} julgados · edição ${m.stf.informativos.ultima || ""}` : "", verif: m.stf.informativos?.em, auto: m.stf.informativos?.origem !== "registro", lim: 10 },
-        { nome: "STF · Composição", dado: "", verif: m.stf.composicao?.em, auto: m.stf.composicao?.origem !== "registro", lim: 10 },
+        { nome: "STF · Composição", dado: "", extra: m.stf.composicao?.ministros ? `${fmtInt(m.stf.composicao.ministros)} ministros` : "", verif: m.stf.composicao?.em, auto: m.stf.composicao?.origem !== "registro", lim: 10 },
       ] : []),
     ];
     for (const x of L) {
