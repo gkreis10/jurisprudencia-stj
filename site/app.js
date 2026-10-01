@@ -2096,7 +2096,7 @@
     composicao: () => trib() === "stf" ? ajuda("Sobre a Composição do STF", `
       <p class="texto-serif">Os ministros do Supremo, o Plenário e a composição das duas Turmas, conforme as páginas oficiais do Tribunal.</p>
       <ul class="lista-ajuda">
-        <li>Toque em um nome para ver o perfil: cargo, Plenário e Turma de que participa, data de posse e data de nascimento.</li>
+        <li>Toque em um nome para ver o perfil: cargo, Plenário e Turma de que participa, contato do gabinete (telefone e e-mails para audiência e memoriais), vaga que ocupou, datas de indicação, nomeação e posse, formação, trajetória e os temas e julgados de sua relatoria no acervo.</li>
         <li>Os ministros são nomeados pelo Presidente da República, depois de aprovados pela maioria absoluta do Senado Federal (CF, art. 101).</li>
         <li>As fotos, quando disponíveis, vêm do acervo livre do Wikimedia Commons, com o crédito indicado.</li>
       </ul>${glossarioSTF("plen", "rel")}`) : ajuda("Sobre a Composição", `
@@ -2517,6 +2517,8 @@
     : `<span class="av av-ini" style="width:${tam}px;height:${tam}px;font-size:${Math.round(tam * 0.36)}px">${iniciais(nomeIni(m))}</span>`;
   const ROT_ORG_CURTO = { "corte-especial": "Corte Especial", "primeira-secao": "1ª Seção", "segunda-secao": "2ª Seção", "terceira-secao": "3ª Seção", "primeira-turma": "1ª Turma", "segunda-turma": "2ª Turma", "terceira-turma": "3ª Turma", "quarta-turma": "4ª Turma", "quinta-turma": "5ª Turma", "sexta-turma": "6ª Turma" };
   const tratamento = (m) => (m.tipo === "convocado" ? (m.genero === "f" ? "Desembargadora convocada" : "Desembargador convocado") : m.genero === "f" ? "Ministra" : "Ministro");
+  // Um e-mail com mais de uma finalidade aparece uma vez só, com as finalidades juntas.
+  const unirEmails = (l) => { const m = new Map(); for (const e of l || []) { const x = m.get(e.e) || { e: e.e, r: [] }; if (e.rot && !x.r.includes(e.rot)) x.r.push(e.rot); m.set(e.e, x); } return [...m.values()].map((x) => ({ e: x.e, rot: x.r.join("; ") })); };
   const linkEmail = (s) => esc(s).replace(/([\w.+-]+@[\w-]+\.[\w.]+)/g, '<a href="mailto:$1">$1</a>');
   // "(61)3319-6454 6623" = dois ramais do mesmo tronco: (61) 3319-6454 e (61) 3319-6623.
   function telefones(s) {
@@ -2628,14 +2630,14 @@
   // Composição do STF: Plenário (Presidente, Vice-Presidente e demais por antiguidade) e as duas Turmas.
   async function vComposicaoSTF(main, p) {
     const c = await composicaoSTF();
-    const aba = p.get("aba") === "ministros" ? "ministros" : "orgaos";
-    const hashDe = (a) => `#composicao?${ambos() ? "t=stf&" : ""}${a === "ministros" ? "aba=ministros" : ""}`.replace(/[?&]$/, "");
+    const aba = ["ministros", "contatos"].includes(p.get("aba")) ? p.get("aba") : "orgaos";
+    const hashDe = (a) => `#composicao?${ambos() ? "t=stf&" : ""}${a !== "orgaos" ? `aba=${a}` : ""}`.replace(/[?&]$/, "");
     main.innerHTML = `${abasTribComp("stf")}
       <div class="card card-pad cp-topo">
         <div>
           <p class="sobretitulo">Composição em ${fmtData(c.data)}</p>
           <h2 class="cp-tit">Ministros, Plenário e Turmas do STF</h2>
-          <p class="nota">Conforme as páginas oficiais do STF (<a href="${esc(c.fontes.composicao)}" target="_blank" rel="noopener">composição atual ${ico("externo")}</a> e <a href="${esc(c.fontes.turmas)}" target="_blank" rel="noopener">Turmas ${ico("externo")}</a>), conferidas todos os dias às 7h. Toque em um nome para ver o perfil.</p>
+          <p class="nota">Conforme as páginas oficiais do STF (<a href="${esc(c.fontes.composicao)}" target="_blank" rel="noopener">composição atual ${ico("externo")}</a> e <a href="${esc(c.fontes.turmas)}" target="_blank" rel="noopener">Turmas ${ico("externo")}</a>), conferidas duas vezes por semana. Toque em um nome para ver o perfil.</p>
         </div>
         <form class="cp-busca" id="cp-f" role="search"><input id="cp-q" type="search" placeholder="Buscar ministro" aria-label="Buscar ministro" autocomplete="off"></form>
       </div>
@@ -2643,10 +2645,24 @@
         <div class="segmentos" role="tablist">
           <button type="button" role="tab" data-cp-aba="orgaos" aria-selected="${aba === "orgaos"}">Plenário e Turmas</button>
           <button type="button" role="tab" data-cp-aba="ministros" aria-selected="${aba === "ministros"}">Ministros</button>
+          ${c.ministros.some((m) => m.gabinete) ? `<button type="button" role="tab" data-cp-aba="contatos" aria-selected="${aba === "contatos"}">Contatos</button>` : ""}
         </div>
       </div>
       <div id="cp-corpo" style="margin-top:14px"></div>`;
     const corpo = $("#cp-corpo", main);
+    const ct = c.contatos || {};
+    const blocoContato = (tit, sub, tel, emails, url, extra = "") => `<div class="card card-pad cp-gab">
+        <p class="cp-gab-tit"><b>${tit}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</p>
+        ${tel ? `<p class="cp-tel">${telefones(tel).length > 1 ? "Telefones" : "Telefone"}: ${linkTel(tel)}</p>` : ""}
+        ${unirEmails(emails).map((e) => `<p>${e.rot ? `${esc(e.rot)}: ` : ""}${linkEmail(e.e)}</p>`).join("")}
+        ${extra}${url ? `<p class="nota"><a href="${esc(url)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a></p>` : ""}</div>`;
+    const contatosHTML = () => `
+      <p class="nota" style="margin:0 0 12px">Telefones e e-mails publicados pelo STF para audiências, memoriais e convites. Cada gabinete tem regras próprias para pedir audiência; confira a página oficial antes de enviar.</p>
+      <div class="cp-grade-gab">
+        ${ct.presidencia ? blocoContato("Gabinete da Presidência", ct.presidencia.nome ? `${ct.presidencia.cargo || "Chefia"}: ${ct.presidencia.nome}` : "", ct.presidencia.telefone, ct.presidencia.emails, c.urlContatos) : ""}
+        ${["primeira-turma", "segunda-turma"].filter((k) => ct[k]).map((k) => blocoContato(`Secretaria da ${k === "primeira-turma" ? "Primeira" : "Segunda"} Turma`, ct[k].nome ? `${ct[k].cargo || "Secretaria"}: ${ct[k].nome}` : "", ct[k].telefone, ct[k].emails, c.urlContatos)).join("")}
+        ${c.ministros.filter((m) => m.gabinete).map((m) => blocoContato(`<button type="button" class="link-acao" data-min="${esc(m.id)}">${esc(m.curto)}</button>`, m.gabinete.chefe ? `Chefia de gabinete: ${m.gabinete.chefe}` : "", m.gabinete.telefones, m.gabinete.emails, m.gabinete.url, m.gabinete.atualizado ? `<p class="nota">Página atualizada pelo Tribunal em ${fmtData(m.gabinete.atualizado)}.</p>` : "")).join("")}
+      </div>`;
     const cartao = (m) => {
       const cargo = (m.orgaos || []).find((o) => o.id === "plenario")?.cargo;
       const tur = (m.orgaos || []).filter((o) => /turma/.test(o.id));
@@ -2669,7 +2685,10 @@
           <p class="nota" style="margin:0 0 12px">O Plenário reúne os onze ministros e julga, entre outros, as ações de controle de constitucionalidade e o mérito dos temas de repercussão geral. As duas Turmas, de cinco ministros cada, julgam os demais recursos e ações; o Presidente do Tribunal não integra Turma.${c.vagas ? ` <b>${c.vagas === 1 ? "Há uma cadeira vaga" : `Há ${c.vagas} cadeiras vagas`}</b> no Tribunal.` : ""}</p>
           <div class="cp-grade-org cp-stf-turmas">${cardOrgao(c.org.get("primeira-turma"), c, { presPrimeiro: true })}${cardOrgao(c.org.get("segunda-turma"), c, { presPrimeiro: true })}</div>
           ${cardOrgao(plen, c, { cls: "cp-ce" })}
-          ${c.secretarioTurmas ? `<p class="nota" style="margin-top:10px">Secretaria das Turmas: ${esc(c.secretarioTurmas)}.</p>` : ""}`;
+          ${ct["primeira-turma"] || ct["segunda-turma"] ? `<p class="nota" style="margin-top:10px">Secretarias: ${["primeira-turma", "segunda-turma"].filter((k) => ct[k]).map((k) => `${k === "primeira-turma" ? "1ª" : "2ª"} Turma, ${esc(ct[k].nome || "")}${ct[k].telefone ? ` (${linkTel(ct[k].telefone)})` : ""}`).join("; ")}. <a href="${hashDe("contatos")}">Todos os contatos</a>.</p>` : c.secretarioTurmas ? `<p class="nota" style="margin-top:10px">Secretaria das Turmas: ${esc(c.secretarioTurmas)}.</p>` : ""}`;
+      } else if (aba === "contatos") {
+        corpo.innerHTML = contatosHTML();
+        $$("[data-min]", corpo).forEach((b) => b.addEventListener("click", () => abrirMinistro(b.dataset.min)));
       } else {
         corpo.innerHTML = `<p class="nota" style="margin:0 0 12px">Por ordem de antiguidade (data da posse no STF). Fotos do acervo livre do Wikimedia Commons, quando disponíveis.</p>
           <div class="cp-grade-min">${c.ministros.map(cartao).join("")}</div>`;
@@ -2685,11 +2704,18 @@
   async function abrirMinistroSTF(id) {
     const c = await composicaoSTF();
     const m = c.idx.get(id); if (!m) return;
-    const pf = m.perfil || {};
+    const pf = m.perfil || {}, g = m.gabinete;
     const cargo = (m.orgaos || []).find((o) => o.id === "plenario")?.cargo;
     const rotCargo = cargo === "Decano" ? (m.genero === "f" ? "Decana" : "Decano") : cargo ? `${cargo} do STF` : "";
     const orgs = (m.orgaos || []).map((o) => `<li><b>${esc(o.nome)}</b>${o.cargo && o.id !== "plenario" ? ` · ${esc(o.cargo)}` : o.cargo ? ` · ${esc(rotCargo)}` : ""}</li>`).join("");
-    const nTemas = comSTF() ? (await temasRG().catch(() => [])).filter((x) => norm(x.rel || "") === norm(m.curto)).length : 0;
+    const [temas, ix] = await Promise.all([comSTF() ? temasRG().catch(() => []) : [], infoSTFIndice()]);
+    const meus = temas.filter((x) => norm(x.rel || "") === norm(m.curto));
+    const comTese = meus.filter((x) => x.tese).length;
+    const relInf = ix?.rels ? Object.keys(ix.rels).find((r) => norm(r).endsWith(norm(m.curto))) : "";
+    const inf = relInf ? ix.rels[relInf] : null;
+    const lista = (arr) => `<ul class="lista-ajuda">${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+    const vaga = pf.vaga ? `Na vaga decorrente ${pf.vaga.motivo === "falecimento" ? "do falecimento" : "da aposentadoria"} ${/^Ministra/.test(pf.vaga.antecessor) ? "da" : "do"} ${esc(pf.vaga.antecessor)}.` : "";
+    const datas = (pf.datas || []).map(([r, d]) => `<li><b>${fmtData(d)}</b> · ${esc(r)}</li>`).join("");
     abrirGaveta(`${m.genero === "f" ? "Ministra" : "Ministro"} do STF`, m.curto, `
       <div class="cp-perfil-cab">
         ${m.foto ? `<figure class="cp-foto"><img src="${esc(m.foto.url)}" alt="${esc(m.nome)}" width="132" height="132" data-erro-remover="figure"><figcaption><a href="${esc(m.foto.pagina)}" target="_blank" rel="noopener">Foto: ${esc(m.foto.credito)}</a></figcaption></figure>` : avatarMin(m, 96)}
@@ -2697,13 +2723,34 @@
           <p class="cp-nome">${esc(m.nome)}</p>
           ${rotCargo ? `<span class="selo ${cargo === "Decano" ? "" : "pri"}" style="margin:0 6px 6px 0">${esc(rotCargo)}</span>` : ""}
           <p class="meta" style="margin-top:6px"><span>${m.antiguidade}º em antiguidade</span>${m.posse ? `<span>Posse no STF em ${fmtData(m.posse)}</span>` : ""}</p>
-          ${pf.nascimento ? `<p class="nota">Nascimento: ${esc(pf.nascimento)}</p>` : ""}
+          ${pf.nascimento ? `<p class="nota">Nascimento: ${esc(pf.nascimento)}${pf.natural ? `, em ${esc(pf.natural)}` : ""}</p>` : ""}
         </div>
       </div>
       ${orgs ? `<h3>Onde atua</h3><ul class="lista-ajuda">${orgs}</ul>` : ""}
-      ${nTemas ? `<h3>Na repercussão geral</h3><p><a class="link-acao" href="#repetitivos?rel=${encodeURIComponent(m.curto)}&s=afet" data-fechar-gav>${fmtInt(nTemas)} tema(s) de sua relatoria ${ico("seta")}</a></p>` : ""}
-      <p style="margin-top:16px"><a class="link-acao" href="${esc(c.fontes.composicao)}" target="_blank" rel="noopener">Composição no site do STF ${ico("externo")}</a></p>
-      <p class="nota" style="margin-top:14px">Composição e Turmas conforme as páginas oficiais do STF; data da posse e de nascimento conforme registros públicos.</p>`);
+      ${g ? `<h3>Contato do gabinete</h3><div class="cp-contato">
+        ${g.unidade ? `<p><b>${esc(g.unidade)}</b></p>` : ""}
+        ${g.chefe ? `<p>Chefia de gabinete: ${esc(g.chefe)}</p>` : ""}
+        ${g.telefones ? `<p class="cp-tel">${telefones(g.telefones).length > 1 ? "Telefones" : "Telefone"}: ${linkTel(g.telefones)}</p>` : ""}
+        ${(g.emails || []).map((e) => `<p>${e.rot ? `${esc(e.rot)}: ` : ""}${linkEmail(e.e)}</p>`).join("")}
+        <p class="nota" style="margin-top:6px"><a href="${esc(g.url)}" target="_blank" rel="noopener">Página do gabinete no STF ${ico("externo")}</a>${g.atualizado ? ` · atualizada pelo Tribunal em ${fmtData(g.atualizado)}` : ""}. Regras de audiência e de envio de memoriais variam por gabinete; confira na página.</p>
+      </div>` : ""}
+      ${cargo === "Presidente" && c.contatos?.presidencia ? `<h3>Gabinete da Presidência</h3><div class="cp-contato">
+        ${c.contatos.presidencia.nome ? `<p>${esc(c.contatos.presidencia.cargo || "Chefia de gabinete")}: ${esc(c.contatos.presidencia.nome)}</p>` : ""}
+        ${c.contatos.presidencia.telefone ? `<p class="cp-tel">Telefone: ${linkTel(c.contatos.presidencia.telefone)}</p>` : ""}
+        ${unirEmails(c.contatos.presidencia.emails).map((e) => `<p>${e.rot ? `${esc(e.rot)}: ` : ""}${linkEmail(e.e)}</p>`).join("")}
+      </div>` : ""}
+      <h3>No acervo do Radar</h3>
+      <ul class="lista-ajuda">
+        ${meus.length ? `<li><a class="link-acao" href="#repetitivos?rel=${encodeURIComponent(m.curto)}&s=afet" data-fechar-gav>${fmtInt(meus.length)} tema(s) de repercussão geral de sua relatoria${comTese ? `, ${fmtInt(comTese)} com tese` : ""} ${ico("seta")}</a></li>` : ""}
+        ${inf ? `<li><a class="link-acao" href="#infostf?rl=${encodeURIComponent(relInf)}" data-fechar-gav>${fmtInt(inf[0])} julgado(s) no Informativo do STF, de ${inf[1]} a ${inf[2]} ${ico("seta")}</a>${inf[3].length ? `<br><small class="nota">Matérias mais frequentes: ${inf[3].map((k) => esc(rotMat(k))).join(", ")}.</small>` : ""}</li>` : ""}
+        ${!meus.length && !inf ? `<li>Sem julgados de sua relatoria no acervo.</li>` : ""}
+      </ul>
+      ${datas || vaga ? `<h3>No STF</h3>${vaga ? `<p>${vaga}</p>` : ""}${datas ? `<ul class="lista-ajuda">${datas}</ul>` : ""}` : ""}
+      ${pf.formacao ? `<h3>Formação acadêmica</h3>${lista(pf.formacao)}` : ""}
+      ${pf.atuacao ? `<details class="cp-det" open><summary>Trajetória antes do STF</summary>${lista(pf.atuacao)}</details>` : ""}
+      ${pf.fonteCv ? `<p class="nota">Resumo conforme: ${esc(pf.fonteCv)}.</p>` : ""}
+      <p style="margin-top:14px">${pf.curriculo ? `<a class="link-acao" href="${esc(pf.curriculo)}" target="_blank" rel="noopener">Currículo oficial (PDF) ${ico("externo")}</a> ` : ""}<a class="link-acao" href="${esc(pf.pasta || c.fontes.composicao)}" target="_blank" rel="noopener">Página do ministro no STF ${ico("externo")}</a></p>
+      <p class="nota" style="margin-top:14px">Composição, Turmas, datas, vaga e contatos conforme as páginas oficiais do STF; formação e trajetória resumidas do currículo indicado; fotos do Wikimedia Commons.</p>`);
     $$("[data-fechar-gav]", $("#gaveta-corpo")).forEach((a) => a.addEventListener("click", fecharGaveta));
   }
   async function abrirMinistro(id) {

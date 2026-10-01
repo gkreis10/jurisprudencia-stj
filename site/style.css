@@ -1063,6 +1063,12 @@ svg.gira { transform: rotate(180deg); }
 .cp-nome { font-family: var(--serif); font-size: 19px; line-height: 1.3; margin: 0 0 8px; }
 .cp-contato { background: var(--sup-2); border: 1px solid var(--linha); border-radius: var(--raio-s); padding: 12px 14px; display: grid; gap: 4px; font-size: 14px; overflow-wrap: anywhere; }
 .cp-contato p { margin: 0; }
+.cp-grade-gab { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.cp-gab { display: grid; gap: 4px; font-size: 14px; overflow-wrap: anywhere; align-content: start; }
+.cp-gab p { margin: 0; }
+.cp-gab-tit { display: grid; gap: 2px; margin-bottom: 4px !important; }
+.cp-gab-tit .link-acao { font-size: 15px; font-weight: 600; padding: 0; }
+.cp-gab-tit small { color: var(--tx-2); font-size: 13px; }
 .cp-det { margin-top: 12px; }
 .cp-det summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 @media (max-width: 980px) { .cp-colunas { grid-template-columns: 1fr; } }
