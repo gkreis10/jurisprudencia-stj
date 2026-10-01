@@ -1058,6 +1058,7 @@ def atualizar_composicao() -> dict:
     ministros = semente["ministros"]
     anterior = ler(SAIDA / "stf-composicao.json", {})
     origem = "portal do STF"
+    data_registro = ""
     try:
         ids, cargos_pag = ler_composicao_atual(decodificar(baixar(URL_COMPOSICAO, 60)), ministros)
         turmas = ler_turmas(decodificar(baixar(URL_TURMAS, 60)), ministros)
@@ -1066,14 +1067,25 @@ def atualizar_composicao() -> dict:
         ativos = set(ids)
         ordem_oficial = ids
     except Exception as e:  # noqa: BLE001
-        log(f"  composição do STF: {e}; mantém a última conhecida")
-        if anterior.get("ministros"):
-            return {"ministros": len(anterior["ministros"]), "origem": "anterior"}
-        origem = "registro do Radar"
-        ativos = {m["id"] for m in ministros}
-        turmas = semente.get("turmas", {})
-        cargos_pag = semente.get("cargos", {})
-        ordem_oficial = []
+        # O portal recusa a rotina do GitHub. Vale o que a coleta fora do GitHub conferiu e guardou no registro
+        # (ministros.json: ordem, cargos, turmas e a data da conferência).
+        if semente.get("conferido") and semente.get("ordem"):
+            log(f"  composição do STF: {e}; usa o registro, conferido em {semente['conferido']}")
+            origem = "registro do Radar"
+            ativos = set(semente["ordem"])
+            ordem_oficial = list(semente["ordem"])
+            turmas = semente.get("turmas", {})
+            cargos_pag = semente.get("cargos", {})
+            data_registro = semente["conferido"]
+        else:
+            log(f"  composição do STF: {e}; mantém a última conhecida")
+            if anterior.get("ministros"):
+                return {"ministros": len(anterior["ministros"]), "origem": "anterior"}
+            origem = "registro do Radar"
+            ativos = {m["id"] for m in ministros}
+            turmas = semente.get("turmas", {})
+            cargos_pag = semente.get("cargos", {})
+            ordem_oficial = []
     cargos = cargos_pag
     lista = [m for m in ministros if m["id"] in ativos]
     lista.sort(key=lambda m: m["posse"])  # antiguidade no STF: data da posse
@@ -1117,7 +1129,58 @@ def atualizar_composicao() -> dict:
     gravar(SAIDA / "stf-composicao.json", obj)
     novos = [m["curto"] for m in lista if m.get("novo")]
     log(f"STF: composição com {len(saida_min)} ministros ({origem}); {sum(1 for x in saida_min if x.get('foto'))} com foto.")
-    return {"ministros": len(saida_min), "origem": origem, **({"foraDoRegistro": novos} if novos else {})}
+    return {"ministros": len(saida_min), "origem": origem, **({"dataRegistro": data_registro} if data_registro else {}), **({"foraDoRegistro": novos} if novos else {})}
+
+
+def gravar_ministros(semente: dict) -> None:
+    """Grava fontes/stf/ministros.json no mesmo desenho de sempre (um ministro por linha)."""
+    j = lambda x: json.dumps(x, ensure_ascii=False)  # noqa: E731
+    t = semente.get("turmas", {})
+    corpo_t = ",\n".join(f'  {j(k)}: {j(t[k])}' for k in ("data", "primeira-turma", "segunda-turma", "secretario") if k in t)
+    linhas = [
+        "{",
+        f' "_sobre": {j(semente["_sobre"])},',
+        f' "atualizado": {j(semente["atualizado"])},',
+        f' "conferido": {j(semente["conferido"])},',
+        f' "ordem": {j(semente["ordem"])},',
+        ' "ministros": [',
+        ",\n".join(f"  {j(m)}" for m in semente["ministros"]),
+        " ],",
+        f' "cargos": {j(semente.get("cargos", {}))},',
+        ' "turmas": {',
+        corpo_t,
+        " }",
+        "}",
+    ]
+    (FONTE / "ministros.json").write_text("\n".join(linhas) + "\n", encoding="utf-8")
+
+
+def conferir_composicao() -> dict:
+    """Coleta fora do GitHub: confere as páginas oficiais do STF e guarda o resultado no registro (ministros.json).
+
+    O registro só é regravado quando algo mudou ou quando a última conferência tem mais de 6 dias, para não
+    gerar envio à toa; o site mostra a data dessa conferência como a da verificação da composição.
+    """
+    semente = ler(FONTE / "ministros.json", {})
+    trabalho = [dict(m) for m in semente["ministros"]]
+    ids, cargos = ler_composicao_atual(decodificar(baixar(URL_COMPOSICAO, 60)), trabalho)
+    turmas = ler_turmas(decodificar(baixar(URL_TURMAS, 60)), trabalho)
+    if len(ids) < 8 or len(turmas.get("primeira-turma", [])) < 3 or len(turmas.get("segunda-turma", [])) < 3:
+        raise RuntimeError(f"página com formato inesperado ({len(ids)} ministros; turmas {[len(turmas.get(k, [])) for k in ('primeira-turma', 'segunda-turma')]})")
+    novos = [m["curto"] for m in trabalho if m.get("novo")]
+    if novos:
+        log("  AVISO: a composição oficial traz ministro(a) fora do registro; ministros.json não foi alterado.")
+        return {"ministros": len(ids), "origem": "portal do STF", "foraDoRegistro": novos}
+    mudou = ids != semente.get("ordem") or cargos != semente.get("cargos") or turmas != semente.get("turmas")
+    try:
+        idade = (dt.date.fromisoformat(HOJE) - dt.date.fromisoformat(semente.get("conferido", "2000-01-01"))).days
+    except ValueError:
+        idade = 999
+    if mudou or idade >= 6:
+        semente.update({"atualizado": HOJE, "conferido": HOJE, "ordem": ids, "cargos": cargos, "turmas": turmas})
+        gravar_ministros(semente)
+    log(f"STF: composição conferida nas páginas oficiais ({len(ids)} ministros; {'houve mudança' if mudou else 'sem mudança'}).")
+    return {"ministros": len(ids), "origem": "portal do STF", "mudou": mudou}
 
 
 def main():
@@ -1147,7 +1210,12 @@ def main():
             except Exception as e:  # noqa: BLE001
                 log(f"STF ({nome}): falhou: {e}")
                 res[nome] = {"erro": str(e)[:200]}
-        falhou = [n for n, r in res.items() if "erro" in r or r.get("origem") == "registro"]
+        try:
+            res["composicao"] = conferir_composicao()
+        except Exception as e:  # noqa: BLE001
+            log(f"STF (composicao): não conferida: {e}")  # não impede o envio dos demais
+            res["composicao"] = {"erro": str(e)[:200]}
+        falhou = [n for n, r in res.items() if n != "composicao" and ("erro" in r or r.get("origem") == "registro")]
         if falhou:
             log(f"COLETA NÃO REALIZADA: portal do STF indisponível para {', '.join(falhou)}; registro mantido.")
             raise SystemExit(2)
