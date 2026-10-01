@@ -198,6 +198,16 @@ else {
       if (t === "ambos" && !rotasT.includes("pesquisa")) falha("modo ambos: Pesquisa ausente do menu");
       ok(`modo ${t}: ${rotasT.length} seções`);
     }
+    // Atualize-se no modo STF: cartões do STF, sem erro, com tipos do STF no filtro.
+    await modo("stf");
+    await page.goto(BASE + "#atualize"); await esperarTela();
+    await page.waitForSelector("#fd article, #fd .reel", { timeout: 15000 }).catch(() => {});
+    const nFeed = await page.$$eval("#fd article, #fd .reel", (l) => l.length);
+    const txtFeed = await page.$eval("#view", (v) => v.textContent);
+    if (/Não foi possível carregar os dados/.test(txtFeed)) falha("Atualize-se (STF): tela de erro");
+    else if (!nFeed && !/em dia|nenhuma|Nada/i.test(txtFeed)) falha("Atualize-se (STF): sem cartões nem aviso");
+    else ok(`Atualize-se (STF): ${nFeed} cartões carregados`);
+    if (/Julgado · STJ|Repetitivo/.test(await page.$$eval("#fd .selo", (l) => l.map((e) => e.textContent).join(" ")).catch(() => ""))) falha("Atualize-se (STF): cartão do STJ no modo STF");
     // Conferência de citações do STF (modo STJ + STF) e composição com as duas abas.
     const rgT = rg.find((x) => x.tese) || { n: 69 }, sv = sf.find((x) => x.v) || null;
     await page.goto(BASE + "#verificar"); await page.waitForSelector("#vf-txt");
@@ -209,18 +219,31 @@ else {
     else ok("verificar petição com citações do STF");
     await page.goto(BASE + "#composicao?t=stf"); await esperarTela();
     if (!(await page.$("#view [data-min]"))) falha("composição do STF sem ministros"); else ok("composição do STF");
-    // Informativo do STF (opcional até a primeira coleta): lista, busca e resumo completo.
+    // Informativo do STF (opcional até a primeira coleta): edições, busca, resumo completo e edições antigas.
     if (tam("data/stf-informativos.json") > 0) {
       const inf = json("data/stf-informativos.json");
       if (inf.length < 100) avisos.push(`stf-informativos.json: ${inf.length} julgados (esperados mais de 100)`); else ok(`stf-informativos.json: ${inf.length} julgados, edição ${inf[0].n}`);
+      const ixI = tam("data/stf-informativos-indice.json") > 0 ? json("data/stf-informativos-indice.json") : null;
+      if (ixI) {
+        if (!ixI.eds?.length || ixI.eds[0][0] !== inf[0].n) falha("Informativo do STF: índice de edições incompatível com os dados recentes");
+        for (const a of ixI.antigos) if (tam(`data/stf-informativos/${a}.json`) <= 0) falha(`Informativo do STF: faltou data/stf-informativos/${a}.json`);
+        ok(`stf-informativos-indice.json: ${ixI.eds.length} edições (da nº ${ixI.eds.at(-1)[0]}), ${ixI.antigos.length} ano(s) antigos`);
+      }
       await page.goto(BASE + "#infostf"); await esperarTela();
-      const n0 = await page.$$eval("#is-lista > li", (l) => l.length);
-      if (!n0) falha("Informativo do STF: lista vazia");
-      await page.fill("#is-q", inf[0].p.split(",")[0].replace(/\./g, "")); await page.waitForTimeout(500);
-      const n1 = await page.$$eval("#is-lista > li", (l) => l.length);
-      if (!n1 || n1 > n0) falha(`Informativo do STF: busca por processo (${n1} de ${n0})`);
+      const n0 = await page.$$eval("#is-lista .jt-ed", (l) => l.length);
+      if (!n0) falha("Informativo do STF: nenhuma edição listada");
+      await page.click("#is-lista .jt-ed-cab"); await page.waitForSelector("#is-lista .jt-ed.aberta [data-info-stf]", { timeout: 15000 }).catch(() => falha("Informativo do STF: edição não abriu"));
+      await page.fill("#is-q", inf[0].p.split(",")[0].replace(/\./g, "")); await page.waitForTimeout(800);
+      const n1 = await page.$$eval("#is-lista [data-info-stf]", (l) => l.length);
+      if (!n1) falha("Informativo do STF: busca por processo sem resultado");
       await page.click("#is-lista [data-info-stf]"); await page.waitForSelector("#gis-copiar", { timeout: 8000 }).catch(() => falha("Informativo do STF: resumo completo não abriu"));
-      ok("Informativo do STF: lista, busca e resumo");
+      if (ixI?.antigos.length) {
+        const ano = ixI.antigos[0];
+        await page.goto(BASE + `#infostf?e=a:${ano}&q=`); await esperarTela();
+        const nA = await page.waitForSelector("#is-lista .jt-ed", { timeout: 30000 }).then(() => page.$$eval("#is-lista .jt-ed", (l) => l.length)).catch(() => 0);
+        if (!nA) falha(`Informativo do STF: ano antigo ${ano} sem edições`);
+        else ok(`Informativo do STF: edições, busca, resumo e ano antigo (${ano})`);
+      } else ok("Informativo do STF: edições, busca e resumo");
     }
   } catch (e) { falha(`STF: ${e.message.split("\n")[0]}`); }
   for (const e of [...new Set(errosPag)]) falha(`STF: ${e}`);

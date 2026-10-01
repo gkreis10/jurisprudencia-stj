@@ -247,7 +247,7 @@ def exportar_registro() -> None:
     cache.pop("atualizado", None)
     if len(cache) >= 700:
         REGISTRO_SUMULAS.write_text(json_linhas({"atualizado": HOJE, **dict(sorted(cache.items(), key=lambda kv: (not kv[1].get("v"), kv[1]["n"])))}), encoding="utf-8")
-    inf = ler(SAIDA / "stf-informativos.json", [])
+    inf = INFORMATIVOS_REGISTRO
     if len(inf) >= 100:
         inf = [{k: v for k, v in j.items() if k not in ("ar", "sa")} for j in inf]
         REGISTRO_INFORMATIVOS.write_text(json_linhas_informativos(inf, max(j["n"] for j in inf)), encoding="utf-8")
@@ -472,11 +472,21 @@ def atualizar_sumulas(limite: int) -> dict:
 URL_INFORMATIVO = "https://www.stf.jus.br/arquivo/informativo/documento/informativo{}.htm"
 URL_INFORMATIVO_ATUAL = "https://www.stf.jus.br/arquivo/informativo/documento/informativo.htm"
 REGISTRO_INFORMATIVOS = FONTE / "informativos.json"
-PRIMEIRA_EDICAO = 1004  # edições anteriores usam outro formato e não são lidas
+PRIMEIRA_EDICAO = 1004  # o registro semanal começa aqui; as edições 1 a 1003 ficam no arquivo fixo abaixo
+ARQUIVO_ANTIGOS = FONTE / "informativos-antigos"  # um arquivo por ano (1996 a 2020), coletado uma única vez
+INFORMATIVOS_REGISTRO: list[dict] = []  # julgados do registro, da última coleta (para exportar_registro)
+
+
+def decodificar(b: bytes) -> str:
+    """As edições mais recentes estão em UTF-8; as anteriores, em Windows-1252."""
+    try:
+        return b.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return b.decode("cp1252", errors="replace")
 
 
 def paragrafos_html(b: bytes) -> list[tuple[str, list[str]]]:
-    t = b.decode("cp1252", errors="replace")
+    t = decodificar(b)
     out = []
     for m in re.finditer(r"(?is)<p\b[^>]*>(.*?)</p>", t):
         p = m.group(1)
@@ -485,6 +495,8 @@ def paragrafos_html(b: bytes) -> list[tuple[str, list[str]]]:
         x = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", p))).strip()
         if x:
             out.append((x, hrefs))
+    if len(out) < 40:  # edições sem <p> (texto separado por <br>)
+        return [(x, []) for x in linhas_html(b)]
     return out
 
 
@@ -508,7 +520,7 @@ def ler_informativo(n: int, b: bytes) -> list[dict]:
     data = f"{m.group(3)}-{mes:02d}-{int(m.group(1)):02d}"
     # O corpo começa no segundo "1 PLENÁRIO" (o primeiro está no sumário, em caixa mista); em edições
     # mais antigas, em "1 INFORMATIVO" seguido de "1.1 Plenário".
-    ini = next((i for i, (x, _) in enumerate(ps) if re.match(r"^1 (PLEN[ÁA]RIO|INFORMATIVO)$", x)), None)
+    ini = next((i for i, (x, _) in enumerate(ps) if re.match(r"^1 ?-? ?(PLEN[ÁA]RIO|INFORMATIVO)$", x)), None)
     if ini is None:
         raise RuntimeError(f"edição {n}: corpo não encontrado")
     orgao, ramos, desc, cur, modo = "", [], [], None, ""
@@ -542,7 +554,7 @@ def ler_informativo(n: int, b: bytes) -> list[dict]:
             continue
         if cur is None:
             if x == x.upper() and len(x) > 10 and not x.startswith("ODS"):
-                cab_ramo = x.split(" – ", 1)
+                cab_ramo = re.split(r"\s[–-]\s", x, maxsplit=1)
                 ramos.append(cab_ramo[0].strip().capitalize())
                 desc += [d.strip().capitalize() for d in (cab_ramo[1].split(";") if len(cab_ramo) > 1 else []) if d.strip()]
                 continue
@@ -558,8 +570,8 @@ def ler_informativo(n: int, b: bytes) -> list[dict]:
                     cur["inc"] = inc
                 ramos, desc = [], []
             continue
-        if x.startswith("ODS:"):
-            cur["ods"] = x[4:].strip()
+        if re.match(r"^ODS\b", x):
+            cur["ods"] = re.sub(r"^ODS:?\s*", "", x).strip()
             continue
         if re.match(r"^Teses? fixadas?:?$", x, re.I):
             modo = "tese"
@@ -571,13 +583,14 @@ def ler_informativo(n: int, b: bytes) -> list[dict]:
         if re.match(r"^\(\d+\) ", x):
             cur["nt"].append(x)
             continue
-        if re.match(r"^[A-Z][A-Za-z]{1,7}\s\d(?:(?!\.\s)[^\n]){0,400}?\s(?:relator|relatora|redator|redatora)\b", x[:500]) and re.search(r"julgamento|julgado|Turma|Plenário", x):
-            mr = re.search(r"(relator|relatora)\s+(?:para o acórdão\s+)?((?:Ministra|Ministro|Min\.)\s+[^,]+)", x)
+        if re.match(r"^[A-Z][A-Za-z]{1,7}\s\d(?:(?!\.\s)[^\n]){0,400}?[\s,](?:relator|relatora|redator|redatora|rel\.)(?=\s|$)", x[:500]) and re.search(r"julgamento|julgado|Turma|Plenário", x):
+            mr = re.search(r"(relator|relatora|rel\.)\s+(?:para o acórdão\s+)?((?:Ministra|Ministro|Min\.)\s+[^,]+)", x)
             cur["fe"] = x
             if mr:
                 rel = mr.group(2).strip()
-                cur["rel"] = re.sub(r"^Min\.", "Ministra" if mr.group(1) == "relatora" else "Ministro", rel)
-            mp = re.match(r"^(.+?),\s*(?:relator|relatora)\b", x)
+                fem = mr.group(1) == "relatora" or sem_acento(re.sub(r"^(Ministra|Ministro|Min\.)\s+", "", rel)).lower() in MULHERES
+                cur["rel"] = re.sub(r"^(Ministra|Ministro|Min\.)", "Ministra" if fem else "Ministro", rel)
+            mp = re.match(r"^(.+?),\s*(?:relator|relatora|rel\.)(?=\s)", x)
             if mp and not cur.get("p"):
                 cur["p"] = mp.group(1).strip()
             jd = data_dmy(x)
@@ -593,10 +606,272 @@ def ler_informativo(n: int, b: bytes) -> list[dict]:
     return julgados
 
 
+# --- Edições 1 a 1003 (1995 a janeiro de 2021): texto corrido; cada julgado é um título curto, um ou mais
+# parágrafos e a identificação do processo (em linha própria ou no fim do último parágrafo).
+SECAO_ANTIGA = re.compile(r"^(PLEN[ÁA]RIO|PLENO|PRIMEIRA TURMA|SEGUNDA TURMA|1[ªa] TURMA|2[ªa] TURMA|REPERCUSS[ÃA]O GERAL)\s*:?$", re.I)
+FIM_ANTIGO = re.compile(
+    r"^(TRANSCRI[ÇC][ÕO]ES|INOVA[ÇC][ÕO]ES (LEGISLATIVAS|NORMATIVAS)|CLIPPING.*|OUTRAS INFORMA[ÇC][ÕO]ES|PLEN[ÁA]RIO VIRTUAL EM EVID.*|SESS[ÕO]ES? VIRTUA.*|DADOS DO INFORMATIVO|"
+    r"SESS[ÕO]ES(ORDIN.*|)|CLASSIFICA[ÇC][ÃA]O DE ASSUNTOS|LEGISLA[ÇC][ÃA]O|OUTROS ASSUNTOS|INFORMATIVO EM REDE|SESS[ÕO]ES ORDIN.*|JULGAMENTOS|PRA[ÇC]A DOS TR[ÊE]S PODERES.*|[ÍI]NDICE (SISTEM|NUM).*|ACESSE.*)$", re.I)
+MULHERES = {"ellen gracie", "carmen lucia", "rosa weber"}
+PARTICULAS = {"da", "de", "do", "das", "dos", "e"}
+
+
+def linhas_html(b: bytes, colapsar: bool = True) -> list[str]:
+    t = decodificar(b)
+    m = re.search(r"(?is)<body[^>]*>(.*)</body>", t)
+    t = m.group(1) if m else t
+    t = re.sub(r"(?is)<(script|style)\b.*?</\1>", "", t)
+    if colapsar:  # em muitas edições, as quebras de linha do código-fonte HTML são só quebras forçadas do texto
+        t = re.sub(r"\s+", " ", t)
+    t = re.sub(r"(?i)</?(p|div|tr|li|h\d|table|pre|td|br|center|blockquote|dd|dt|ul|ol)\b[^>]*>", "\n", t)
+    t = html.unescape(re.sub(r"<[^>]+>", "", t)).replace("\xa0", " ")
+    out: list[str] = []
+    for x in (re.sub(r"[ \t\r\f]+", " ", y).strip() for y in t.split("\n")):
+        if not x:
+            continue
+        # Linha cortada no meio da frase (quebra forçada no HTML): continua na seguinte.
+        if out and (out[-1].endswith(",") or (x[0].islower() and not out[-1].endswith((".", ";", ":", "?", "!", "”", '"', ")")))):
+            out[-1] = f"{out[-1]} {x}"
+        else:
+            out.append(x)
+    return out
+
+
+def data_antiga(s: str) -> str:
+    """Data em d.m.aa, d/m/aa ou d.m.aaaa (ano de dois dígitos: 90 a 99 = 1900; 00 a 89 = 2000)."""
+    m = re.search(r"(?<![\d.])(\d{1,2})[./](\d{1,2})[./](\d{4}|\d{2})(?!\d)", s or "")
+    if not m:
+        return ""
+    a = int(m.group(3))
+    a = a + (1900 if a >= 90 else 2000) if a < 100 else a
+    d, mes = int(m.group(1)), int(m.group(2))
+    return f"{a}-{mes:02d}-{d:02d}" if 1 <= d <= 31 and 1 <= mes <= 12 else ""
+
+
+def relator_antigo(x: str) -> str:
+    red = re.search(r"(?i)\bred\.?\s*p/\s*o?\s*ac\.?(?:[óo]rd[ãa]o)?\s*(?:Min\.?|Ministr[oa])\s*([^,;(]+)", x)
+    m = re.search(r"(?i)\brel(?:ator|atora)?\s*\.?\s*(?:orig\.?\s*)?(?:p/\s*o?\s*ac\.?(?:[óo]rd[ãa]o)?\s*)?(?:Min\.?|Ministr[oa])?\s*([^,;(]+)", x)
+    g = red or m
+    nome = re.sub(r"(?i)^(Min\.?|Ministr[oa])\s+", "", g.group(1).strip(" .")) if g else ""
+    nome = re.sub(r"\s+\d{1,2}[./].*$", "", nome).strip(" .")
+    if not nome or len(nome) > 45:
+        return ""
+    if nome.isupper() or nome.islower():
+        nome = " ".join(p.lower() if p.lower() in PARTICULAS else p.capitalize() for p in nome.split())
+    if nome.lower().startswith("presidente"):
+        return "Presidente"
+    return ("Ministra " if sem_acento(nome).lower() in MULHERES else "Ministro ") + nome
+
+
+def linha_final_antiga(x: str) -> bool:
+    """Linha de identificação do processo: "RE 454737/SP, rel. Min. Cezar Peluso, 18.9.2008. (RE-454737)"."""
+    if len(x) > 600:
+        return False
+    if len(x) < 220 and re.search(r"\(\w{1,6}-\d+\)\s*$", x) and data_antiga(x):  # sem relator (ex.: "PSV 100/DF, 17.3.2016. (PSV-100)")
+        return True
+    m = re.search(r"(?i)\brel(?:ator|atora)?\b", x)
+    return bool(m and m.start() <= 140 and re.search(r"\d", x[: m.start()]) and (data_antiga(x) or re.search(r"(?i)\bsess[ãa]o\b|\b(19|20)\d\d\b", x)))
+
+
+def final_embutido(x: str) -> tuple[str, str]:
+    """Separa do fim de um parágrafo a identificação do processo ("... . ADIn 561 DF, rel. Min. Celso de Mello, sessão de 23.08.95.")."""
+    ms = list(re.finditer(r"(?i)\brel(?:ator|atora)?\b", x))
+    if not ms or not data_antiga(x[ms[-1].start():]) or len(x) - ms[-1].start() > 260:
+        return x, ""
+    pre = x[: ms[-1].start()]
+    cortes = [pre.rfind(c) + len(c) for c in (". ", ".) ", "; ", ".” ", ".\" ", ") ")]
+    corte = max(cortes)
+    if corte <= 0 or len(pre) - corte > 110 or not re.search(r"\d", pre[corte:]):
+        return x, ""
+    return x[:corte].strip(), x[corte:].strip()
+
+
+def data_edicao_antiga(ls: list[str]) -> str:
+    """Data do cabeçalho ("Brasília, 14 a 18 de dezembro de 2020") ou, quando há, a de divulgação; "" se ilegível."""
+    i = next((k for k, x in enumerate(ls[:30]) if "Data de divulga" in x), None)
+    if i is not None:
+        t = " ".join(ls[i: i + 2])
+    else:
+        c = next((k for k, x in enumerate(ls[:14]) if re.search(r"(?i)\bN[º°o]\s*\.?\s*\d", x)), None)
+        t = ls[c] if c is not None else ""
+    t = re.sub(r"(\d)\s*de\b", r"\1 de", t.lower())
+    t = re.sub(r"([a-zç])de\b", r"\1 de", t)
+    ms = list(re.finditer(r"janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro", t))
+    if not ms:
+        return ""
+    m = ms[-1]
+    dia = re.search(r"(\d{1,2})[º°o]?\s*(?:de\s*)?$", t[: m.start()].strip())
+    ano = re.findall(r"\b(19\d\d|20\d\d)\b", t[m.end():])
+    if not dia or not ano:
+        return ""
+    mes = MESES.index("março" if m.group(0).startswith("mar") else m.group(0)) + 1
+    return f"{ano[-1]}-{mes:02d}-{int(dia.group(1)):02d}"
+
+
+def ler_informativo_antigo(n: int, b: bytes, data: str = "") -> list[dict]:
+    """Lê a edição de duas formas (quebras do código-fonte como espaço ou como separador de parágrafo) e
+    fica com a que identificar mais julgados; em empate aproximado, a primeira, de texto mais limpo."""
+    l1 = linhas_html(b)
+    data = data_edicao_antiga(l1) or data
+    a = _ler_antigo(n, l1, data)
+    c = _ler_antigo(n, linhas_html(b, False), data)
+    pont = lambda r: sum(1 for j in r if j.get("p") or j.get("rel"))  # noqa: E731
+    return a if pont(a) >= 0.9 * pont(c) else c
+
+
+def _ler_antigo(n: int, ls: list[str], data: str = "") -> list[dict]:
+    data = data_edicao_antiga(ls) or data
+    if not data:
+        raise RuntimeError(f"edição {n}: data não encontrada")
+    # Início do corpo: primeiro título de seção em maiúsculas ("PLENÁRIO"); sem ele, a seção em caixa mista
+    # depois do índice; sem ela, o título que antecede o primeiro parágrafo longo.
+    ini = next((i for i, x in enumerate(ls) if i >= 8 and SECAO_ANTIGA.match(x) and x == x.upper() and not x.startswith("REPERCUSS")), None)
+    if ini is None:
+        ix = next((i for i, x in enumerate(ls) if re.match(r"(?i)^(ÍNDICE DE ASSUNTOS|SUMÁRIO)$", x)), 12)
+        ini = next((i for i, x in enumerate(ls) if i > ix and re.match(r"(?i)^(Plen[áa]rio|Primeira Turma|Segunda Turma)$", x)), None)
+    if ini is None:
+        p1 = next((i for i, x in enumerate(ls) if i >= 8 and len(x) > 200), None)
+        if p1 is None:
+            raise RuntimeError(f"edição {n}: corpo não encontrado")
+        ini = p1 - 1
+    orgao, ramos, desc = "", [], []
+    julgados: list[dict] = []
+    cur: dict | None = None
+    finais: list[str] = []
+
+    def fechar():
+        nonlocal cur, finais
+        if cur and cur["r"]:
+            if not finais:
+                cur["r"][-1], fim = final_embutido(cur["r"][-1])
+                if fim:
+                    finais = [fim]
+                if not cur["r"][-1]:
+                    cur["r"].pop()
+            junk = re.match(r"^(\d+ª parte|[\d./\s]+|—|\*.*|Em|Secretaria.*|DJE? .*|Coordenadoria.*)$", cur["t"], re.I) or (not finais and sum(map(len, cur["r"])) < 90)
+            if cur["r"] and not junk:
+                if finais:
+                    procs = [re.split(r",?\s*(?:rel|relator)\b", f, maxsplit=1, flags=re.I)[0].strip(" ,.") for f in finais]
+                    cur["p"] = "; ".join(dict.fromkeys(p for p in procs if p))[:200]
+                    cur["fe"] = " | ".join(finais)
+                    rel = relator_antigo(finais[0])
+                    if rel:
+                        cur["rel"] = rel
+                    jd = data_antiga(finais[0])
+                    if jd:
+                        cur["jd"] = jd
+                julgados.append(cur)
+        cur, finais = None, []
+
+    for x in ls[ini:]:
+        if FIM_ANTIGO.match(x):
+            break
+        if re.match(r"(?i)^(\d+[ªa] )?Parte( \d+)?\s*:?$", x) or x in ("Download deste Informativo",) or x.upper().startswith("A ASSESSORIA DO MIN"):
+            continue
+        sec = SECAO_ANTIGA.match(x)
+        if sec:
+            fechar()
+            nome = sec.group(1).upper()
+            if nome.startswith("PLEN"):
+                orgao = "Plenário"
+            elif nome.startswith(("PRIMEIRA", "1")):
+                orgao = "Primeira Turma"
+            elif nome.startswith(("SEGUNDA", "2")):
+                orgao = "Segunda Turma"
+            ramos, desc = [], []
+            continue
+        if linha_final_antiga(x):
+            if cur is not None and cur["r"]:
+                finais.append(x)
+            continue
+        if cur is not None and finais:
+            fechar()
+        if re.match(r"^\(\d+\) ", x) and cur is not None:
+            cur["nt"].append(x)
+            continue
+        if x.startswith("ODS:") and cur is not None:
+            cur["ods"] = x[4:].strip()
+            continue
+        # Cabeçalho de ramo do Direito (edições a partir de 2017), em maiúsculas.
+        if x == x.upper() and len(x) > 12 and re.match(r"^DIREITO\b", x) and cur is None or (x == x.upper() and re.match(r"^DIREITO\b", x) and len(x) < 160):
+            fechar()
+            partes = re.split(r"\s[–-]\s", x, maxsplit=1)
+            ramos.append(partes[0].strip().capitalize())
+            if len(partes) > 1:
+                desc += [d.strip().capitalize() for d in partes[1].split(";") if d.strip()]
+            continue
+        eh_titulo = len(x) <= 200 and not x.endswith((".", ";", ":", "”", '"')) and not re.match(r"^\(?\d+\)", x)
+        if eh_titulo and (cur is None or cur["r"]):
+            fechar()
+            titulo = re.sub(r"\s*[-:]$", "", x).strip()
+            cur = {"id": f"{n}-{len(julgados) + 1}", "n": n, "d": data, "o": orgao, "ra": list(dict.fromkeys(ramos)), "ds": list(dict.fromkeys(desc)), "t": titulo, "p": "", "r": [], "nt": []}
+            ramos, desc = [], []
+        elif cur is not None:
+            cur["r"].append(x)
+    fechar()
+    for k, j in enumerate(julgados, 1):
+        j["id"] = f"{n}-{k}"
+    return julgados
+
+
+def gerar_antigos(pasta_htm: Path) -> dict:
+    """Uso único: lê as edições 1 a 1003 baixadas em pasta_htm (informativoN.htm ou iN.htm) e grava
+    fontes/stf/informativos-antigos/AAAA.json. Edições sem data legível recebem a data interpolada."""
+    arqs: dict[int, Path] = {}
+    for p in pasta_htm.glob("*.htm"):
+        m = re.search(r"(\d+)", p.stem)
+        if m and 1 <= int(m.group(1)) < PRIMEIRA_EDICAO:
+            arqs[int(m.group(1))] = p
+    datas: dict[int, str] = {}
+    for n, p in arqs.items():
+        d = data_edicao_antiga(linhas_html(p.read_bytes()))
+        if d:
+            datas[n] = d
+    def vizinha(n: int) -> str:
+        ant = max((k for k in datas if k < n), default=None)
+        prox = min((k for k in datas if k > n), default=None)
+        base = ant if ant is not None else prox
+        if base is None:
+            return ""
+        return (dt.date.fromisoformat(datas[base]) + dt.timedelta(days=7 * (n - base))).isoformat()
+    todos: list[dict] = []
+    falhas: dict[int, str] = {}
+    for n in sorted(arqs):
+        try:
+            b = arqs[n].read_bytes()
+            novos = []
+            if n >= 1000:  # a partir daqui o formato é o estruturado (Resumo, teses)
+                try:
+                    novos = ler_informativo(n, b)
+                except Exception:  # noqa: BLE001
+                    novos = []
+            todos += novos or ler_informativo_antigo(n, b, "" if n in datas else vizinha(n))
+        except Exception as e:  # noqa: BLE001
+            falhas[n] = str(e)
+    por_ano: dict[str, list[dict]] = {}
+    for j in todos:
+        por_ano.setdefault(j["d"][:4], []).append(j)
+    ARQUIVO_ANTIGOS.mkdir(parents=True, exist_ok=True)
+    for a, l in sorted(por_ano.items()):
+        l.sort(key=lambda j: (j["n"], int(j["id"].split("-")[1])))
+        corpo = ",\n".join(json.dumps(j, ensure_ascii=False, separators=(",", ":")) for j in l)
+        (ARQUIVO_ANTIGOS / f"{a}.json").write_text(f'{{\n"atualizado":"{HOJE}",\n"julgados":[\n{corpo}\n]\n}}\n', encoding="utf-8")
+    return {"edicoes": len(arqs), "julgados": len(todos), "anos": sorted(por_ano), "falhas": falhas, "sem_data": sorted(set(arqs) - set(datas))}
+
+
 def json_linhas_informativos(julgados: list[dict], ultima: int) -> str:
     js = sorted(julgados, key=lambda j: (-j["n"], int(j["id"].split("-")[1])))
     corpo = ",\n".join(json.dumps(j, ensure_ascii=False, separators=(",", ":")) for j in js)
     return f'{{\n"atualizado":"{HOJE}",\n"ultima":{ultima},\n"julgados":[\n{corpo}\n]\n}}\n'
+
+
+def julgados_antigos() -> list[dict]:
+    """Edições 1 a 1003, guardadas à parte (fontes/stf/informativos-antigos/AAAA.json)."""
+    out: list[dict] = []
+    if ARQUIVO_ANTIGOS.is_dir():
+        for arq in sorted(ARQUIVO_ANTIGOS.glob("*.json")):
+            out += ler(arq, {}).get("julgados", [])
+    return out
 
 
 def saida_informativos(julgados: list[dict]) -> list[dict]:
@@ -604,13 +879,55 @@ def saida_informativos(julgados: list[dict]) -> list[dict]:
     out = []
     for j in sorted(julgados, key=lambda j: (-j["n"], int(j["id"].split("-")[1]))):
         x = dict(j)
-        ar, sa = areas_stf(j.get("ra", []), f"{j['t']} {' '.join(j.get('ds', []))} {' '.join(j.get('ts', [])[:1])}")
+        corpo = " ".join(j.get("ts", [])[:1]) or (j.get("r") or [""])[0][:300]
+        ar, sa = areas_stf(j.get("ra", []), f"{j['t']} {' '.join(j.get('ds', []))} {corpo}")
         if ar:
             x["ar"] = ar
         if sa:
             x["sa"] = sa
         out.append(x)
     return out
+
+
+def gravar_informativos_site(registro: list[dict]) -> int:
+    """Grava os dados do site: recentes (2 últimos anos) em stf-informativos.json, os demais anos em
+    stf-informativos/AAAA.json e o índice das edições (carregado antes de abrir qualquer ano)."""
+    global INFORMATIVOS_REGISTRO
+    INFORMATIVOS_REGISTRO = registro
+    todos = saida_informativos(registro + julgados_antigos())
+    por_ano: dict[str, list[dict]] = {}
+    for x in todos:
+        por_ano.setdefault((x.get("d") or "0000")[:4], []).append(x)
+    ult_ano = max(por_ano)
+    recentes_de = str(int(ult_ano) - 1)
+    recentes = [x for a, l in por_ano.items() if a >= recentes_de for x in l]
+    antigos = sorted(a for a in por_ano if a < recentes_de)
+    gravar(SAIDA / "stf-informativos.json", sorted(recentes, key=lambda j: (-j["n"], int(j["id"].split("-")[1]))))
+    pasta = SAIDA / "stf-informativos"
+    if pasta.is_dir():
+        for velho in pasta.glob("*.json"):
+            velho.unlink()
+    for a in antigos:
+        gravar(pasta / f"{a}.json", por_ano[a])
+    eds: dict[int, list[dict]] = {}
+    for x in todos:
+        eds.setdefault(x["n"], []).append(x)
+    indice = []
+    for n in sorted(eds, reverse=True):
+        l = eds[n]
+        ramos: dict[str, int] = {}
+        for x in l:
+            for r in (x.get("ar") or [])[:1]:
+                ramos[r] = ramos.get(r, 0) + 1
+        indice.append([n, l[0].get("d", ""), len(l), [r for r, _ in sorted(ramos.items(), key=lambda kv: -kv[1])[:3]],
+                       [x["t"][:140] for x in sorted(l, key=lambda j: int(j["id"].split("-")[1]))[:2]]])
+    corte = min(x["n"] for x in recentes)
+    mat: dict[str, int] = {}
+    for x in todos:
+        for k in list(x.get("ar") or []) + list(x.get("sa") or []):
+            mat[k] = mat.get(k, 0) + 1
+    gravar(SAIDA / "stf-informativos-indice.json", {"corte": corte, "antigos": antigos, "mat": mat, "eds": indice})
+    return len(todos)
 
 
 def atualizar_informativos(limite: int = 80) -> dict:
@@ -628,8 +945,8 @@ def atualizar_informativos(limite: int = 80) -> dict:
         if not julgados:
             raise
         log(f"  Informativo do STF: {e}; usando o registro de {reg.get('atualizado', '?')}")
-        gravar(SAIDA / "stf-informativos.json", saida_informativos(julgados))
-        return {"julgados": len(julgados), "origem": "registro", "dataRegistro": reg.get("atualizado", ""), "ultima": ultima_reg}
+        total = gravar_informativos_site(julgados)
+        return {"julgados": total, "origem": "registro", "dataRegistro": reg.get("atualizado", ""), "ultima": ultima_reg}
     de = max(PRIMEIRA_EDICAO, ultima_reg) if ultima_reg else PRIMEIRA_EDICAO  # a última do registro é baixada de novo (correções)
     baixadas = 0
     for n in range(de, ultima + 1):
@@ -645,9 +962,9 @@ def atualizar_informativos(limite: int = 80) -> dict:
         baixadas += 1
         ultima_reg = max(ultima_reg, n)
         time.sleep(INTERVALO)
-    gravar(SAIDA / "stf-informativos.json", saida_informativos(julgados))
-    log(f"STF: {len(julgados)} julgados do Informativo (até a edição {ultima_reg}); {baixadas} edição(ões) baixada(s).")
-    return {"julgados": len(julgados), "edicoes_baixadas": baixadas, "ultima": ultima_reg}
+    total = gravar_informativos_site(julgados)
+    log(f"STF: {total} julgados do Informativo (até a edição {ultima_reg}); {baixadas} edição(ões) baixada(s).")
+    return {"julgados": total, "edicoes_baixadas": baixadas, "ultima": ultima_reg}
 
 
 # ------------------------------------------------------------------ composição
