@@ -663,6 +663,47 @@ def relator_antigo(x: str) -> str:
     return ("Ministra " if sem_acento(nome).lower() in MULHERES else "Ministro ") + nome
 
 
+# Relatores do Informativo: forma única do nome (as edições antigas trazem variações e erros de digitação).
+RELATORES = ["Marco Aurélio", "Gilmar Mendes", "Joaquim Barbosa", "Dias Toffoli", "Ricardo Lewandowski", "Cármen Lúcia",
+             "Sepúlveda Pertence", "Ilmar Galvão", "Maurício Corrêa", "Carlos Velloso", "Luiz Fux", "Moreira Alves", "Ellen Gracie",
+             "Eros Grau", "Celso de Mello", "Roberto Barroso", "Cezar Peluso", "Néri da Silveira", "Edson Fachin", "Octavio Gallotti",
+             "Ayres Britto", "Sydney Sanches", "Rosa Weber", "Teori Zavascki", "Nelson Jobim", "Alexandre de Moraes", "Nunes Marques",
+             "Menezes Direito", "Cristiano Zanin", "Flávio Dino", "André Mendonça", "Francisco Rezek", "Paulo Brossard", "Aldir Passarinho"]
+APELIDOS_REL = {"carlos britto": "Ayres Britto", "carlos ayres britto": "Ayres Britto", "luis roberto barroso": "Roberto Barroso",
+                "pertence": "Sepúlveda Pertence", "rezek": "Francisco Rezek", "luis roberto": "Roberto Barroso"}
+MINISTRAS_REL = {"Cármen Lúcia", "Ellen Gracie", "Rosa Weber"}
+
+
+def relator_canonico(rel: str) -> str:
+    """"Ministro Mar-co Aurélio", "Ministro istra Ellen Gracie", "Ministra Carmén Lúcia" -> forma única; lixo -> ""."""
+    import difflib
+    if not rel:
+        return ""
+    t = re.sub(r"(?i)^\s*(ministr[oa]\s+)", "", rel.strip())
+    if re.fullmatch(r"(?i)(istro\s+)?presidente", t):
+        return "Presidente"
+    t = re.sub(r"(?i)^(?:istr[oa]|in[áa]ri[oa]\)?|a\s+orig\.|a|:|\))\s*", "", t)
+    t = re.sub(r"(?i)^(?:Min\.?|Mi\.)\s*", "", t)
+    t = re.sub(r"(\w)-(\w)", r"\1\2", t)
+    t = re.split(r"\s+(?:e\s|julgamento\b)|\s*[.;,]\s*\d|\.\d", t)[0].strip(" .")
+    if not t:
+        return ""
+    k = sem_acento(t).lower()
+    if k in APELIDOS_REL:
+        nome = APELIDOS_REL[k]
+    else:
+        chaves = {sem_acento(n).lower(): n for n in RELATORES}
+        if k in chaves:
+            nome = chaves[k]
+        else:
+            m = difflib.get_close_matches(k, list(chaves), n=1, cutoff=0.82)
+            if not m:
+                return ""
+            nome = chaves[m[0]]
+    return ("Ministra " if nome in MINISTRAS_REL else "Ministro ") + nome
+
+
+
 def linha_final_antiga(x: str) -> bool:
     """Linha de identificação do processo: "RE 454737/SP, rel. Min. Cezar Peluso, 18.9.2008. (RE-454737)"."""
     if len(x) > 600:
@@ -879,6 +920,10 @@ def saida_informativos(julgados: list[dict]) -> list[dict]:
     out = []
     for j in sorted(julgados, key=lambda j: (-j["n"], int(j["id"].split("-")[1]))):
         x = dict(j)
+        if x.get("rel"):
+            x["rel"] = relator_canonico(x["rel"])
+            if not x["rel"]:
+                x.pop("rel")
         corpo = " ".join(j.get("ts", [])[:1]) or (j.get("r") or [""])[0][:300]
         ar, sa = areas_stf(j.get("ra", []), f"{j['t']} {' '.join(j.get('ds', []))} {corpo}")
         if ar:
@@ -926,7 +971,21 @@ def gravar_informativos_site(registro: list[dict]) -> int:
     for x in todos:
         for k in list(x.get("ar") or []) + list(x.get("sa") or []):
             mat[k] = mat.get(k, 0) + 1
-    gravar(SAIDA / "stf-informativos-indice.json", {"corte": corte, "antigos": antigos, "mat": mat, "eds": indice})
+    # Por relator: julgados, primeiro e último ano e as matérias mais frequentes (perfil do ministro na Composição).
+    rels: dict[str, list] = {}
+    for x in todos:
+        r = x.get("rel")
+        if not r or r == "Presidente":
+            continue
+        e = rels.setdefault(r, [0, "9999", "0000", {}])
+        e[0] += 1
+        a = (x.get("d") or "")[:4]
+        if a:
+            e[1], e[2] = min(e[1], a), max(e[2], a)
+        for k in (x.get("ar") or [])[:1]:
+            e[3][k] = e[3].get(k, 0) + 1
+    rels_out = {r: [e[0], e[1], e[2], [k for k, _ in sorted(e[3].items(), key=lambda kv: -kv[1])[:4]]] for r, e in sorted(rels.items())}
+    gravar(SAIDA / "stf-informativos-indice.json", {"corte": corte, "antigos": antigos, "mat": mat, "eds": indice, "rels": rels_out})
     return len(todos)
 
 
@@ -1035,6 +1094,166 @@ def ler_turmas(t: str, ministros: list[dict]) -> dict:
     return out
 
 
+# ------------------------------------------------------------ perfis dos ministros (portal do STF)
+URL_PASTA = "https://portal.stf.jus.br/textos/verTexto.asp?servico=bibliotecaConsultaProdutoBibliotecaPastaMinistro&pagina="
+URL_GABINETE = "https://portal.stf.jus.br/textos/verTexto.asp?servico={}&pagina=principal"
+
+
+def _data_br(s):
+    m = re.search(r"(\d{1,2})º?/(\d{1,2})/(\d{4})", s)
+    return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}" if m else ""
+
+
+def ler_pagina_ministro(corpo: str) -> dict:
+    """Página principal da pasta do ministro: naturalidade e datas (indicação, nomeação, posses)."""
+    out = {"datas": []}
+    for l in (x.strip() for x in corpo.split("\n")):
+        m = re.match(r"Data de Nascimento\s*:\s*([\dº/]+)\s*,\s*(.+)$", l)
+        if m:
+            out["nascimento"] = _data_br(m.group(1))
+            out["natural"] = m.group(2).strip().replace("/", " (", 1) + ")" if "/" in m.group(2) else m.group(2).strip()
+            continue
+        m = re.match(r"((?:Indicação|Nomeação|Posse)[^:]{3,140}?)\s*:\s*([\dº/]+)\s*$", l)
+        if m and _data_br(m.group(2)):
+            rot = re.sub(r"\s+", " ", m.group(1)).strip()
+            rot = rot.replace("Supremo Tribunal Federal", "STF").replace("Conselho Nacional de Justiça", "CNJ").replace("Conselho Nacional de Justica", "CNJ")
+            out["datas"].append([rot, _data_br(m.group(2))])
+    out["datas"].sort(key=lambda x: x[1])
+    return out
+
+
+def ler_curriculo(corpo: str, html: str) -> dict:
+    """Página "Currículo e Biografia": vaga ocupada e o currículo oficial (PDF), quando publicado."""
+    out = {}
+    t = re.sub(r"\s+", " ", corpo)
+    m = re.search(r"vaga decorrente d[aoá]\s+(aposentadoria(?: voluntária)?|falecimento)\s+d[oa]\s+(?:então\s+)?(Ministr[oa])\s+([^.;,\[\]]+?)(?:[.;,]|\s+Diário)", t, re.I)
+    if m:
+        out["vaga"] = {"motivo": m.group(1).lower().replace(" voluntária", ""), "antecessor": f"{m.group(2)} {m.group(3).strip()}"}
+    pdfs = [u for u in re.findall(r"https?://www\.stf\.jus\.br/arquivo/[^'\" <>]+?\.pdf", html, re.I) if not re.search(r"/\d{3}\.pdf$", u)]
+    if pdfs:
+        out["curriculo"] = pdfs[0].replace("http://", "https://")
+    return out
+
+
+def ler_gabinete(corpo: str) -> dict:
+    """Página do gabinete: chefia, telefones e e-mails, com o rótulo de cada um (audiência, memoriais...)."""
+    linhas = [re.sub(r"\s+", " ", x).strip() for x in corpo.split("\n")]
+    linhas = [x for x in linhas if x and not re.search(r"pessoas já viram|^Última atualização|^\d{4}-\d{2}-\d{2}$", x)]
+    out = {"emails": []}
+    ctx_email: dict[str, str] = {}
+    for i, l in enumerate(linhas):
+        if re.match(r"^GABINETE\s+MINISTR", l, re.I):
+            out["unidade"] = l.title().replace(" Do ", " do ").replace(" Da ", " da ").replace(" De ", " de ")
+        m = re.match(r"^(?:Dr[a]?\.\s*)?(.+?)\s*[-–]\s*Chefe de Gabinete$", l, re.I)
+        if m and "chefe" not in out:
+            out["chefe"] = m.group(1).strip()
+        m = re.match(r"^Chefe de Gabinete\s*:?\s*(.*)$", l, re.I)
+        if m and "chefe" not in out:
+            nome = m.group(1).strip() or (linhas[i + 1] if i + 1 < len(linhas) else "")
+            if nome and not re.search(r"@|\d|:", nome):
+                out["chefe"] = nome
+        if re.search(r"telefone|contato", l, re.I) and re.search(r"\d{4}\s*-?\s*\d{3}", l) and "telefones" not in out:
+            tel = re.sub(r"^.*?(?:telefones?(?: para contato)?|contato)\s*:?\s*", "", l, flags=re.I)
+            tel = re.sub(r"\s*-\s*(?=\d{4})", "-", re.sub(r"\s*–\s*", "-", tel)).replace("61 - ", "(61) ").replace("61 3217", "(61) 3217")
+            out["telefones"] = tel.strip(" .")
+        for e in re.findall(r"[\w.+-]+@stf\.jus\.br", l):
+            rot = re.split(r"\s*:\s*", l)[0] if ":" in l else ""
+            rot = re.sub(r"(?i)^e-?mail\s*(institucional)?\s*(para)?\s*", "", rot).strip(" :-")
+            if e in rot or len(rot) > 90:
+                rot = ""
+            ja = next((x for x in out["emails"] if x["e"] == e), None)
+            if ja is None:
+                out["emails"].append({"e": e, **({"rot": rot[0].upper() + rot[1:]} if rot else {})})
+                if not rot and re.search(r"audi[êe]ncia", l, re.I):
+                    ctx_email[e] = "Solicitação de audiência"
+            elif rot and "rot" not in ja and len(l) < 160:
+                ja["rot"] = rot[0].upper() + rot[1:]
+    if "telefones" not in out:
+        tel = next((re.search(r"\(?61\)?\s*-?\s*3217\s*-\s*\d{4}", x).group(0) for x in linhas if re.search(r"\(?61\)?\s*-?\s*3217\s*-\s*\d{4}", x)), "")
+        if tel:
+            out["telefones"] = tel
+    if out.get("telefones"):
+        t = re.sub(r"^\(?61\)?\s*-?\s*", "", out["telefones"])
+        t = re.sub(r"/\s*(?:\(?61\)?\s*)?3217\s*-\s*", "/ ", t)  # "3217-4372 / 3217-4702" -> "3217-4372 / 4702"
+        out["telefones"] = "(61) " + re.sub(r"\s*/\s*", " / ", t)
+    for x in out["emails"]:
+        if "rot" not in x and x["e"] in ctx_email:
+            x["rot"] = ctx_email[x["e"]]
+    if not out["emails"]:
+        out.pop("emails")
+    return out
+
+
+def _slug(m: dict) -> str:
+    return re.sub(r"[^A-Za-z]", "", sem_acento(m["curto"]).title().replace(" De ", " "))
+
+
+URL_QUEM = "https://cms.stf.jus.br/post-sobreostf/quem-e-quem/"
+
+
+def ler_quem_e_quem(t: str) -> dict:
+    """Página "Quem é quem" do STF: contatos da Presidência e das Secretarias das Turmas."""
+    x = re.sub(r"(?is)<(script|style).*?</\1>", "", t)
+    x = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</h\d>|</td>|</tr>", "\n", x)
+    linhas = [re.sub(r"\s+", " ", l).strip() for l in html.unescape(re.sub(r"<[^>]+>", "", x)).split("\n")]
+    linhas = [l for l in linhas if l]
+    out = {}
+    for chave, tit in (("presidencia", "Gabinete da Presidência"), ("primeira-turma", "Primeira Turma"), ("segunda-turma", "Segunda Turma")):
+        if tit not in linhas:
+            continue
+        i = linhas.index(tit)
+        bloco = linhas[i + 1: i + 16]
+        fim = next((k for k, l in enumerate(bloco) if k > 3 and l in ("Telefone", "Solicitação de audiência") and k + 1 < len(bloco) and not re.search(r"@|\d{4}", bloco[k + 1])), len(bloco) - 1)
+        bloco = bloco[: fim + 1]
+        d = {"nome": bloco[0], "cargo": bloco[1]} if len(bloco) > 2 else {}
+        k = bloco.index("Contatos") + 1 if "Contatos" in bloco else bloco.index("Contato") + 1 if "Contato" in bloco else 3
+        while k + 1 < len(bloco):
+            v, rot = bloco[k], bloco[k + 1]
+            if re.search(r"\d{4}", v):
+                d["telefone"] = "(61) " + re.sub(r"\s*[–-]\s*", "-", re.sub(r"^\(?61\)?\s*", "", v))
+            elif "@" in v:
+                d.setdefault("emails", []).append({"e": v, "rot": rot})
+            k += 2
+        if d.get("telefone") or d.get("emails"):
+            out[chave] = d
+    return out
+
+
+def coletar_perfis(ministros: list[dict], ids: list[str], anteriores: dict) -> dict:
+    """Perfil oficial de cada ministro em exercício: página da pasta do ministro, currículo e gabinete.
+
+    Uma página que falhar mantém o que já se sabia daquele ministro.
+    """
+    out = {}
+    for m in ministros:
+        if m["id"] not in ids:
+            continue
+        pasta = m.get("pasta") or _slug(m)
+        gab = m.get("gab") or ("sobreStfMinistra" if m.get("genero") == "f" else "sobreStfMinistro") + _slug(m)
+        ant = anteriores.get(m["id"], {})
+        p = {k: v for k, v in ant.items()}
+        try:
+            corpo, _ = _miolo(decodificar(baixar(URL_PASTA + pasta + "Principal", 60)))
+            novo = ler_pagina_ministro(corpo)
+            if novo.get("datas"):
+                p.update(novo)
+            h = decodificar(baixar(URL_PASTA + pasta + "CurriculoBiografia", 60))
+            corpo, _ = _miolo(h)
+            p.update(ler_curriculo(corpo, h))
+        except Exception as e:  # noqa: BLE001
+            log(f"  perfil de {m['curto']}: {e}")
+        try:
+            corpo, data = _miolo(decodificar(baixar(URL_GABINETE.format(gab), 60)))
+            g = ler_gabinete(corpo)
+            if g.get("telefones") or g.get("emails"):
+                p["gabinete"] = {**g, "url": URL_GABINETE.format(gab), **({"atualizado": data} if data else {})}
+        except Exception as e:  # noqa: BLE001
+            log(f"  gabinete de {m['curto']}: {e}")
+        p["pasta"] = URL_PASTA + pasta + "Principal"
+        out[m["id"]] = p
+    return out
+
+
 def foto_wd(qid: str, cache: dict) -> dict | None:
     if qid in cache:
         return cache[qid] or None
@@ -1103,10 +1322,13 @@ def atualizar_composicao() -> dict:
             ant = next((x for x in anterior.get("ministros", []) if x["id"] == m["id"]), {})
             if ant.get("foto") and (RAIZ / "site" / ant["foto"]["url"]).exists():
                 foto = ant["foto"]
+        pr = semente.get("perfis", {}).get(m["id"], {})
+        perfil = {"nascimento": data_extenso(m["nascimento"])} if m.get("nascimento") else {}
+        perfil.update({k: pr[k] for k in ("natural", "datas", "vaga", "curriculo", "pasta") if pr.get(k)})
+        perfil.update({k: m[k] for k in ("formacao", "atuacao", "fonteCv") if m.get(k)})
         x = {"id": m["id"], "genero": m["genero"], "tipo": "ministro", "nome": m["nome"], "curto": m["curto"],
              "antiguidade": i, "posse": "" if m.get("novo") else m["posse"], "orgaos": orgs, "indicacao": m.get("indicacao", ""),
-             "perfil": {"nascimento": data_extenso(m["nascimento"])} if m.get("nascimento") else {},
-             "pagina": m.get("pagina", "")}
+             "perfil": perfil, "pagina": m.get("pagina", ""), **({"gabinete": pr["gabinete"]} if pr.get("gabinete") else {})}
         if foto:
             x["foto"] = foto
         saida_min.append({k: v for k, v in x.items() if v not in ("", None, {})})
@@ -1125,7 +1347,8 @@ def atualizar_composicao() -> dict:
     vagas = 11 - len(saida_min)
     obj = {"data": turmas.get("data", "") or HOJE, "origem": origem, "geradoEm": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
            "fontes": {"composicao": URL_COMPOSICAO, "turmas": URL_TURMAS}, "vagas": max(0, vagas),
-           "secretarioTurmas": turmas.get("secretario", ""), "orgaos": orgaos, "ministros": saida_min}
+           "secretarioTurmas": turmas.get("secretario", ""), "orgaos": orgaos, "ministros": saida_min,
+           **({"contatos": semente["contatos"], "urlContatos": URL_QUEM} if semente.get("contatos") else {})}
     gravar(SAIDA / "stf-composicao.json", obj)
     novos = [m["curto"] for m in lista if m.get("novo")]
     log(f"STF: composição com {len(saida_min)} ministros ({origem}); {sum(1 for x in saida_min if x.get('foto'))} com foto.")
@@ -1149,9 +1372,15 @@ def gravar_ministros(semente: dict) -> None:
         f' "cargos": {j(semente.get("cargos", {}))},',
         ' "turmas": {',
         corpo_t,
-        " }",
-        "}",
+        " }" + ("," if semente.get("perfis") else ""),
     ]
+    if semente.get("perfis"):
+        pf = semente["perfis"]
+        linhas += [' "perfis": {', ",\n".join(f"  {j(k)}: {j(pf[k])}" for k in pf), " }" + ("," if semente.get("contatos") else "")]
+    if semente.get("contatos"):
+        linhas[-1] = linhas[-1].rstrip(",") + "," if not semente.get("perfis") else linhas[-1]
+        linhas.append(f' "contatos": {j(semente["contatos"])}')
+    linhas.append("}")
     (FONTE / "ministros.json").write_text("\n".join(linhas) + "\n", encoding="utf-8")
 
 
@@ -1171,16 +1400,26 @@ def conferir_composicao() -> dict:
     if novos:
         log("  AVISO: a composição oficial traz ministro(a) fora do registro; ministros.json não foi alterado.")
         return {"ministros": len(ids), "origem": "portal do STF", "foraDoRegistro": novos}
+    perfis = coletar_perfis(trabalho, ids, semente.get("perfis", {}))
+    contatos = semente.get("contatos", {})
+    try:
+        novos_c = ler_quem_e_quem(decodificar(baixar(URL_QUEM, 60)))
+        if novos_c.get("primeira-turma") and novos_c.get("segunda-turma"):
+            contatos = novos_c
+    except Exception as e:  # noqa: BLE001
+        log(f"  contatos (Quem é quem): {e}")
+    mudou_perfis = perfis != semente.get("perfis", {}) or contatos != semente.get("contatos", {})
     mudou = ids != semente.get("ordem") or cargos != semente.get("cargos") or turmas != semente.get("turmas")
     try:
         idade = (dt.date.fromisoformat(HOJE) - dt.date.fromisoformat(semente.get("conferido", "2000-01-01"))).days
     except ValueError:
         idade = 999
-    if mudou or idade >= 6:
-        semente.update({"atualizado": HOJE, "conferido": HOJE, "ordem": ids, "cargos": cargos, "turmas": turmas})
+    if mudou or mudou_perfis or idade >= 6:
+        semente.update({"atualizado": HOJE, "conferido": HOJE, "ordem": ids, "cargos": cargos, "turmas": turmas, "perfis": perfis, "contatos": contatos})
         gravar_ministros(semente)
-    log(f"STF: composição conferida nas páginas oficiais ({len(ids)} ministros; {'houve mudança' if mudou else 'sem mudança'}).")
-    return {"ministros": len(ids), "origem": "portal do STF", "mudou": mudou}
+    log(f"STF: composição conferida nas páginas oficiais ({len(ids)} ministros; {'houve mudança' if mudou else 'sem mudança'}"
+        f"{'; perfis atualizados' if mudou_perfis else ''}).")
+    return {"ministros": len(ids), "origem": "portal do STF", "mudou": mudou, "perfis": len(perfis), **({"perfisMudaram": True} if mudou_perfis else {})}
 
 
 def main():

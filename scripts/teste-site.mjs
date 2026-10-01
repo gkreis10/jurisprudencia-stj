@@ -219,6 +219,18 @@ else {
     else ok("verificar petição com citações do STF");
     await page.goto(BASE + "#composicao?t=stf"); await esperarTela();
     if (!(await page.$("#view [data-min]"))) falha("composição do STF sem ministros"); else ok("composição do STF");
+    // Perfil do ministro do STF: contato do gabinete e relatorias, quando o registro traz os perfis.
+    if (cp.ministros.some((m) => m.gabinete)) {
+      const mg = cp.ministros.find((m) => m.gabinete);
+      await page.goto(BASE + "#composicao?t=stf&aba=ministros"); await esperarTela();
+      await page.click(`#view [data-min="${mg.id}"]`); await page.waitForSelector("#gaveta-corpo .cp-contato", { timeout: 8000 }).catch(() => falha("perfil do STF: contato do gabinete ausente"));
+      const tg = await page.$eval("#gaveta-corpo", (e) => e.innerText).catch(() => "");
+      if (!/@stf\.jus\.br/.test(tg)) falha("perfil do STF: sem e-mail do gabinete"); else ok(`perfil do STF (${mg.curto}): gabinete, ${/Informativo do STF/.test(tg) ? "julgados no Informativo" : "sem julgados no Informativo"}`);
+      await page.keyboard.press("Escape");
+      await page.goto(BASE + "#composicao?t=stf&aba=contatos"); await esperarTela();
+      const ng = await page.$$eval("#view .cp-gab", (l) => l.length);
+      if (ng < cp.ministros.filter((m) => m.gabinete).length) falha(`contatos do STF: ${ng} cartões`); else ok(`contatos do STF: ${ng} cartões`);
+    }
     // Informativo do STF (opcional até a primeira coleta): edições, busca, resumo completo e edições antigas.
     if (tam("data/stf-informativos.json") > 0) {
       const inf = json("data/stf-informativos.json");
