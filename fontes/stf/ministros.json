@@ -1,6 +1,8 @@
 {
  "_sobre": "Registro dos ministros do STF usado pelo Radar. A lista em exercício, os cargos e as Turmas vêm das páginas oficiais do STF a cada execução; este arquivo guarda o nome completo, a data de posse no STF (antiguidade), a data de nascimento e o identificador no Wikidata (foto). 'turmas' e 'cargos' só são usados se o portal do STF não responder. Quando um ministro novo tomar posse, acrescente-o aqui.",
- "atualizado": "2026-09-30",
+ "atualizado": "2026-10-01",
+ "conferido": "2026-10-01",
+ "ordem": ["edson-fachin", "alexandre-de-moraes", "gilmar-mendes", "carmen-lucia", "dias-toffoli", "luiz-fux", "nunes-marques", "andre-mendonca", "cristiano-zanin", "flavio-dino"],
  "ministros": [
   {"id": "gilmar-mendes", "curto": "Gilmar Mendes", "nome": "Gilmar Ferreira Mendes", "genero": "m", "posse": "2002-06-20", "nascimento": "1955-12-30", "wd": "Q2362405"},
   {"id": "carmen-lucia", "curto": "Cármen Lúcia", "nome": "Cármen Lúcia Antunes Rocha", "genero": "f", "posse": "2006-06-21", "nascimento": "1954-04-19", "wd": "Q83019"},
