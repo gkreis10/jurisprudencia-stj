@@ -1429,3 +1429,13 @@ html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b
 .topo-sobre-linha { overflow: hidden; }
 .evento-tit .selo.trib { margin-right: 6px; vertical-align: 1px; }
 .trib-op[disabled] { opacity: .55; cursor: not-allowed; }
+
+/* Pauta do STF */
+.pt-sessao { margin-bottom: 12px; }
+.pt-cab { margin: 0 0 8px; font-size: 15px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pt-lista { margin: 0 0 8px; padding-left: 20px; display: grid; gap: 10px; }
+.pt-it p { margin: 0; }
+.pt-proc { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pt-proc button.selo { cursor: pointer; border: 0; font: inherit; }
+.pt-res { font-size: 14px; color: var(--tx-2); margin-top: 4px !important; line-height: 1.5; }
+.sec-tit { font-family: var(--ui); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--tx-2); margin: 26px 0 10px; }
