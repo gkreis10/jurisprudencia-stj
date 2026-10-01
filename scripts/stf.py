@@ -1422,13 +1422,141 @@ def conferir_composicao() -> dict:
     return {"ministros": len(ids), "origem": "portal do STF", "mudou": mudou, "perfis": len(perfis), **({"perfisMudaram": True} if mudou_perfis else {})}
 
 
+# ------------------------------------------------------------ pauta do Plenário e das Turmas (portal do STF)
+REGISTRO_PAUTA = FONTE / "pauta.json"
+URL_PAUTA_SERV = f"{PORTAL}/pauta/services/calendario-service.asp"
+URL_PAUTA_DIA = f"{PORTAL}/pauta/pesquisarCalendario.asp?data={{}}"
+URL_PAUTA_VIRTUAL = "https://www.stf.jus.br/portal/pauta/listarJulgamentoVirtual.asp?dataInicio={}&dataFim={}"
+NOME_COLEGIADO = {"TP": "Plenário", "1T": "Primeira Turma", "2T": "Segunda Turma"}
+
+
+def _br_iso(s: str) -> str:
+    d, m, a = s[:10].split("/")
+    return f"{a}-{m}-{d}" + (s[10:] if len(s) > 10 else "")
+
+
+def coletar_pauta() -> dict:
+    """Sessões presenciais (Plenário e Turmas) e o calendário das sessões virtuais, dos serviços da página oficial
+    "Pauta de julgamentos": da semana passada até o fim do mês seguinte ao próximo."""
+    hoje = dt.date.fromisoformat(HOJE)
+    meses, a, m = [], hoje.year, hoje.month
+    for _ in range(3):
+        meses.append((a, m))
+        a, m = (a + 1, 1) if m == 12 else (a, m + 1)
+    desde = (hoje - dt.timedelta(days=7)).isoformat()
+    presenciais, virtuais = [], {}
+    for a, m in meses:
+        cal = json.loads(decodificar(baixar(f"{URL_PAUTA_SERV}?dados=calendarios&mes={m:02d}&ano={a}", 60)))
+        for v in cal.get("julgamentosVirtuais", []):
+            ini, fim = _br_iso(v["dataInicial"]), _br_iso(v["dataFinal"])
+            if fim >= desde:
+                virtuais[(ini, fim)] = {"ini": ini, "fim": fim, "TP": int(v.get("qtdProcessosPlenario") or 0),
+                                        "1T": int(v.get("qtdPrimeiraTurma") or 0), "2T": int(v.get("qtdSegundaTurma") or 0)}
+        for dia in cal.get("diasPresenciais", []):
+            iso = f"{a}-{m:02d}-{int(dia):02d}"
+            if iso < desde:
+                continue
+            br = f"{int(dia):02d}/{m:02d}/{a}"
+            d = json.loads(decodificar(baixar(f"{URL_PAUTA_SERV}?dados=sessao-presencial&data={br}", 60)))
+            for c in d.get("colegiados", []):
+                for se in c.get("sessoes", []):
+                    itens = []
+                    for i in se.get("incidentes", []):
+                        x = {"cl": i.get("classe") or "", "num": str(i.get("numero") or ""),
+                             "rel": re.sub(r"^MIN(?:ISTR[OA])?\.?\s*", "", i.get("relator") or "").title().replace(" De ", " de ").replace(" Da ", " da ").replace(" Do ", " do ").replace(" Dos ", " dos ").replace(" E ", " e "),
+                             "res": re.sub(r"\s+", " ", i.get("resumoTema") or "").strip()}
+                        for k, rot in (("ministroVista", "vista"), ("destaque", "dest")):
+                            if i.get(k):
+                                x[rot] = re.sub(r"^MIN(?:ISTR[OA])?\.?\s*", "", i[k]).title().replace(" De ", " de ").replace(" Da ", " da ")
+                        if i.get("repercussaoGeral") == "S":
+                            x["rg"] = 1
+                        if i.get("materiaRelevante") == "S":
+                            x["relev"] = 1
+                        if i.get("cadeia"):
+                            x["cadeia"] = i["cadeia"]
+                        itens.append({k: v for k, v in x.items() if v not in ("", None)})
+                    presenciais.append({"d": iso, "o": c.get("codigo") or "", "nome": c.get("descricao") or NOME_COLEGIADO.get(c.get("codigo"), ""),
+                                        "ini": _br_iso(se.get("dataInicio") or br), "tipo": {"E": "extraordinária", "O": "ordinária"}.get(se.get("tipo"), ""),
+                                        "num": f"{se.get('numero')}/{se.get('ano')}" if se.get("numero") else "", **({"obs": se["observacao"]} if se.get("observacao") else {}),
+                                        "itens": itens})
+    presenciais.sort(key=lambda x: (x["ini"], x["o"]))
+    # Temas de repercussão geral ainda sem tese: sessões (virtuais ou presenciais) em que o paradigma está pautado.
+    temas_pauta = []
+    reg_t = ler(REGISTRO_TEMAS, {}).get("temas", [])
+    pend = [t for t in reg_t if not t.get("tese") and t.get("rgs") != "nao" and "Cancelado" not in (t.get("sit") or "")]
+    for t in pend:
+        m = re.match(r"([A-Z]{2,5})\s*([\d.]+)", t.get("lc") or "")
+        if not m:
+            continue
+        cl, num = m.group(1), m.group(2).replace(".", "")
+        try:
+            hist = json.loads(decodificar(baixar(f"{PORTAL}/pauta/services/processo-service.asp?classe={cl}&numero={num}", 40)) or "[]")
+        except Exception as e:  # noqa: BLE001
+            log(f"  pauta do Tema {t['n']}: {e}")
+            continue
+        vistos = set()
+        for g in hist if isinstance(hist, list) else []:
+            for x in g.get("processos", []):
+                fim = _br_iso(x.get("dataFim") or x.get("dataSessao") or "01/01/2000")[:10]
+                ini = _br_iso(x.get("dataInicio") or x.get("dataSessao") or "01/01/2000")[:10]
+                if fim < desde or (ini, x.get("codigoColegiado")) in vistos:
+                    continue
+                vistos.add((ini, x.get("codigoColegiado")))
+                temas_pauta.append({"tema": t["n"], "cl": cl, "num": num, "ini": ini, "fim": fim, "o": x.get("codigoColegiado") or "TP",
+                                    "amb": "virtual" if x.get("ambienteSessao") == "V" else "presencial"})
+    out = {"conferido": HOJE, "presenciais": presenciais, "virtuais": sorted(virtuais.values(), key=lambda v: v["ini"]),
+           "temas": sorted(temas_pauta, key=lambda x: (x["ini"], x["tema"]))}
+    REGISTRO_PAUTA.write_text(json_pauta(out), encoding="utf-8")
+    log(f"STF: pauta conferida ({len(presenciais)} sessões presenciais, {sum(len(x['itens']) for x in presenciais)} processos; {len(virtuais)} sessões virtuais; "
+        f"{len(temas_pauta)} pauta(s) de temas de RG sem tese).")
+    return {"sessoes": len(presenciais), "processos": sum(len(x["itens"]) for x in presenciais), "virtuais": len(virtuais)}
+
+
+def json_pauta(o: dict) -> str:
+    j = lambda x: json.dumps(x, ensure_ascii=False, separators=(",", ":"))  # noqa: E731
+    pres = ",\n".join(j(x) for x in o["presenciais"])
+    virt = ",\n".join(j(x) for x in o["virtuais"])
+    tem = ",\n".join(j(x) for x in o.get("temas", []))
+    return f'{{\n"conferido":"{o["conferido"]}",\n"presenciais":[\n{pres}\n],\n"virtuais":[\n{virt}\n],\n"temas":[\n{tem}\n]\n}}\n'
+
+
+def atualizar_pauta() -> dict:
+    """Pauta do STF no site: coleta direta quando o portal responde; senão, o registro da coleta fora do GitHub.
+    Liga cada recurso extraordinário com repercussão geral ao tema do qual é paradigma."""
+    origem = "portal do STF"
+    try:
+        r = coletar_pauta()
+    except Exception as e:  # noqa: BLE001
+        log(f"  pauta do STF: {e}; usa o registro")
+        origem = "registro"
+        r = {}
+    reg = ler(REGISTRO_PAUTA, {})
+    if not reg.get("presenciais") and not reg.get("virtuais"):
+        return {"erro": "pauta sem dados"}
+    temas = ler(SAIDA / "stf-temas.json", [])
+    por_lc = {}
+    for t in temas:
+        m = re.match(r"([A-Z]{2,5})\s*([\d.]+)", t.get("lc") or "")
+        if m:
+            por_lc[(m.group(1), m.group(2).replace(".", ""))] = t["n"]
+    for se in reg.get("presenciais", []):
+        for x in se["itens"]:
+            n = por_lc.get((x["cl"], x["num"]))
+            if n:
+                x["tema"] = n
+    reg["urls"] = {"dia": URL_PAUTA_DIA, "virtual": URL_PAUTA_VIRTUAL}
+    gravar(SAIDA / "stf-pauta.json", reg)
+    n = sum(len(x["itens"]) for x in reg.get("presenciais", []))
+    return {"processos": n, "sessoes": len(reg.get("presenciais", [])), "origem": origem, **({"dataRegistro": reg.get("conferido", "")} if origem == "registro" else {})}
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--teses", type=int, default=2000, help="máximo de teses baixadas nesta execução")
     ap.add_argument("--sumulas", type=int, default=1000, help="máximo de enunciados de súmula baixados nesta execução")
     ap.add_argument("--minutos", type=int, default=25, help="tempo máximo para baixar teses e enunciados")
-    ap.add_argument("--so", default="", help="temas, sumulas, informativos ou composicao (padrão: todos)")
+    ap.add_argument("--so", default="", help="temas, sumulas, informativos, composicao ou pauta (padrão: todos)")
     ap.add_argument("--exportar", action="store_true", help="grava o registro em fontes/stf/ (temas e súmulas)")
     ap.add_argument("--coletar", action="store_true", help="coleta temas e súmulas só para o registro (fora do GitHub), sem as rotinas do STJ, e já o exporta")
     ap.add_argument("--preparar", action="store_true", help="usa o registro como base de comparação (coleta fora do GitHub)")
@@ -1450,18 +1578,23 @@ def main():
                 log(f"STF ({nome}): falhou: {e}")
                 res[nome] = {"erro": str(e)[:200]}
         try:
+            res["pauta"] = coletar_pauta()
+        except Exception as e:  # noqa: BLE001
+            log(f"STF (pauta): não conferida: {e}")
+            res["pauta"] = {"erro": str(e)[:200]}
+        try:
             res["composicao"] = conferir_composicao()
         except Exception as e:  # noqa: BLE001
             log(f"STF (composicao): não conferida: {e}")  # não impede o envio dos demais
             res["composicao"] = {"erro": str(e)[:200]}
-        falhou = [n for n, r in res.items() if n != "composicao" and ("erro" in r or r.get("origem") == "registro")]
+        falhou = [n for n, r in res.items() if n not in ("composicao", "pauta") and ("erro" in r or r.get("origem") == "registro")]
         if falhou:
             log(f"COLETA NÃO REALIZADA: portal do STF indisponível para {', '.join(falhou)}; registro mantido.")
             raise SystemExit(2)
         exportar_registro()
         log("COLETA CONCLUÍDA: " + json.dumps(res, ensure_ascii=False))
         return
-    for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas)), ("informativos", atualizar_informativos), ("composicao", atualizar_composicao)):
+    for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas)), ("informativos", atualizar_informativos), ("composicao", atualizar_composicao), ("pauta", atualizar_pauta)):
         if args.so and nome != args.so:
             continue
         try:
@@ -1477,7 +1610,7 @@ def main():
         agora = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
         ant = man.get("stf", {})
         stf = {}
-        for nome in ("temas", "sumulas", "informativos", "composicao"):
+        for nome in ("temas", "sumulas", "informativos", "composicao", "pauta"):
             r = res.get(nome)
             reg = r and "erro" not in r and r.get("origem") in ("registro", "registro do Radar")
             if reg and ant.get(nome) and ant[nome].get("origem") != "registro":

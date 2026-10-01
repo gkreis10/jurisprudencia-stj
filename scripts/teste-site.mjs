@@ -231,6 +231,12 @@ else {
       const ng = await page.$$eval("#view .cp-gab", (l) => l.length);
       if (ng < cp.ministros.filter((m) => m.gabinete).length) falha(`contatos do STF: ${ng} cartões`); else ok(`contatos do STF: ${ng} cartões`);
     }
+    // Pauta do STF (opcional até a primeira coleta com pauta).
+    if (tam("data/stf-pauta.json") > 0) {
+      await page.goto(BASE + "#pautastf"); await esperarTela();
+      const tp = await page.$eval("#view", (e) => e.innerText).catch(() => "");
+      if (!/Temas de repercussão geral em pauta/i.test(tp) || !/Sessões virtuais/i.test(tp)) falha("Pauta do STF: página incompleta"); else ok("Pauta do STF");
+    }
     // Informativo do STF (opcional até a primeira coleta): edições, busca, resumo completo e edições antigas.
     if (tam("data/stf-informativos.json") > 0) {
       const inf = json("data/stf-informativos.json");

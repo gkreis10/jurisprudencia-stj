@@ -22,7 +22,7 @@ import re
 import sys
 from pathlib import Path
 
-ARQUIVOS = ["fontes/stf/temas.json", "fontes/stf/sumulas.json", "fontes/stf/historico.json", "fontes/stf/informativos.json", "fontes/stf/ministros.json"]
+ARQUIVOS = ["fontes/stf/temas.json", "fontes/stf/sumulas.json", "fontes/stf/historico.json", "fontes/stf/informativos.json", "fontes/stf/ministros.json", "fontes/stf/pauta.json"]
 REPO = "gkreis10/jurisprudencia-stj"
 LIMITE_B64 = 150_000  # acima disso o navegador não comporta: avisar o usuário
 
