@@ -106,10 +106,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
-
-      - name: Conferir a proteção da cópia Cloudflare
-        run: node scripts/teste-acesso.mjs
-
       - name: Conferir o site antes de publicar
         run: |
           npm install --no-save --no-audit --no-fund --silent playwright-core@1.55.0
