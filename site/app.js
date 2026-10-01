@@ -5621,6 +5621,9 @@
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
   const VERSAO = "2026.09.30";
   const NOVIDADES = [
+    ["2026-10-01", [
+      "Informativo do STF: o histórico foi ampliado e agora vai da edição 1.004 (fevereiro de 2021) à mais recente, com mais de 1.300 julgamentos de destaque.",
+    ]],
     ["2026-09-30", [
       "Informativo do STF: nova página (modo STF ou STJ + STF) com os julgamentos de destaque das edições do Informativo do Supremo, com resumo, tese fixada, relator e data. Busca por processo, relator, tema ou assunto, filtros por ramo do direito, órgão e data, e atalhos para o processo e a edição oficial.",
       "STF no Radar: o nome do site, no alto do menu, passa a escolher o tribunal exibido: Radar STJ (padrão), Radar STF ou os dois juntos. A escolha fica guardada neste navegador.",
@@ -5700,7 +5703,7 @@
       <p>No alto do menu (no celular, acima do título da página), o nome do site abre a escolha do tribunal: <b>Radar STJ</b> (padrão), <b>Radar STF</b> ou <b>Radar STJ · STF</b>. A escolha fica guardada neste navegador e muda o conteúdo das seções; pode ser trocada a qualquer momento. Com os dois tribunais, cada cartão traz o selo STJ ou STF.</p>
       <ul>
         <li><b>Temas de repercussão geral:</b> lista oficial de todos os temas do STF, com título, descrição, leading case, relator, reconhecimento (ou não) da repercussão geral, situação e tese fixada. A atualização é diária; as teses novas são baixadas no mesmo dia.</li>
-        <li><b>Informativo do STF:</b> edições do Informativo STF (publicação oficial e aberta do Supremo), com o resumo de cada julgamento de destaque, a tese fixada, o relator e a data. O resumo não substitui o acórdão; o site leva ao processo e à edição oficial.</li>
+        <li><b>Informativo do STF:</b> edições do Informativo STF (publicação oficial e aberta do Supremo), com o resumo de cada julgamento de destaque, a tese fixada, o relator e a data, desde a edição 1.004 (fevereiro de 2021). O resumo não substitui o acórdão; o site leva ao processo e à edição oficial.</li>
         <li><b>Súmulas e súmulas vinculantes:</b> página “Aplicação das Súmulas no STF”, com o enunciado, a situação indicada pelo Tribunal (cancelada, revogada, superada), a data de aprovação ou publicação e as observações.</li>
         <li><b>Composição:</b> páginas “Composição atual” e “Turmas” do STF. Data da posse e de nascimento conforme registros públicos; fotos do Wikimedia Commons, quando disponíveis.</li>
       </ul>
