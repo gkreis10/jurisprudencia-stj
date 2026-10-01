@@ -247,6 +247,10 @@ def exportar_registro() -> None:
     cache.pop("atualizado", None)
     if len(cache) >= 700:
         REGISTRO_SUMULAS.write_text(json_linhas({"atualizado": HOJE, **dict(sorted(cache.items(), key=lambda kv: (not kv[1].get("v"), kv[1]["n"])))}), encoding="utf-8")
+    inf = ler(SAIDA / "stf-informativos.json", [])
+    if len(inf) >= 100:
+        inf = [{k: v for k, v in j.items() if k not in ("ar", "sa")} for j in inf]
+        REGISTRO_INFORMATIVOS.write_text(json_linhas_informativos(inf, max(j["n"] for j in inf)), encoding="utf-8")
     hist = ler(SAIDA / "stf-historico.json", None)
     if isinstance(hist, list) and (hist or REGISTRO_HISTORICO.exists()):
         REGISTRO_HISTORICO.write_text(json_linhas(hist), encoding="utf-8")
@@ -463,6 +467,182 @@ def atualizar_sumulas(limite: int) -> dict:
     return {"sumulas": len(out), "baixadas": baixadas, **({"origem": "registro", "dataRegistro": data_reg} if len(sem_acesso) == 2 else {})}
 
 
+# ------------------------------------------------------------------ Informativo do STF
+# Publicação oficial e aberta (www.stf.jus.br/arquivo/informativo): resumos dos julgamentos de destaque.
+URL_INFORMATIVO = "https://www.stf.jus.br/arquivo/informativo/documento/informativo{}.htm"
+URL_INFORMATIVO_ATUAL = "https://www.stf.jus.br/arquivo/informativo/documento/informativo.htm"
+REGISTRO_INFORMATIVOS = FONTE / "informativos.json"
+PRIMEIRA_EDICAO = 1184  # edições anteriores não são coletadas (limite de tamanho do site)
+
+
+def paragrafos_html(b: bytes) -> list[tuple[str, list[str]]]:
+    t = b.decode("cp1252", errors="replace")
+    out = []
+    for m in re.finditer(r"(?is)<p\b[^>]*>(.*?)</p>", t):
+        p = m.group(1)
+        hrefs = [html.unescape(h) for h in re.findall(r"(?is)<a\b[^>]*href\s*=\s*[\"']?([^\"'\s>]+)", p)]
+        p = re.sub(r"(?i)<br\s*/?>", " ", p)
+        x = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", p))).strip()
+        if x:
+            out.append((x, hrefs))
+    return out
+
+
+def data_dmy(s: str) -> str:
+    m = re.search(r"(\d{2})\.(\d{2})\.(\d{4})", s or "")
+    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else ""
+
+
+def tema_do_titulo(t: str) -> int:
+    m = re.search(r"Tema\s+([\d.]+)\s+RG", t)
+    return int(m.group(1).replace(".", "")) if m else 0
+
+
+def ler_informativo(n: int, b: bytes) -> list[dict]:
+    ps = paragrafos_html(b)
+    cab = " ".join(x for x, _ in ps[:12])
+    m = re.search(r"Data de divulga[çc][ãa]o:\s*(\d{1,2})[º°o]?\s+de\s+(\w+)\s+de\s+(\d{4})", cab)
+    if not m:
+        raise RuntimeError(f"edição {n}: data de divulgação não encontrada")
+    mes = MESES.index(m.group(2).lower()) + 1
+    data = f"{m.group(3)}-{mes:02d}-{int(m.group(1)):02d}"
+    # O corpo começa no segundo "1 PLENÁRIO" (o primeiro está no sumário, em caixa mista); em edições
+    # mais antigas, em "1 INFORMATIVO" seguido de "1.1 Plenário".
+    ini = next((i for i, (x, _) in enumerate(ps) if re.match(r"^1 (PLEN[ÁA]RIO|INFORMATIVO)$", x)), None)
+    if ini is None:
+        raise RuntimeError(f"edição {n}: corpo não encontrado")
+    orgao, ramos, desc, cur, modo = "", [], [], None, ""
+    julgados: list[dict] = []
+
+    def fechar():
+        nonlocal cur, modo
+        if cur and cur.get("t") and cur.get("r"):
+            cur["o"] = cur.get("o") or orgao
+            julgados.append(cur)
+        cur, modo = None, ""
+
+    for x, hr in ps[ini:]:
+        if x == "Sumário":
+            fechar()
+            continue
+        if re.match(r"^\d+ [A-ZÁÉÍÓÚÂÊÔÃÕÇ ]+$", x) and x == x.upper():
+            fechar()
+            nome = re.sub(r"^\d+ ", "", x)
+            if nome.startswith("INOVA"):
+                break
+            orgao = "Plenário" if nome.startswith("PLEN") else "Turmas" if nome.startswith("TURMA") else orgao
+            continue
+        mo = re.match(r"^(?:\d+\.\d+ )?(Plenário|Primeira Turma|Segunda Turma)$", x, re.I)
+        if mo and (cur is None or len(x) < 20):
+            fechar()
+            orgao = mo.group(1).title()
+            continue
+        if cur is None:
+            if x == x.upper() and len(x) > 10 and not x.startswith("ODS"):
+                cab_ramo = x.split(" – ", 1)
+                ramos.append(cab_ramo[0].strip().capitalize())
+                desc += [d.strip().capitalize() for d in (cab_ramo[1].split(";") if len(cab_ramo) > 1 else []) if d.strip()]
+                continue
+            if ramos and not x.startswith("ODS") and x != "Resumo:":
+                partes = re.split(r"\s[–-]\s", x)
+                proc = partes[-1].strip() if len(partes) > 1 and re.search(r"\d", partes[-1]) and len(partes[-1]) < 500 else ""
+                titulo = " – ".join(partes[:-1]).strip() if proc else x
+                inc = next((re.search(r"incidente=(\d+)", h).group(1) for h in hr if "processos/detalhe.asp" in h and "incidente=" in h), "")
+                cur = {"id": f"{n}-{len(julgados) + 1}", "n": n, "d": data, "o": orgao, "ra": list(dict.fromkeys(ramos)), "ds": list(dict.fromkeys(desc)), "t": titulo, "p": proc, "r": [], "nt": []}
+                if tema_do_titulo(x):
+                    cur["tema"] = tema_do_titulo(x)
+                if inc:
+                    cur["inc"] = inc
+                ramos, desc = [], []
+            continue
+        if x.startswith("ODS:"):
+            cur["ods"] = x[4:].strip()
+            continue
+        if re.match(r"^Teses? fixadas?:?$", x, re.I):
+            modo = "tese"
+            cur.setdefault("ts", [])
+            continue
+        if x == "Resumo:":
+            modo = "resumo"
+            continue
+        if re.match(r"^\(\d+\) ", x):
+            cur["nt"].append(x)
+            continue
+        if re.match(r"^[A-Z][A-Za-z]{1,7}\s\d(?:(?!\.\s)[^\n]){0,400}?\s(?:relator|relatora|redator|redatora)\b", x[:500]) and re.search(r"julgamento|julgado|Turma|Plenário", x):
+            mr = re.search(r"(?:relator|relatora)\s+(?:para o acórdão\s+)?((?:Ministra|Ministro)\s+[^,]+)", x)
+            cur["fe"] = x
+            if mr:
+                cur["rel"] = mr.group(1).strip()
+            jd = data_dmy(x)
+            if jd:
+                cur["jd"] = jd
+            tm = re.search(r"(Primeira|Segunda) Turma", x)
+            if tm and cur["o"] in ("Turmas", ""):
+                cur["o"] = f"{tm.group(1)} Turma"
+            fechar()
+            continue
+        (cur["ts"] if modo == "tese" else cur["r"]).append(x)
+    fechar()
+    return julgados
+
+
+def json_linhas_informativos(julgados: list[dict], ultima: int) -> str:
+    js = sorted(julgados, key=lambda j: (-j["n"], int(j["id"].split("-")[1])))
+    corpo = ",\n".join(json.dumps(j, ensure_ascii=False, separators=(",", ":")) for j in js)
+    return f'{{\n"atualizado":"{HOJE}",\n"ultima":{ultima},\n"julgados":[\n{corpo}\n]\n}}\n'
+
+
+def saida_informativos(julgados: list[dict]) -> list[dict]:
+    """Julgados ordenados e com as matérias do site (ar, sa), quando as rotinas do STJ estão carregadas."""
+    out = []
+    for j in sorted(julgados, key=lambda j: (-j["n"], int(j["id"].split("-")[1]))):
+        x = dict(j)
+        ar, sa = areas_stf(j.get("ra", []), f"{j['t']} {' '.join(j.get('ds', []))} {' '.join(j.get('ts', [])[:1])}")
+        if ar:
+            x["ar"] = ar
+        if sa:
+            x["sa"] = sa
+        out.append(x)
+    return out
+
+
+def atualizar_informativos(limite: int = 80) -> dict:
+    """Edições novas do Informativo do STF (as já guardadas no registro não são baixadas de novo, salvo a última)."""
+    reg = ler(REGISTRO_INFORMATIVOS, {})
+    julgados = list(reg.get("julgados", []))
+    ultima_reg = int(reg.get("ultima", 0))
+    try:
+        atual = baixar(URL_INFORMATIVO_ATUAL, 90)
+        m = re.search(rb"N[\xba\xb0o]\s*(\d{4})/\d{4}", atual) or re.search(rb"informativo(\d{4})", atual)
+        ultima = int(m.group(1)) if m else 0
+        if not ultima:
+            raise RuntimeError("número da edição atual não encontrado")
+    except Exception as e:  # noqa: BLE001
+        if not julgados:
+            raise
+        log(f"  Informativo do STF: {e}; usando o registro de {reg.get('atualizado', '?')}")
+        gravar(SAIDA / "stf-informativos.json", saida_informativos(julgados))
+        return {"julgados": len(julgados), "origem": "registro", "dataRegistro": reg.get("atualizado", ""), "ultima": ultima_reg}
+    de = max(PRIMEIRA_EDICAO, ultima_reg) if ultima_reg else PRIMEIRA_EDICAO  # a última do registro é baixada de novo (correções)
+    baixadas = 0
+    for n in range(de, ultima + 1):
+        if baixadas >= limite or sem_tempo():
+            break
+        try:
+            b = atual if n == ultima else baixar(URL_INFORMATIVO.format(n), 90)
+            novos = ler_informativo(n, b)
+        except Exception as e:  # noqa: BLE001
+            log(f"  Informativo {n}/STF: {e}")
+            continue
+        julgados = [j for j in julgados if j["n"] != n] + novos
+        baixadas += 1
+        ultima_reg = max(ultima_reg, n)
+        time.sleep(INTERVALO)
+    gravar(SAIDA / "stf-informativos.json", saida_informativos(julgados))
+    log(f"STF: {len(julgados)} julgados do Informativo (até a edição {ultima_reg}); {baixadas} edição(ões) baixada(s).")
+    return {"julgados": len(julgados), "edicoes_baixadas": baixadas, "ultima": ultima_reg}
+
+
 # ------------------------------------------------------------------ composição
 def _miolo(t: str) -> tuple[str, str]:
     """Texto do corpo da página (entre "Última atualização" e o rodapé) e a data de atualização."""
@@ -622,7 +802,7 @@ def main():
     ap.add_argument("--teses", type=int, default=2000, help="máximo de teses baixadas nesta execução")
     ap.add_argument("--sumulas", type=int, default=1000, help="máximo de enunciados de súmula baixados nesta execução")
     ap.add_argument("--minutos", type=int, default=25, help="tempo máximo para baixar teses e enunciados")
-    ap.add_argument("--so", default="", help="temas, sumulas ou composicao (padrão: todos)")
+    ap.add_argument("--so", default="", help="temas, sumulas, informativos ou composicao (padrão: todos)")
     ap.add_argument("--exportar", action="store_true", help="grava o registro em fontes/stf/ (temas e súmulas)")
     ap.add_argument("--coletar", action="store_true", help="coleta temas e súmulas só para o registro (fora do GitHub), sem as rotinas do STJ, e já o exporta")
     ap.add_argument("--preparar", action="store_true", help="usa o registro como base de comparação (coleta fora do GitHub)")
@@ -637,7 +817,7 @@ def main():
     if args.coletar:
         SO_REGISTRO = True
         preparar_base()
-        for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas))):
+        for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas)), ("informativos", atualizar_informativos)):
             try:
                 res[nome] = f()
             except Exception as e:  # noqa: BLE001
@@ -650,7 +830,7 @@ def main():
         exportar_registro()
         log("COLETA CONCLUÍDA: " + json.dumps(res, ensure_ascii=False))
         return
-    for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas)), ("composicao", atualizar_composicao)):
+    for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas)), ("informativos", atualizar_informativos), ("composicao", atualizar_composicao)):
         if args.so and nome != args.so:
             continue
         try:
@@ -666,7 +846,7 @@ def main():
         agora = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
         ant = man.get("stf", {})
         stf = {}
-        for nome in ("temas", "sumulas", "composicao"):
+        for nome in ("temas", "sumulas", "informativos", "composicao"):
             r = res.get(nome)
             reg = r and "erro" not in r and r.get("origem") in ("registro", "registro do Radar")
             if reg and ant.get(nome) and ant[nome].get("origem") != "registro":

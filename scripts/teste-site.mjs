@@ -209,6 +209,19 @@ else {
     else ok("verificar petição com citações do STF");
     await page.goto(BASE + "#composicao?t=stf"); await esperarTela();
     if (!(await page.$("#view [data-min]"))) falha("composição do STF sem ministros"); else ok("composição do STF");
+    // Informativo do STF (opcional até a primeira coleta): lista, busca e resumo completo.
+    if (tam("data/stf-informativos.json") > 0) {
+      const inf = json("data/stf-informativos.json");
+      if (inf.length < 100) avisos.push(`stf-informativos.json: ${inf.length} julgados (esperados mais de 100)`); else ok(`stf-informativos.json: ${inf.length} julgados, edição ${inf[0].n}`);
+      await page.goto(BASE + "#infostf"); await esperarTela();
+      const n0 = await page.$$eval("#is-lista > li", (l) => l.length);
+      if (!n0) falha("Informativo do STF: lista vazia");
+      await page.fill("#is-q", inf[0].p.split(",")[0].replace(/\./g, "")); await page.waitForTimeout(500);
+      const n1 = await page.$$eval("#is-lista > li", (l) => l.length);
+      if (!n1 || n1 > n0) falha(`Informativo do STF: busca por processo (${n1} de ${n0})`);
+      await page.click("#is-lista [data-info-stf]"); await page.waitForSelector("#gis-copiar", { timeout: 8000 }).catch(() => falha("Informativo do STF: resumo completo não abriu"));
+      ok("Informativo do STF: lista, busca e resumo");
+    }
   } catch (e) { falha(`STF: ${e.message.split("\n")[0]}`); }
   for (const e of [...new Set(errosPag)]) falha(`STF: ${e}`);
 }
