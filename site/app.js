@@ -1993,6 +1993,9 @@
         <li><span class="nota">Cita Tema N</span> Na linha abaixo da ementa: o julgado apenas menciona o tema, sem integrá-lo.</li>
         <li>Na página do julgado, “A ementa menciona” indica, pelas palavras da ementa, <b>distinção</b> (distinguishing: o precedente não se aplica porque os fatos são diferentes), <b>divergência</b> (dissídio entre tribunais ou órgãos, muitas vezes só para dizer que não foi demonstrado), <b>mudança de entendimento</b> (overruling), <b>questão nova</b> e <b>modulação de efeitos</b>.</li>
       </ul>${COMO_BUSCAR()}`),
+    infostf: () => ajuda("O que é o Informativo do STF", `
+      <p class="texto-serif">O Informativo STF é a publicação oficial em que o Supremo resume os julgamentos que considera de destaque. Cada cartão traz o resumo, a tese (quando fixada), o processo, o relator e a data.</p>
+      <ul class="lista-ajuda"><li>A busca aceita número de processo (“ADI 7903”), relator, tema ou assunto.</li><li>O resumo completo abre ao tocar no título; ali há a citação pronta para copiar.</li><li>O resumo não substitui o acórdão: use “Processo no STF” para conferir as peças.</li><li>A cobertura começa na edição 1.184 (agosto de 2025).</li></ul>`),
     repetitivos: () => trib() === "stf" ? ajuda("O que é a Repercussão geral", `
       <p class="texto-serif">Todos os temas de repercussão geral do STF, com o título, a descrição, o leading case, o relator, a decisão sobre a repercussão geral e a tese fixada.</p>
       <ul class="lista-ajuda">
@@ -2667,6 +2670,7 @@
     { id: "atualize", g: "Acompanhar", tit: "Atualize-se", sobre: "Leitura do dia", ico: "raio", fn: vAtualize, cont2: true, trib: "stj" },
     { id: "semana", g: "Acompanhar", tit: "Resumo da semana", sobre: "O que mudou em 7 dias", ico: "semana", fn: vSemana, trib: "stj" },
     { id: "destaques", g: "Acompanhar", tit: "Destaques", sobre: "Informativo do STJ e seleção automática", ico: "destaques", fn: vDestaques, trib: "stj" },
+    { id: "infostf", g: "Acompanhar", tit: "Informativo do STF", sobre: "Julgamentos de destaque do Supremo", ico: "destaques", fn: vInfoSTF, trib: "stf", dados: () => !D.man || !!D.man.stf?.informativos },
     { id: "radar", g: "Acompanhar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true, trib: "stj" },
     { id: "salvos", g: "Acompanhar", tit: "Salvos", sobre: "Pastas, avaliações e anotações", ico: "salvar", fn: vSalvos, cont3: true },
     { id: "pesquisa", g: "Pesquisar", tit: "Pesquisa de acórdãos", menu: "Acórdãos", sobre: "Acervo de acórdãos", ico: "pesquisa", fn: vPesquisa, trib: "stj", ambos: { menu: "Acórdãos do STJ" } },
@@ -2682,7 +2686,7 @@
   ];
   // Atalho externo no modo STF: a pesquisa de acórdãos do STF fica no site do próprio Tribunal.
   const LINKS_EXT = [{ g: "Pesquisar", depois: "repetitivos", href: URL_STF.pesquisa, menu: "Acórdãos no site do STF", ico: "pesquisa", quando: () => trib() === "stf" }];
-  const disponivel = (v) => !v.trib || comSTJ();
+  const disponivel = (v) => (!v.trib || (v.trib === "stj" ? comSTJ() : comSTF())) && (!v.dados || v.dados());
   const vdef = (v) => ({ ...v, ...(v[trib()] || {}) });
   let navLigado = false, maisNav = () => {};
   function montarNav() {
@@ -4954,6 +4958,118 @@
     aplicar();
   }
 
+  // ========================================================== INFORMATIVO DO STF
+  // Publicação oficial e aberta do Supremo: resumos dos julgamentos de destaque, por edição.
+  const informativosSTF = () => carregar("stf-informativos", (l) => {
+    for (const x of l) {
+      x.trib = "stf"; x._d = x.d || ""; x.ra = x.ra || []; x.ds = x.ds || [];
+      x._res = (x.ts || [])[0] || (x.r || [])[0] || "";
+      x._n = norm(`${x.t} ${x.p} ${(x.p || "").replace(/\./g, "")} ${x.ra.join(" ")} ${x.ds.join(" ")} ${(x.ts || []).join(" ")} ${(x.r || []).join(" ")} ${x.rel || ""} ${x.tema ? `tema ${x.tema}` : ""} informativo ${x.n}`);
+    }
+    l.idx = new Map(l.map((x) => [x.id, x]));
+    return l;
+  });
+  const URL_INFO_STF = (n) => `https://www.stf.jus.br/arquivo/informativo/documento/informativo${n}.htm`;
+  const URL_PROC_STF = (inc) => `https://portal.stf.jus.br/processos/detalhe.asp?incidente=${inc}`;
+  const nomeMin = (r) => (r || "").replace(/^Minist[ra]o?\s+/i, "").replace(/^Ministra\s+/i, "");
+  const refInfoSTF = (x) => `(STF, ${x.p || "Informativo"}${x.rel ? `, rel. Min. ${nomeMin(x.rel)}` : ""}${x.jd ? `, julgado em ${fmtDataCit(x.jd)}` : ""}. Informativo STF n. ${x.n}.)`;
+  const citInfoSTF = (x) => `${x.t}\n${(x.ts || []).length ? `Tese: ${x.ts.join(" ")}\n` : ""}${refInfoSTF(x)}`;
+  function cardInfoSTF(x, termos = []) {
+    return `<li class="card item info-stf" data-infok="${esc(x.id)}">
+      <div class="item-cab">${seloTrib("stf")}<button type="button" class="item-tit item-abrir" data-info-stf="${esc(x.id)}">${destacar(esc(x.t), termos)}</button>
+        <span class="meta"><span>Informativo ${x.n}</span><span>${fmtData(x.d)}</span><span>${esc(x.o)}</span></span></div>
+      <div class="item-sel">${(x.ar || []).length ? seloMat(x.ar, x.sa) : x.ra.slice(0, 2).map((r) => `<span class="selo">${esc(r)}</span>`).join("")}${x.tema ? `<span class="selo pri">Tema ${fmtNumProc(x.tema)} RG</span>` : ""}${(x.ts || []).length ? `<span class="selo ok">Tese fixada</span>` : ""}</div>
+      <p class="enunciado">${destacar(esc(x._res.length > 420 ? `${x._res.slice(0, 417).replace(/\s+\S*$/, "")}…` : x._res), termos)}</p>
+      <p class="nota" style="margin:6px 0 0">${x.p ? `${esc(x.p.length > 110 ? `${x.p.slice(0, 107)}…` : x.p)}` : ""}${x.rel ? `${x.p ? " · " : ""}rel. Min. ${esc(nomeMin(x.rel))}` : ""}</p>
+      <div class="acoes">
+        <button type="button" class="link-acao" data-info-stf="${esc(x.id)}">Resumo completo ${ico("seta")}</button>
+        ${x.inc ? `<a class="link-acao" href="${URL_PROC_STF(x.inc)}" target="_blank" rel="noopener">Processo no STF ${ico("externo")}</a>` : ""}
+        <span class="dir"><button type="button" class="btn-ico" data-copiar-info-stf="${esc(x.id)}" title="Copiar destaque e citação" aria-label="Copiar">${ico("copiar")}</button></span>
+      </div></li>`;
+  }
+  async function abrirInfoSTF(id) {
+    const l = await informativosSTF().catch(() => null);
+    const x = l?.idx.get(id); if (!x) return toast("Nota do Informativo do STF não encontrada.");
+    const par = (a) => a.map((t) => `<p>${esc(t)}</p>`).join("");
+    abrirGaveta(`Informativo STF n. ${x.n} · ${fmtData(x.d)}`, x.p || "Informativo do STF", `
+      <div class="item-sel">${(x.ar || []).length ? seloMat(x.ar, x.sa) : x.ra.map((r) => `<span class="selo">${esc(r)}</span>`).join("")}<span class="selo">${esc(x.o)}</span>${x.tema ? `<span class="selo pri">Tema ${fmtNumProc(x.tema)} RG</span>` : ""}</div>
+      <p class="info-tema">${esc(x.t)}</p>
+      ${x.ds.length ? `<p class="nota">${esc(x.ds.join(" · "))}</p>` : ""}
+      ${(x.ts || []).length ? `<div class="tese"><b>Tese fixada</b>${par(x.ts)}</div>` : ""}
+      <div class="tese"><b>Resumo do julgado</b>${par(x.r || [])}</div>
+      <div class="acoes" style="margin:14px 0">
+        <button type="button" class="btn btn-claro btn-peq" id="gis-copiar">${ico("copiar")} Copiar destaque e citação</button>
+        <button type="button" class="btn btn-claro btn-peq" id="gis-ref">${ico("citar")} Copiar só a citação</button>
+        ${x.tema ? `<button type="button" class="btn btn-claro btn-peq" data-tema-rg="${x.tema}">Tema ${fmtNumProc(x.tema)} da repercussão geral</button>` : ""}
+        ${x.inc ? `<a class="btn btn-claro btn-peq" href="${URL_PROC_STF(x.inc)}" target="_blank" rel="noopener">Processo no STF ${ico("externo")}</a>` : ""}
+        <a class="btn btn-claro btn-peq" href="${URL_INFO_STF(x.n)}" target="_blank" rel="noopener">Informativo oficial ${ico("externo")}</a>
+      </div>
+      ${x.fe ? `<h3>Julgamento</h3><p class="texto-serif">${esc(x.fe)}</p>` : ""}
+      ${(x.nt || []).length ? `<h3>Notas do Informativo</h3><ul class="lista-ajuda">${x.nt.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
+      <p class="nota" style="margin-top:14px">Texto do Informativo STF, publicação oficial do Supremo Tribunal Federal. O resumo não substitui o acórdão.</p>`);
+    $("#gis-copiar").addEventListener("click", () => copiar(citInfoSTF(x), "Destaque e citação copiados."));
+    $("#gis-ref").addEventListener("click", () => copiar(refInfoSTF(x), "Citação copiada."));
+    $$("[data-tema-rg]", $("#gaveta-corpo")).forEach((b) => b.addEventListener("click", () => abrirTemaRG(+b.dataset.temaRg)));
+  }
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-info-stf]"); if (b) { e.preventDefault(); return abrirInfoSTF(b.dataset.infoStf); }
+    const c = e.target.closest("[data-copiar-info-stf]"); if (!c) return;
+    const x = (await informativosSTF().catch(() => null))?.idx.get(c.dataset.copiarInfoStf); if (x) copiar(citInfoSTF(x), "Destaque e citação copiados.");
+  });
+  async function vInfoSTF(main, p) {
+    const l = await informativosSTF();
+    if (!l.length) { main.innerHTML = vazio("destaques", "Informativo do STF ainda sem dados", "A coleta das edições do Informativo será publicada na próxima atualização."); return; }
+    const f = { q: p.get("q") || "", ra: p.get("ra") || "", org: p.get("org") || "", per: p.get("per") || "", tese: p.get("tese") === "1", s: p.get("s") || "rec" };
+    const ultima = l[0];
+    main.innerHTML = `
+      <div id="is-f">
+        ${campoBusca("is-q", 'Processo, relator, tema ou assunto. Ex.: "ADI 7903" ou "Zanin"', f.q)}
+        <div class="fd-filtros filtros-lista" id="is-pil"></div>
+      </div>
+      <div class="barra-res"><p id="is-info"></p><span class="nota">Fonte: Informativo STF, publicação oficial do Supremo · última edição: n. ${ultima.n}, de ${fmtData(ultima.d)}</span></div>
+      <ol class="lista" id="is-lista"></ol>
+      <div id="is-pag"></div>`;
+    let lista = [], termos = [], cr = {}, co = {};
+    const pg = paginador("is", () => render(false), "#is-lista");
+    const PER = [["", "Qualquer data"], ["30", "Últimos 30 dias"], ["90", "Últimos 90 dias"], ["365", "Último ano"]];
+    const noPer = (x, v) => !v || (Date.parse(hojeISO()) - Date.parse(x.d)) / 864e5 <= +v;
+    const render = (reset) => {
+      const ul = $("#is-lista");
+      if (reset) pg.pag = 1;
+      ul.innerHTML = pg.fatia(lista).map((x) => cardInfoSTF(x, termos)).join("");
+      $("#is-pag").innerHTML = pg.html(lista.length);
+      if (!lista.length) ul.innerHTML = vazio("destaques", "Nenhum julgado encontrado", "Revise os termos ou os filtros.");
+    };
+    const aplicar = () => {
+      f.q = $("#is-q").value;
+      gravarHash("infostf", { ...f, tese: f.tese ? "1" : "", s: f.s === "rec" ? "" : f.s });
+      const c = Busca.compilar(f.q); termos = c.termos;
+      const base = l.filter((x) => c.testa(x._n) && noPer(x, f.per) && (!f.tese || (x.ts || []).length));
+      co = {}; base.forEach((x) => { co[x.o] = (co[x.o] || 0) + 1; });
+      const b2 = base.filter((x) => temV(f.org, x.o));
+      cr = {}; b2.forEach((x) => x.ra.forEach((r) => { cr[r] = (cr[r] || 0) + 1; }));
+      const sel = listaV(f.ra);
+      lista = b2.filter((x) => !sel.length || x.ra.some((r) => sel.includes(r)));
+      const ord = { rec: (a, b) => (b.d || "").localeCompare(a.d || ""), rel: (a, b) => c.pontua(b._n, b._n) - c.pontua(a._n, a._n) }[f.s === "rel" && c.vazio ? "rec" : f.s];
+      lista.sort(ord);
+      $("#is-info").innerHTML = `<b>${fmtInt(lista.length)}</b> julgado(s) ${explicacaoHTML(c)}`;
+      render(true);
+    };
+    const orgaos = [...new Set(l.map((x) => x.o))].sort();
+    pilulas($("#is-pil"), [
+      { rot: "Ramo do direito", tipo: "varios", vertical: true, get: () => f.ra, set: (v) => (f.ra = v), titulo: "Ramo do direito",
+        opcoes: () => [{ v: "", t: "Todos os ramos" }, ...Object.keys(cr).sort((a, b) => cr[b] - cr[a]).map((r) => ({ v: r, t: r, n: cr[r] }))],
+        nota: "Ramo indicado pelo próprio Informativo no cabeçalho de cada julgado." },
+      ...(orgaos.length > 1 ? [{ rot: "Órgão", tipo: "varios", vertical: true, get: () => f.org, set: (v) => (f.org = v), titulo: "Órgão julgador", opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...orgaos.map((o) => ({ v: o, t: o, n: co[o] || 0 }))] }] : []),
+      { rot: "Data", tipo: "um", get: () => f.per, set: (v) => (f.per = v), titulo: "Data de divulgação", opcoes: () => PER.map(([v, t]) => ({ v, t })), nota: "Data de divulgação da edição do Informativo." },
+      { rot: "Só com tese", tipo: "toggle", get: () => f.tese, set: (v) => (f.tese = v), dica: "Mostra apenas os julgados em que o Informativo registra a tese fixada." },
+      defOrdem(() => f.s, (v) => (f.s = v), [{ v: "rec", t: "Mais recentes" }, { v: "rel", t: "Mais aderentes à busca" }]),
+    ], aplicar);
+    $("#is-q").addEventListener("input", debounce(aplicar, 200));
+    ligarAjuda($("#is-f"), $("#is-q"), aplicar);
+    aplicar();
+  }
+
   // ========================================================== REPETITIVOS
   async function vRepetitivos(main, p) {
     const vazioPT = { lista: [] };
@@ -5506,6 +5622,7 @@
   const VERSAO = "2026.09.30";
   const NOVIDADES = [
     ["2026-09-30", [
+      "Informativo do STF: nova página (modo STF ou STJ + STF) com os julgamentos de destaque das edições do Informativo do Supremo, com resumo, tese fixada, relator e data. Busca por processo, relator, tema ou assunto, filtros por ramo do direito, órgão e data, e atalhos para o processo e a edição oficial.",
       "STF no Radar: o nome do site, no alto do menu, passa a escolher o tribunal exibido: Radar STJ (padrão), Radar STF ou os dois juntos. A escolha fica guardada neste navegador.",
       "Radar STF: temas de repercussão geral (com tese, leading case, relator e linha do tempo), súmulas e súmulas vinculantes, composição do Plenário e das Turmas com fotos, painel próprio e atalho para a pesquisa de acórdãos no site do STF.",
       "Radar STJ · STF: precedentes, súmulas e verificação de petição com os dois tribunais, cada cartão com o selo STJ ou STF; na Composição, abas STJ e STF; no painel, aba Repercussão geral.",
@@ -5583,6 +5700,7 @@
       <p>No alto do menu (no celular, acima do título da página), o nome do site abre a escolha do tribunal: <b>Radar STJ</b> (padrão), <b>Radar STF</b> ou <b>Radar STJ · STF</b>. A escolha fica guardada neste navegador e muda o conteúdo das seções; pode ser trocada a qualquer momento. Com os dois tribunais, cada cartão traz o selo STJ ou STF.</p>
       <ul>
         <li><b>Temas de repercussão geral:</b> lista oficial de todos os temas do STF, com título, descrição, leading case, relator, reconhecimento (ou não) da repercussão geral, situação e tese fixada. A atualização é diária; as teses novas são baixadas no mesmo dia.</li>
+        <li><b>Informativo do STF:</b> edições do Informativo STF (publicação oficial e aberta do Supremo), com o resumo de cada julgamento de destaque, a tese fixada, o relator e a data. O resumo não substitui o acórdão; o site leva ao processo e à edição oficial.</li>
         <li><b>Súmulas e súmulas vinculantes:</b> página “Aplicação das Súmulas no STF”, com o enunciado, a situação indicada pelo Tribunal (cancelada, revogada, superada), a data de aprovação ou publicação e as observações.</li>
         <li><b>Composição:</b> páginas “Composição atual” e “Turmas” do STF. Data da posse e de nascimento conforme registros públicos; fotos do Wikimedia Commons, quando disponíveis.</li>
       </ul>
@@ -5679,6 +5797,7 @@
         // Quando o portal do STF recusa a rotina automática, vale o registro coletado à parte (semanal).
         { nome: "STF · Repercussão geral", dado: "", extra: m.stf.temas?.temas ? `${fmtInt(m.stf.temas.temas)} temas` : "", verif: m.stf.temas?.em, auto: m.stf.temas?.origem !== "registro", lim: 10 },
         { nome: "STF · Súmulas", dado: "", extra: m.stf.sumulas?.sumulas ? `${fmtInt(m.stf.sumulas.sumulas)} súmulas` : "", verif: m.stf.sumulas?.em, auto: m.stf.sumulas?.origem !== "registro", lim: 10 },
+        { nome: "STF · Informativo", dado: "", extra: m.stf.informativos?.julgados ? `${fmtInt(m.stf.informativos.julgados)} julgados · edição ${m.stf.informativos.ultima || ""}` : "", verif: m.stf.informativos?.em, auto: m.stf.informativos?.origem !== "registro", lim: 10 },
         { nome: "STF · Composição", dado: "", verif: m.stf.composicao?.em, auto: m.stf.composicao?.origem !== "registro", lim: 10 },
       ] : []),
     ];
