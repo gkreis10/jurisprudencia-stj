@@ -472,7 +472,7 @@ def atualizar_sumulas(limite: int) -> dict:
 URL_INFORMATIVO = "https://www.stf.jus.br/arquivo/informativo/documento/informativo{}.htm"
 URL_INFORMATIVO_ATUAL = "https://www.stf.jus.br/arquivo/informativo/documento/informativo.htm"
 REGISTRO_INFORMATIVOS = FONTE / "informativos.json"
-PRIMEIRA_EDICAO = 1184  # edições anteriores não são coletadas (limite de tamanho do site)
+PRIMEIRA_EDICAO = 1004  # edições anteriores usam outro formato e não são lidas
 
 
 def paragrafos_html(b: bytes) -> list[tuple[str, list[str]]]:
@@ -489,8 +489,8 @@ def paragrafos_html(b: bytes) -> list[tuple[str, list[str]]]:
 
 
 def data_dmy(s: str) -> str:
-    m = re.search(r"(\d{2})\.(\d{2})\.(\d{4})", s or "")
-    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else ""
+    m = re.search(r"(?<![\d.])(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)", s or "")
+    return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}" if m else ""
 
 
 def tema_do_titulo(t: str) -> int:
@@ -525,6 +525,9 @@ def ler_informativo(n: int, b: bytes) -> list[dict]:
         if x == "Sumário":
             fechar()
             continue
+        if re.match(r"^2 (PLEN[ÁA]RIO VIRTUAL|INOVA)", x, re.I):  # fim do corpo: seções seguintes não são julgados
+            fechar()
+            break
         if re.match(r"^\d+ [A-ZÁÉÍÓÚÂÊÔÃÕÇ ]+$", x) and x == x.upper():
             fechar()
             nome = re.sub(r"^\d+ ", "", x)
@@ -543,7 +546,7 @@ def ler_informativo(n: int, b: bytes) -> list[dict]:
                 ramos.append(cab_ramo[0].strip().capitalize())
                 desc += [d.strip().capitalize() for d in (cab_ramo[1].split(";") if len(cab_ramo) > 1 else []) if d.strip()]
                 continue
-            if ramos and not x.startswith("ODS") and x != "Resumo:":
+            if ramos and not x.startswith("ODS") and not re.match(r"^Resumo:?$", x, re.I):
                 partes = re.split(r"\s[–-]\s", x)
                 proc = partes[-1].strip() if len(partes) > 1 and re.search(r"\d", partes[-1]) and len(partes[-1]) < 500 else ""
                 titulo = " – ".join(partes[:-1]).strip() if proc else x
@@ -562,17 +565,21 @@ def ler_informativo(n: int, b: bytes) -> list[dict]:
             modo = "tese"
             cur.setdefault("ts", [])
             continue
-        if x == "Resumo:":
+        if re.match(r"^Resumo:?$", x, re.I):
             modo = "resumo"
             continue
         if re.match(r"^\(\d+\) ", x):
             cur["nt"].append(x)
             continue
         if re.match(r"^[A-Z][A-Za-z]{1,7}\s\d(?:(?!\.\s)[^\n]){0,400}?\s(?:relator|relatora|redator|redatora)\b", x[:500]) and re.search(r"julgamento|julgado|Turma|Plenário", x):
-            mr = re.search(r"(?:relator|relatora)\s+(?:para o acórdão\s+)?((?:Ministra|Ministro)\s+[^,]+)", x)
+            mr = re.search(r"(relator|relatora)\s+(?:para o acórdão\s+)?((?:Ministra|Ministro|Min\.)\s+[^,]+)", x)
             cur["fe"] = x
             if mr:
-                cur["rel"] = mr.group(1).strip()
+                rel = mr.group(2).strip()
+                cur["rel"] = re.sub(r"^Min\.", "Ministra" if mr.group(1) == "relatora" else "Ministro", rel)
+            mp = re.match(r"^(.+?),\s*(?:relator|relatora)\b", x)
+            if mp and not cur.get("p"):
+                cur["p"] = mp.group(1).strip()
             jd = data_dmy(x)
             if jd:
                 cur["jd"] = jd
