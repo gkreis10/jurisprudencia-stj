@@ -3013,7 +3013,9 @@
         <div class="evento-txt">${esc(e.t.tese ? "Tese: " + e.t.tese : e.t.q || "")}</div></div></li>`).join("")}</ol></div>` : `<div class="card card-pad"><p class="nota">${vazioTxt}</p></div>`;
   async function vPainelSTF(main) {
     const hoje = hojeISO();
-    const [l, sm, cp, pt] = await Promise.all([temasRG(), sumulasSTF().catch(() => []), composicaoSTF().catch(() => null), D.man?.stf?.pauta ? pautaSTF() : null]);
+    const [l, sm, cp, pt, nots] = await Promise.all([temasRG(), sumulasSTF().catch(() => []), composicaoSTF().catch(() => null), D.man?.stf?.pauta ? pautaSTF() : null, noticiasSTF()]);
+    const sSTF = slidesSTF(l, pt, cp);
+    const slides = intercalar(slidesNoticias(nots), sSTF.teses, sSTF.pauta).slice(0, 8);
     const emPauta = (pt?.temas || []).filter((x) => x.fim >= hoje).sort((a, b) => a.ini.localeCompare(b.ini));
     const ev90 = eventosRG(l, somaDias(hoje, -90));
     const pend = l.filter((x) => x._g === "andamento").sort((a, b) => (b.rgd || "").localeCompare(a.rgd || "") || b.n - a.n);
@@ -3032,6 +3034,7 @@
           <button class="btn btn-pri" type="submit" aria-label="Pesquisar">${ico("pesquisa")}<span class="so-largo">Pesquisar</span></button>
         </form>
       </section>
+      ${carrosselHTML(slides)}
       <div class="stats">
         <button type="button" class="stat" data-pn="mov"><span class="stat-ico ico-verde">${ico("repetitivos")}</span><span><b>${fmtInt(ev90.filter((e) => e.d >= somaDias(hoje, -30)).length)}</b><span>movimentações em repercussão geral (30 dias)</span></span></button>
         <button type="button" class="stat" data-pn="pend"><span class="stat-ico ico-lar">${ico("pautas")}</span><span><b>${fmtInt(pend.length)}</b><span>temas com mérito pendente</span></span></button>
@@ -3057,6 +3060,7 @@
     };
     $$("[data-pn]", main).forEach((b) => b.addEventListener("click", () => { mostrar(b.dataset.pn); if (b.classList.contains("stat")) $(".painel-abas").scrollIntoView({ behavior: "smooth", block: "start" }); }));
     mostrar(abaIni);
+    ligarCarrossel(main);
     $("#hero-f").addEventListener("submit", (e) => {
       e.preventDefault();
       const q = $("#hero-q").value.trim(); if (!q) return;
@@ -3097,6 +3101,10 @@
     let evRG = null;
     if (ambos()) abas.splice(1, 0, ["rg", "Repercussão geral", 0]);
     const abaIni = abas.some((a) => a[0] === P.painelAba) ? P.painelAba : "rep";
+    const sJ = slidesSTJ(evs, pl, dsTop);
+    let slidesJ = intercalar(sJ.teses, sJ.dest, sJ.pauta);
+    if (ambos()) { const nots = await noticiasSTF(); slidesJ = intercalar(slidesNoticias(nots).slice(0, 3), slidesJ); }
+    slidesJ = slidesJ.slice(0, 8);
     main.innerHTML = `
       <section class="hero">
         <p class="sobretitulo">${fmtDiaL(hoje)}</p>
@@ -3107,6 +3115,7 @@
           <button class="btn btn-pri" type="submit" aria-label="Pesquisar">${ico("pesquisa")}<span class="so-largo">Pesquisar</span></button>
         </form>
       </section>
+      ${carrosselHTML(slidesJ)}
       <div class="stats">
         <button type="button" class="stat" data-pn="rep">
           <span class="stat-ico ico-verde">${ico("repetitivos")}</span><span><b>${fmtInt(ev7.length)}</b><span>movimentações em repetitivos (7 dias)</span></span></button>
@@ -3161,6 +3170,7 @@
         if (P.painelAba === "rad") mostrar("rad");
       }
     })();
+    ligarCarrossel(main); fotosCarSTJ(main, slidesJ);
     $("#hero-f").addEventListener("submit", (e) => {
       e.preventDefault();
       const q = $("#hero-q").value.trim(); if (!q) return;
@@ -5186,6 +5196,113 @@
     const c = e.target.closest("[data-copiar-info-stf]"); if (!c) return;
     const x = (await informativosSTF().catch(() => null))?.idx.get(c.dataset.copiarInfoStf); if (x) copiar(citInfoSTF(x), "Destaque e citação copiados.");
   });
+  // ================================================================== CARROSSEL DA VISÃO GERAL
+  // Destaques em cartões grandes, com troca automática (pausa ao passar o mouse, ao tocar ou com o
+  // foco do teclado; sem movimento automático para quem pediu menos animação no sistema).
+  const noticiasSTF = () => (D.man?.stf?.noticias ? carregar("stf-noticias", (l) => l).catch(() => []) : Promise.resolve([]));
+  const CORES_CAR = [["#12325e", "#1f5aa6"], ["#3b1f5c", "#6b3fa0"], ["#0f4a43", "#1d8a74"], ["#5a2a12", "#b0582a"], ["#5c1530", "#a43a5c"], ["#1d3b16", "#4f8a2c"]];
+  const corCar = (k) => { let h = 0; for (const c of String(k || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return CORES_CAR[h % CORES_CAR.length]; };
+  const cortar = (t, n) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? `${t.slice(0, n - 1).replace(/\s+\S*$/, "")}…` : t; };
+  function slideCar(sl, i, n) {
+    const [c1, c2] = corCar(sl.ar || sl.kick);
+    const foto = sl.img && !sl.retrato;
+    const acao = sl.ext ? `href="${esc(sl.href)}" target="_blank" rel="noopener"` : sl.href ? `href="${esc(sl.href)}"` : 'href="#"';
+    return `<a class="car-sl${foto ? " car-foto" : ""}${sl.retrato ? " car-retrato" : ""}" ${acao} ${sl.data || ""} role="group" aria-roledescription="destaque" aria-label="${i + 1} de ${n}: ${esc(sl.tit)}" style="--c1:${c1};--c2:${c2}">
+        ${foto ? `<img class="car-img" src="${esc(sl.img)}" alt="${esc(sl.alt || "")}" loading="${i ? "lazy" : "eager"}" data-erro-remover="img">` : ""}
+        ${sl.retrato ? `<img class="car-min" src="${esc(sl.img)}" alt="" loading="lazy" data-erro-remover="img">` : ""}
+        ${!foto && !sl.retrato ? `<span class="car-marca" aria-hidden="true">${ico(sl.ico || "destaques")}</span>` : ""}
+        <span class="car-tx">
+          <span class="car-kick">${sl.trib ? `<b>${esc(sl.trib)}</b>` : ""}${esc(sl.kick)}</span>
+          <span class="car-tit">${esc(sl.tit)}</span>
+          ${sl.txt ? `<span class="car-res">${esc(sl.txt)}</span>` : ""}
+          <span class="car-pe">${esc(sl.pe || "")}${sl.ext ? ` ${ico("externo")}` : ` ${ico("seta")}`}</span>
+        </span>
+        ${sl.cred ? `<span class="car-cred">${esc(sl.cred)}</span>` : ""}
+      </a>`;
+  }
+  function carrosselHTML(sls) {
+    if (!sls.length) return "";
+    return `<section class="car" aria-roledescription="carrossel" aria-label="Destaques" id="car">
+      <div class="car-trilho" tabindex="-1">${sls.map((sl, i) => slideCar(sl, i, sls.length)).join("")}</div>
+      ${sls.length > 1 ? `<div class="car-ctl">
+        <button type="button" class="car-btn car-ant" aria-label="Destaque anterior">${ico("seta")}</button>
+        <div class="car-pts" role="tablist">${sls.map((sl, i) => `<button type="button" role="tab" aria-label="Destaque ${i + 1}" aria-selected="${!i}" data-car="${i}"></button>`).join("")}</div>
+        <button type="button" class="car-btn car-prox" aria-label="Próximo destaque">${ico("seta")}</button>
+        <button type="button" class="car-btn car-pausa" aria-label="Pausar a troca automática" aria-pressed="false"><span class="car-i-pausa" aria-hidden="true"></span></button>
+      </div>` : ""}
+    </section>`;
+  }
+  function ligarCarrossel(root) {
+    const car = $("#car", root); if (!car) return;
+    const tri = $(".car-trilho", car), sls = $$(".car-sl", car), pts = $$("[data-car]", car);
+    if (sls.length < 2) return;
+    const reduz = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let i = 0, timer = null, pausado = reduz, sobre = false;
+    const ir = (k, suave = true) => { i = (k + sls.length) % sls.length; tri.scrollTo({ left: sls[i].offsetLeft - tri.offsetLeft, behavior: suave && !reduz ? "smooth" : "auto" }); marcar(); };
+    const marcar = () => pts.forEach((b, k) => b.setAttribute("aria-selected", String(k === i)));
+    const parar = () => { clearInterval(timer); timer = null; };
+    const iniciar = () => { parar(); if (!pausado && !sobre) timer = setInterval(() => { if (!document.hidden && car.isConnected) ir(i + 1); else if (!car.isConnected) parar(); }, 7000); };
+    let fimRolagem;
+    tri.addEventListener("scroll", () => { clearTimeout(fimRolagem); fimRolagem = setTimeout(() => { const x = tri.scrollLeft; let m = 0, d = Infinity; sls.forEach((el, k) => { const dd = Math.abs(el.offsetLeft - tri.offsetLeft - x); if (dd < d) { d = dd; m = k; } }); i = m; marcar(); }, 80); }, { passive: true });
+    $(".car-ant", car).addEventListener("click", () => { ir(i - 1); iniciar(); });
+    $(".car-prox", car).addEventListener("click", () => { ir(i + 1); iniciar(); });
+    pts.forEach((b) => b.addEventListener("click", () => { ir(+b.dataset.car); iniciar(); }));
+    const bp = $(".car-pausa", car);
+    const marcarPausa = () => { bp.setAttribute("aria-pressed", String(pausado)); bp.setAttribute("aria-label", pausado ? "Retomar a troca automática" : "Pausar a troca automática"); car.classList.toggle("pausado", pausado); };
+    bp.addEventListener("click", () => { pausado = !pausado; marcarPausa(); iniciar(); });
+    car.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { sobre = true; parar(); } });
+    car.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") { sobre = false; iniciar(); } });
+    car.addEventListener("touchstart", () => { sobre = true; parar(); clearTimeout(car._t); car._t = setTimeout(() => { sobre = false; iniciar(); }, 12000); }, { passive: true });
+    car.addEventListener("focusin", () => { sobre = true; parar(); });
+    car.addEventListener("focusout", () => { sobre = false; iniciar(); });
+    car.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { ir(i + 1); e.preventDefault(); } if (e.key === "ArrowLeft") { ir(i - 1); e.preventDefault(); } });
+    $$("[data-tema-rg]", car).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); abrirTemaRG(+a.dataset.temaRg); }));
+    $$("[data-tema-car]", car).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); const [tp, n] = a.dataset.temaCar.split("|"); abrirTema(tp, +n); }));
+    marcarPausa(); iniciar();
+  }
+  // Intercala os grupos (notícia, tese, notícia, pauta...) para variar o que aparece.
+  const intercalar = (...gs) => { const out = []; for (let k = 0; gs.some((g) => g[k]); k++) for (const g of gs) if (g[k]) out.push(g[k]); return out; };
+  function slidesNoticias(nots) {
+    return nots.slice(0, 5).map((x) => ({ trib: "STF", kick: ` · Notícia · ${fmtData(x.d)}`, tit: x.t, txt: cortar(x.r, 190), img: x.img, alt: x.alt, cred: x.cred, href: x.url, ext: true, pe: "Ler no portal do STF", ar: "noticia" }));
+  }
+  function slidesSTF(l, pt, cp) {
+    const hoje = hojeISO();
+    const fotoDe = (rel) => cp?.ministros.find((m) => m.foto && norm(rel || "").includes(norm(m.curto)))?.foto?.url;
+    const teses = l.filter((x) => x.tese && x.dtese >= somaDias(hoje, -60)).sort((a, b) => b.dtese.localeCompare(a.dtese)).slice(0, 2)
+      .map((x) => ({ trib: "STF", kick: ` · Tese fixada · Tema ${fmtNumProc(x.n)} · ${fmtData(x.dtese)}`, tit: cortar(x.q, 150), txt: cortar(x.tese, 230), img: fotoDe(x.rel), retrato: !!fotoDe(x.rel), href: "#", data: `data-tema-rg="${x.n}"`, pe: x.rel ? `Rel. ${x.rel} · ver o tema` : "Ver o tema", ar: (x.ar || [])[0], ico: "repetitivos" }));
+    const pauta = (pt?.temas || []).filter((p0) => p0.fim >= hoje).sort((a, b) => a.ini.localeCompare(b.ini)).slice(0, 2).map((p0) => {
+      const x = l.idx.get(`RG-${p0.tema}`); if (!x) return null;
+      return { trib: "STF", kick: ` · ${p0.ini <= hoje ? "Em julgamento" : "Vai a julgamento"} · ${ORG_STF[p0.o] || p0.o}, sessão ${p0.amb} ${periodoSTF(p0.ini, p0.fim)}`, tit: cortar(x.q, 170), txt: `Tema ${fmtNumProc(x.n)} da repercussão geral, ainda sem tese. Paradigma: ${p0.cl} ${p0.num}.`, img: fotoDe(x.rel), retrato: !!fotoDe(x.rel), href: "#", data: `data-tema-rg="${x.n}"`, pe: "Ver o tema", ar: (x.ar || [])[0], ico: "pautas" };
+    }).filter(Boolean);
+    return { teses, pauta };
+  }
+  function slidesSTJ(evs, pl, dsTop) {
+    const teses = evs.filter((e) => (e.k === "julg" || e.k === "pub") && e.t.tese).slice(0, 2)
+      .map((e) => ({ trib: "STJ", kick: ` · ${e.k === "julg" ? "Repetitivo julgado" : "Tese publicada"} · ${e.t.tp} ${fmtNumProc(e.t.n)} · ${fmtData(e.d)}`, tit: cortar(e.t.q, 150), txt: cortar(e.t.tese, 230), href: "#", data: `data-tema-car="${esc(e.t.tp)}|${e.t.n}"`, pe: "Ver o tema", ar: `${e.t.tp}${e.t.n}`, ico: "repetitivos" }));
+    const pauta = unicos(pl.filter((p) => p.temas?.length), (p) => `${p.temas[0][1]}|${p.d}`).slice(0, 2)
+      .map((p) => ({ trib: "STJ", kick: ` · Em pauta · ${D.orgaos[p.o] || p.o} · ${fmtData(p.d)}`, tit: `${p.temas[0][0] === "Controvérsia" ? "Controvérsia" : "Tema"} ${fmtNumProc(p.temas[0][1])} vai a julgamento`, txt: `${p.pet ? `${p.pet} no ` : ""}${p.p}${p.rel ? `, rel. Min. ${p.rel}` : ""}.`, href: "#pautas", pe: "Ver as pautas", ar: `p${p.temas[0][1]}`, ico: "pautas", relSTJ: p.rel }));
+    const dest = (dsTop || []).slice(0, 2).map((r) => {
+      const linhas = String(r.em || "").split("\n");
+      const tema = frase(linhas[0] || "").split(/\.\s+/).slice(0, 3).join(" · ");
+      const corpo = (r.tese || r.tj || linhas.slice(1).join(" ").replace(/^\s*1\.\s*/, "")).trim();
+      return { trib: "STJ", kick: ` · Destaque · ${D.orgaos[r.o] || ""}`, tit: cortar(tema, 140), txt: cortar(corpo, 220), href: `#pesquisa?n=${encodeURIComponent(r.n)}`, pe: `${r.cl} ${fmtNumProc(r.n)} · rel. ${relatorFmt(r.rel)}`, ar: (r.ar || [])[0] || r.o, ico: "destaques", relSTJ: r.rel };
+    });
+    return { teses, pauta, dest };
+  }
+  // Fotos dos relatores do STJ: a composição é lida depois de a página aparecer.
+  async function fotosCarSTJ(root, sls) {
+    if (!sls.some((x) => x.relSTJ)) return;
+    const c = await composicao().catch(() => null); if (!c || !$("#car", root)) return;
+    const els = $$(".car-sl", root);
+    sls.forEach((sl, k) => {
+      if (!sl.relSTJ || sl.img) return;
+      const m = c.ministros.find((m0) => m0.foto && norm(m0.nome).includes(norm(String(sl.relSTJ).replace(/\s*\(.*\)/, "")).split(" ").slice(-1)[0]) && norm(`${m0.nome} ${m0.curto}`).includes(norm(String(sl.relSTJ).replace(/\s*\(.*\)/, "")).split(" ")[0]));
+      if (!m || !els[k]) return;
+      els[k].classList.add("car-retrato");
+      $(".car-marca", els[k])?.remove();
+      els[k].insertAdjacentHTML("afterbegin", `<img class="car-min" src="${esc(m.foto.url)}" alt="" loading="lazy" data-erro-remover="img">`);
+    });
+  }
   // ================================================================== PAUTA DO STF
   // Sessões presenciais do Plenário e das Turmas, calendário das sessões virtuais e os temas de repercussão
   // geral (ainda sem tese) cujos paradigmas estão pautados, conforme os serviços da página oficial de pauta.
@@ -5946,8 +6063,11 @@
 
   // ================================================================= SOBRE
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
-  const VERSAO = "2026.10.01";
+  const VERSAO = "2026.10.02";
   const NOVIDADES = [
+    ["2026-10-02", [
+      "Visão geral com destaques em cartões grandes, que passam sozinhos (pausa ao passar o mouse ou tocar, e há botão para pausar): no STF, as notícias oficiais do Tribunal com as fotos publicadas por ele, as teses fixadas e os temas em pauta, com a foto do relator; no STJ, teses de repetitivos, destaques do mês e temas em pauta.",
+    ]],
     ["2026-10-01", [
       "Composição do STF com perfil completo de cada ministro: contato do gabinete (telefone e e-mails para audiência e memoriais), vaga que ocupou, datas de indicação, nomeação e posse, formação, trajetória, currículo oficial e os temas e julgados de sua relatoria no acervo. Nova aba “Contatos”, com todos os gabinetes, a Presidência e as Secretarias das Turmas.",
       "Pauta do STF dentro do site: sessões presenciais do Plenário e das Turmas (processos, relatores, vistas e destaques), calendário das sessões virtuais e, sobretudo, os temas de repercussão geral ainda sem tese que foram pautados. Esses temas também aparecem no Atualize-se, na Visão geral (aba “Em pauta”) e na linha do tempo do tema.",
