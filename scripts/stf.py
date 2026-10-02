@@ -1587,9 +1587,46 @@ def coletar_noticias() -> list[dict]:
     return out
 
 
+REGISTRO_FUNDOS = RAIZ / "fontes" / "carrossel-fundos.json"
+PASTA_FUNDOS = SAIDA / "fundos"
+
+
+def baixar_fundos() -> int:
+    """Fotos institucionais (Flickr oficial do STF e do STJ) de fundo dos destaques do carrossel sem foto própria.
+    A lista fica em fontes/carrossel-fundos.json; baixa só as que faltam e grava a relação em site/data."""
+    lista = ler(REGISTRO_FUNDOS, {}).get("fotos", [])
+    PASTA_FUNDOS.mkdir(parents=True, exist_ok=True)
+    ok, usadas = [], set()
+    for f in lista:
+        arq = PASTA_FUNDOS / f"{f['id']}.jpg"
+        if not arq.exists():
+            try:
+                b = baixar(f["url"], 60, 2)
+                if b[:3] != b"\xff\xd8\xff":
+                    raise ValueError("resposta sem imagem")
+                if len(b) > 700_000:
+                    raise ValueError(f"imagem grande demais ({len(b)} bytes)")
+                arq.write_bytes(b)
+            except Exception as e:  # noqa: BLE001
+                log(f"  foto de fundo {f['id']}: {e}")
+                continue
+        usadas.add(arq.name)
+        ok.append({"f": f"data/fundos/{arq.name}", "trib": f["trib"], "cred": f"{f['cred']} ({f['lic']})" if f.get("lic") and f["lic"] != "domínio público" else f["cred"], "alt": f.get("alt", "")})
+    for velho in PASTA_FUNDOS.glob("*.jpg"):
+        if velho.name not in usadas:
+            velho.unlink()
+    gravar(SAIDA / "carrossel-fundos.json", ok)
+    return len(ok)
+
+
 def atualizar_noticias() -> dict:
     """Notícias do STF no site (carrossel da Visão geral). Coleta direta; se o portal recusar, o registro da coleta
     fora do GitHub. As fotos são copiadas para o próprio site (a política de conteúdo não carrega imagens de fora)."""
+    try:
+        fundos = baixar_fundos()
+    except Exception as e:  # noqa: BLE001
+        log(f"  fotos de fundo: {e}")
+        fundos = 0
     origem = "portal do STF"
     try:
         nots = coletar_noticias()
@@ -1599,7 +1636,7 @@ def atualizar_noticias() -> dict:
         origem = "registro"
         nots = ler(REGISTRO_NOTICIAS, {}).get("noticias", [])
     if not nots:
-        return {"erro": "sem notícias"}
+        return {"erro": "sem notícias", "fundos": fundos}
     PASTA_FOTOS_NOT.mkdir(parents=True, exist_ok=True)
     usadas = set()
     for n in nots:
@@ -1623,7 +1660,7 @@ def atualizar_noticias() -> dict:
         if velho.name not in usadas:
             velho.unlink()
     gravar(SAIDA / "stf-noticias.json", [{k: v for k, v in n.items() if k != "foto"} for n in nots])
-    return {"noticias": len(nots), "fotos": len(usadas), "origem": origem,
+    return {"noticias": len(nots), "fotos": len(usadas), "fundos": fundos, "origem": origem,
             **({"dataRegistro": ler(REGISTRO_NOTICIAS, {}).get("atualizado", "")} if origem == "registro" else {})}
 
 

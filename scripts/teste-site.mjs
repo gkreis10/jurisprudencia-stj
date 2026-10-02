@@ -235,6 +235,12 @@ else {
     await page.goto(BASE + "#painel"); await esperarTela();
     const nCar = await page.$$eval("#car .car-sl", (l) => l.length).catch(() => 0);
     if (!nCar) avisos.push("Visão geral (STF): carrossel sem destaques"); else ok(`Visão geral (STF): carrossel com ${nCar} destaques`);
+    if (nCar) {
+      const ci = await page.$$eval("#car .car-sl", (l) => ({ n: l.length, img: l.filter((e) => e.querySelector(".car-img")).length, prog: l.filter((e) => e.querySelector(".car-prog")).length, atual: l.findIndex((e) => e.classList.contains("atual")) }));
+      if (tam("data/carrossel-fundos.json") > 2 && ci.img < ci.n) falha(`carrossel: ${ci.n - ci.img} destaque(s) sem imagem`);
+      else if (ci.n > 1 && (ci.prog < ci.n || ci.atual !== 0)) falha("carrossel: barra de tempo ausente");
+      else ok(`carrossel: ${ci.img} de ${ci.n} destaques com imagem, barra de tempo ativa`);
+    }
     // Pauta do STF (opcional até a primeira coleta com pauta).
     if (tam("data/stf-pauta.json") > 0) {
       await page.goto(BASE + "#pautastf"); await esperarTela();
