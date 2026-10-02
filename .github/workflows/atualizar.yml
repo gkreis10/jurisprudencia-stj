@@ -106,6 +106,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
+
+      - name: Conferir a proteção da cópia Cloudflare
+        run: node scripts/teste-acesso.mjs
+
       - name: Conferir o site antes de publicar
         run: |
           npm install --no-save --no-audit --no-fund --silent playwright-core@1.55.0
@@ -121,3 +125,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy _site --project-name=jurisprudencia-stj-gkreis10 --branch=main
+
+      # Alerta de coleta do STF atrasada: depois de publicar, a execução diária termina com erro
+      # (e o GitHub avisa por e-mail) se o registro do STF, coletado à parte, tiver mais de 5 dias.
+      - name: Conferir se a coleta do STF está em dia
+        if: ${{ always() && github.event_name == 'schedule' }}
+        run: python scripts/conferir_stf.py
