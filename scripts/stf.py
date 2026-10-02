@@ -1576,7 +1576,7 @@ def coletar_noticias() -> list[dict]:
             continue
         fm = ((x.get("_embedded") or {}).get("wp:featuredmedia") or [{}])[0] or {}
         tam = (fm.get("media_details") or {}).get("sizes") or {}
-        foto = next((tam[k]["source_url"] for k in ("medium_large", "large", "full") if k in tam and tam[k].get("width", 9999) <= 1100), "")
+        foto = next((tam[k]["source_url"] for k in ("large", "medium_large", "full") if k in tam and tam[k].get("width", 9999) <= 1100), "")
         cred = _limpo_html((fm.get("caption") or {}).get("rendered", ""))
         out.append({"id": x["id"], "d": x.get("date", "")[:16].replace("T", " "), "t": tit, "r": res, "url": x.get("link", ""),
                     **({"foto": foto} if foto else {}), **({"cred": cred} if cred else {}), **({"alt": fm["alt_text"]} if fm.get("alt_text") else {})})
@@ -1597,21 +1597,31 @@ def baixar_fundos() -> int:
     lista = ler(REGISTRO_FUNDOS, {}).get("fotos", [])
     PASTA_FUNDOS.mkdir(parents=True, exist_ok=True)
     ok, usadas = [], set()
+    def obter(url: str, arq: Path, limite: int) -> bool:
+        if arq.exists():
+            return True
+        try:
+            b = baixar(url, 60, 2)
+            if b[:3] != b"\xff\xd8\xff":
+                raise ValueError("resposta sem imagem")
+            if len(b) > limite:
+                raise ValueError(f"imagem grande demais ({len(b)} bytes)")
+            arq.write_bytes(b)
+            return True
+        except Exception as e:  # noqa: BLE001
+            log(f"  foto de fundo {arq.name}: {e}")
+            return False
     for f in lista:
         arq = PASTA_FUNDOS / f"{f['id']}.jpg"
-        if not arq.exists():
-            try:
-                b = baixar(f["url"], 60, 2)
-                if b[:3] != b"\xff\xd8\xff":
-                    raise ValueError("resposta sem imagem")
-                if len(b) > 700_000:
-                    raise ValueError(f"imagem grande demais ({len(b)} bytes)")
-                arq.write_bytes(b)
-            except Exception as e:  # noqa: BLE001
-                log(f"  foto de fundo {f['id']}: {e}")
-                continue
+        if not obter(f["url"], arq, 700_000):
+            continue
         usadas.add(arq.name)
-        ok.append({"f": f"data/fundos/{arq.name}", "trib": f["trib"], "cred": f"{f['cred']} ({f['lic']})" if f.get("lic") and f["lic"] != "domínio público" else f["cred"], "alt": f.get("alt", "")})
+        # Versão maior (1600 px) para telas de alta densidade; opcional.
+        arq_g = PASTA_FUNDOS / f"{f['id']}-g.jpg"
+        tem_g = bool(f.get("urlG")) and obter(f["urlG"], arq_g, 1_000_000)
+        if tem_g:
+            usadas.add(arq_g.name)
+        ok.append({"f": f"data/fundos/{arq.name}", **({"g": f"data/fundos/{arq_g.name}"} if tem_g else {}), "trib": f["trib"], "cred": f"{f['cred']} ({f['lic']})" if f.get("lic") and f["lic"] != "domínio público" else f["cred"], "alt": f.get("alt", "")})
     for velho in PASTA_FUNDOS.glob("*.jpg"):
         if velho.name not in usadas:
             velho.unlink()
@@ -1642,7 +1652,7 @@ def atualizar_noticias() -> dict:
     for n in nots:
         if not n.get("foto"):
             continue
-        arq = PASTA_FOTOS_NOT / f"{n['id']}.jpg"
+        arq = PASTA_FOTOS_NOT / f"{n['id']}-l.jpg"  # tamanho grande (1024 px), para o carrossel ampliado
         if not arq.exists():
             try:
                 b = baixar(n["foto"], 60)
@@ -1654,7 +1664,7 @@ def atualizar_noticias() -> dict:
             except Exception as e:  # noqa: BLE001
                 log(f"  foto da notícia {n['id']}: {e}")
                 continue
-        n["img"] = f"data/noticias/{n['id']}.jpg"
+        n["img"] = f"data/noticias/{arq.name}"
         usadas.add(arq.name)
     for velho in PASTA_FOTOS_NOT.glob("*.jpg"):
         if velho.name not in usadas:
