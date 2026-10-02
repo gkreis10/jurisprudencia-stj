@@ -5210,7 +5210,7 @@
       const g = fs.filter((f) => f.trib === sl.trib); if (!g.length) continue;
       const k = cont[sl.trib] = (cont[sl.trib] || 0) + 1;
       const f = g[(dia * 3 + k) % g.length];
-      sl.bg = f.f; sl.bgAlt = f.alt; sl.bgCred = f.cred;
+      sl.bg = f.f; sl.bgG = f.g; sl.bgAlt = f.alt; sl.bgCred = f.cred;
     }
     return sls;
   }
@@ -5223,7 +5223,7 @@
     const cred = sl.cred || (fundo ? `Imagem ilustrativa · ${sl.bgCred}` : "");
     const acao = sl.ext ? `href="${esc(sl.href)}" target="_blank" rel="noopener"` : sl.href ? `href="${esc(sl.href)}"` : 'href="#"';
     return `<a class="car-sl${src ? " car-foto" : ""}${fundo ? " car-fundo" : ""}${sl.retrato ? " car-retrato" : ""}" ${acao} ${sl.data || ""} role="group" aria-roledescription="destaque" aria-label="${i + 1} de ${n}: ${esc(sl.tit)}" style="--c1:${c1};--c2:${c2}">
-        ${src ? `<img class="car-img" src="${esc(src)}" alt="${esc((foto ? sl.alt : sl.bgAlt) || "")}" loading="${i ? "lazy" : "eager"}" decoding="async" data-erro-remover="img">` : ""}
+        ${src ? `<img class="car-img" src="${esc(src)}"${fundo && sl.bgG ? ` srcset="${esc(sl.bg)} 1024w, ${esc(sl.bgG)} 1600w" sizes="(max-width: 720px) 100vw, 1000px"` : ""} alt="${esc((foto ? sl.alt : sl.bgAlt) || "")}" loading="${i ? "lazy" : "eager"}" decoding="async" data-erro-remover="img">` : ""}
         ${sl.retrato ? `<img class="car-min" src="${esc(sl.img)}" alt="" loading="lazy" data-erro-remover="img">` : ""}
         ${!src && !sl.retrato ? `<span class="car-marca" aria-hidden="true">${ico(sl.ico || "destaques")}</span>` : ""}
         <span class="car-tx">
@@ -5244,19 +5244,17 @@
         <button type="button" class="car-btn car-ant" aria-label="Destaque anterior">${ico("seta")}</button>
         <div class="car-pts" role="tablist">${sls.map((sl, i) => `<button type="button" role="tab" aria-label="Destaque ${i + 1}" aria-selected="${!i}" data-car="${i}"></button>`).join("")}</div>
         <button type="button" class="car-btn car-prox" aria-label="Próximo destaque">${ico("seta")}</button>
-        <button type="button" class="car-btn car-pausa" aria-label="Pausar a troca automática" aria-pressed="false"><span class="car-i-pausa" aria-hidden="true"></span></button>
       </div>` : ""}
     </section>`;
   }
   // A troca automática segue a barra de tempo de cada destaque (fim da animação = próximo destaque);
-  // mouse, toque, foco, aba oculta e o botão de pausa congelam a barra e a aproximação da foto.
+  // só o mouse sobre o carrossel congela a barra e a aproximação da foto.
   function ligarCarrossel(root) {
     const car = $("#car", root); if (!car) return;
     const tri = $(".car-trilho", car), sls = $$(".car-sl", car), pts = $$("[data-car]", car);
     const reduz = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    car.classList.toggle("car-reduz", reduz);
-    let i = 0, pausado = reduz, sobre = false;
-    const atualizar = () => car.classList.toggle("parado", pausado || sobre || document.hidden);
+    let i = 0;
+    const parar = (v) => car.classList.toggle("parado", v);
     // A foto que sai mantém a aproximação parada até sair da tela (sem salto visível durante a rolagem).
     const destacar = () => {
       sls.forEach((el, k) => { if (el.classList.contains("atual") && k !== i) { el.classList.replace("atual", "saindo"); clearTimeout(el._s); el._s = setTimeout(() => el.classList.remove("saindo"), 900); } });
@@ -5275,18 +5273,9 @@
     $(".car-ant", car).addEventListener("click", () => ir(i - 1));
     $(".car-prox", car).addEventListener("click", () => ir(i + 1));
     pts.forEach((b) => b.addEventListener("click", () => ir(+b.dataset.car)));
-    const bp = $(".car-pausa", car);
-    const marcarPausa = () => { bp.setAttribute("aria-pressed", String(pausado)); bp.setAttribute("aria-label", pausado ? "Retomar a troca automática" : "Pausar a troca automática"); car.classList.toggle("pausado", pausado); atualizar(); };
-    bp.addEventListener("click", () => { pausado = !pausado; if (!pausado) car.classList.remove("car-reduz"); marcarPausa(); });
-    car.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { sobre = true; atualizar(); } });
-    car.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") { sobre = false; atualizar(); } });
-    car.addEventListener("touchstart", () => { sobre = true; atualizar(); clearTimeout(car._t); car._t = setTimeout(() => { sobre = false; atualizar(); }, 8000); }, { passive: true });
-    car.addEventListener("focusin", (e) => { if (e.target.matches(":focus-visible")) { sobre = true; atualizar(); } });
-    car.addEventListener("focusout", () => { if (sobre) { sobre = false; atualizar(); } });
-    const vis = () => { if (!car.isConnected) return document.removeEventListener("visibilitychange", vis); atualizar(); };
-    document.addEventListener("visibilitychange", vis);
+    car.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") parar(true); });
+    car.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") parar(false); });
     car.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { ir(i + 1); e.preventDefault(); } if (e.key === "ArrowLeft") { ir(i - 1); e.preventDefault(); } });
-    marcarPausa();
   }
   // Intercala os grupos (notícia, tese, notícia, pauta...) para variar o que aparece.
   const intercalar = (...gs) => { const out = []; for (let k = 0; gs.some((g) => g[k]); k++) for (const g of gs) if (g[k]) out.push(g[k]); return out; };
@@ -6094,7 +6083,7 @@
   const VERSAO = "2026.10.02";
   const NOVIDADES = [
     ["2026-10-02", [
-      "Carrossel da Visão geral: barra de tempo em cada destaque (congela ao passar o mouse, tocar ou pausar), movimento lento de aproximação nas fotos e, nos destaques sem foto própria (teses, pautas e notícias sem imagem), fotos institucionais oficiais do STF e do STJ, identificadas como imagem ilustrativa e com o crédito do fotógrafo.",
+      "Carrossel da Visão geral maior, com barra de tempo em cada destaque (congela só com o mouse sobre ele), movimento lento de aproximação nas fotos e, nos destaques sem foto própria (teses, pautas e notícias sem imagem), fotos institucionais oficiais do STF e do STJ, identificadas como imagem ilustrativa e com o crédito do fotógrafo.",
       "Visão geral com destaques em cartões grandes, que passam sozinhos (pausa ao passar o mouse ou tocar, e há botão para pausar): no STF, as notícias oficiais do Tribunal com as fotos publicadas por ele, as teses fixadas e os temas em pauta, com a foto do relator; no STJ, teses de repetitivos, destaques do mês e temas em pauta.",
     ]],
     ["2026-10-01", [
