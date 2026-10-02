@@ -1,0 +1,149 @@
+{
+ "sobre": "Fotos institucionais oficiais (Flickr do STF e do STJ) usadas como fundo nos destaques do carrossel que não têm foto própria. Licenças conforme cada item; o crédito aparece na imagem.",
+ "fotos": [
+  {
+   "id": "55528642598",
+   "trib": "STF",
+   "url": "https://live.staticflickr.com/65535/55528642598_09d1cdcab7_b.jpg",
+   "cred": "Foto: Andressa Anholete/STF",
+   "lic": "domínio público",
+   "alt": "Plenário do STF",
+   "pagina": "https://www.flickr.com/photos/supremotribunalfederal/55528642598/"
+  },
+  {
+   "id": "55530109368",
+   "trib": "STF",
+   "url": "https://live.staticflickr.com/65535/55530109368_0d7c1ca409_b.jpg",
+   "cred": "Foto: Alejandro Zambrana/STF",
+   "lic": "domínio público",
+   "alt": "Sessão plenária do STF",
+   "pagina": "https://www.flickr.com/photos/supremotribunalfederal/55530109368/"
+  },
+  {
+   "id": "55528981972",
+   "trib": "STF",
+   "url": "https://live.staticflickr.com/65535/55528981972_5784659c84_b.jpg",
+   "cred": "Foto: Alejandro Zambrana/STF",
+   "lic": "domínio público",
+   "alt": "Sessão plenária do STF",
+   "pagina": "https://www.flickr.com/photos/supremotribunalfederal/55528981972/"
+  },
+  {
+   "id": "55529051202",
+   "trib": "STF",
+   "url": "https://live.staticflickr.com/65535/55529051202_85fff4cd9d_b.jpg",
+   "cred": "Foto: Rosinei Coutinho/STF",
+   "lic": "domínio público",
+   "alt": "Sessão plenária do STF",
+   "pagina": "https://www.flickr.com/photos/supremotribunalfederal/55529051202/"
+  },
+  {
+   "id": "55545691522",
+   "trib": "STF",
+   "url": "https://live.staticflickr.com/65535/55545691522_d2607ea98d_b.jpg",
+   "cred": "Foto: Antonio Augusto/STF",
+   "lic": "domínio público",
+   "alt": "Sessão plenária do STF",
+   "pagina": "https://www.flickr.com/photos/supremotribunalfederal/55545691522/"
+  },
+  {
+   "id": "55545691762",
+   "trib": "STF",
+   "url": "https://live.staticflickr.com/65535/55545691762_567fe55210_b.jpg",
+   "cred": "Foto: Antonio Augusto/STF",
+   "lic": "domínio público",
+   "alt": "Sessão plenária do STF",
+   "pagina": "https://www.flickr.com/photos/supremotribunalfederal/55545691762/"
+  },
+  {
+   "id": "55561883865",
+   "trib": "STF",
+   "url": "https://live.staticflickr.com/65535/55561883865_b75545ef53_b.jpg",
+   "cred": "Foto: Alejandro Zambrana/STF",
+   "lic": "domínio público",
+   "alt": "Sessão plenária do STF",
+   "pagina": "https://www.flickr.com/photos/supremotribunalfederal/55561883865/"
+  },
+  {
+   "id": "55561646299",
+   "trib": "STF",
+   "url": "https://live.staticflickr.com/65535/55561646299_ef97bc5b64_b.jpg",
+   "cred": "Foto: Alejandro Zambrana/STF",
+   "lic": "domínio público",
+   "alt": "Sessão plenária do STF",
+   "pagina": "https://www.flickr.com/photos/supremotribunalfederal/55561646299/"
+  },
+  {
+   "id": "50109951332",
+   "trib": "STJ",
+   "url": "https://live.staticflickr.com/65535/50109951332_a85ac16cd8_b.jpg",
+   "cred": "Foto: Gustavo Lima/STJ",
+   "lic": "CC BY 2.0",
+   "alt": "Fachada do edifício-sede do STJ",
+   "pagina": "https://www.flickr.com/photos/stjnoticias/50109951332/"
+  },
+  {
+   "id": "55043863502",
+   "trib": "STJ",
+   "url": "https://live.staticflickr.com/65535/55043863502_874cae03d7_b.jpg",
+   "cred": "Foto: Gustavo Lima/STJ",
+   "lic": "CC BY 4.0",
+   "alt": "Detalhe da fachada do STJ refletida no espelho d'água",
+   "pagina": "https://www.flickr.com/photos/stjnoticias/55043863502/"
+  },
+  {
+   "id": "55044776201",
+   "trib": "STJ",
+   "url": "https://live.staticflickr.com/65535/55044776201_5f6d092f63_b.jpg",
+   "cred": "Foto: Max Rocha/STJ",
+   "lic": "CC BY 4.0",
+   "alt": "Vista do edifício-sede do STJ",
+   "pagina": "https://www.flickr.com/photos/stjnoticias/55044776201/"
+  },
+  {
+   "id": "55504807885",
+   "trib": "STJ",
+   "url": "https://live.staticflickr.com/65535/55504807885_5dd8570ddd_b.jpg",
+   "cred": "Foto: Lucas Pricken/STJ",
+   "lic": "CC BY 4.0",
+   "alt": "Corte Especial",
+   "pagina": "https://www.flickr.com/photos/stjnoticias/55504807885/"
+  },
+  {
+   "id": "55504585144",
+   "trib": "STJ",
+   "url": "https://live.staticflickr.com/65535/55504585144_2982856fe3_b.jpg",
+   "cred": "Foto: Lucas Pricken/STJ",
+   "lic": "CC BY 4.0",
+   "alt": "Corte Especial",
+   "pagina": "https://www.flickr.com/photos/stjnoticias/55504585144/"
+  },
+  {
+   "id": "55505357952",
+   "trib": "STJ",
+   "url": "https://live.staticflickr.com/65535/55505357952_d39d39315c_b.jpg",
+   "cred": "Foto: Lucas Pricken/STJ",
+   "lic": "CC BY 4.0",
+   "alt": "Sessões de julgamento das Seções",
+   "pagina": "https://www.flickr.com/photos/stjnoticias/55505357952/"
+  },
+  {
+   "id": "55530751456",
+   "trib": "STJ",
+   "url": "https://live.staticflickr.com/65535/55530751456_925bc1b4ee_b.jpg",
+   "cred": "Foto: Lucas Pricken/STJ",
+   "lic": "CC BY 4.0",
+   "alt": "Sexta Turma",
+   "pagina": "https://www.flickr.com/photos/stjnoticias/55530751456/"
+  },
+  {
+   "id": "55504807875",
+   "trib": "STJ",
+   "url": "https://live.staticflickr.com/65535/55504807875_25edcaae02_b.jpg",
+   "cred": "Foto: Lucas Pricken/STJ",
+   "lic": "CC BY 4.0",
+   "alt": "Corte Especial",
+   "pagina": "https://www.flickr.com/photos/stjnoticias/55504807875/"
+  }
+ ]
+}
