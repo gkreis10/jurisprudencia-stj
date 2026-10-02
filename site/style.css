@@ -1447,8 +1447,23 @@ html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b
 .car-sl { position: relative; flex: 0 0 100%; scroll-snap-align: start; min-height: 300px; display: flex; align-items: flex-end; overflow: hidden; color: #fff; text-decoration: none; isolation: isolate;
   background: radial-gradient(110% 130% at 90% 0%, color-mix(in srgb, var(--c2) 85%, transparent) 0%, transparent 60%), linear-gradient(135deg, var(--c1) 0%, #0b1627 100%); }
 .car-sl:focus-visible { outline: 3px solid #fff; outline-offset: -6px; }
-.car-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; transform: scale(1.02); transition: transform 6s ease-out; }
-.car-sl:hover .car-img { transform: scale(1.06); }
+.car-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; transform: scale(1.03); transform-origin: 60% 40%; will-change: transform; }
+/* Aproximação lenta da foto em exibição (efeito de vídeo); a que sai fica parada até sair da tela. */
+.car-sl.atual .car-img, .car-sl.saindo .car-img { animation: carKB 9s cubic-bezier(.25,.6,.35,1) forwards; }
+.car-sl.atual:nth-child(even) .car-img, .car-sl.saindo:nth-child(even) .car-img { animation-name: carKB2; }
+.car-sl.saindo .car-img, .car.parado .car-sl.atual .car-img { animation-play-state: paused; }
+@keyframes carKB { from { transform: scale(1.03) translate3d(0, 0, 0); } to { transform: scale(1.13) translate3d(-2.2%, -1.6%, 0); } }
+@keyframes carKB2 { from { transform: scale(1.13) translate3d(-2%, -1%, 0); } to { transform: scale(1.03) translate3d(1%, 0, 0); } }
+/* Barra de tempo de cada destaque: quando termina, o carrossel avança. */
+.car-prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.2); z-index: 1; pointer-events: none; }
+.car-prog i { display: block; height: 100%; background: rgba(255,255,255,.95); transform: scaleX(0); transform-origin: left center; }
+.car-sl.atual .car-prog i { animation: carProg 7s linear forwards; }
+.car.parado .car-sl.atual .car-prog i { animation-play-state: paused; }
+.car.pausado .car-prog { opacity: .55; }
+.car-reduz .car-prog { display: none; }
+@keyframes carProg { to { transform: scaleX(1); } }
+.car-foto.car-fundo::before { background: linear-gradient(180deg, rgba(5,10,20,.30) 0%, rgba(5,10,20,.62) 45%, rgba(5,10,20,.93) 100%), linear-gradient(90deg, color-mix(in srgb, var(--c1) 70%, transparent) 0%, transparent 75%); }
+@media (prefers-reduced-motion: reduce) { .car-sl.atual .car-img, .car-sl.saindo .car-img { animation: none !important; } .car-sl.atual .car-prog i { animation-duration: 7s !important; } }
 .car-foto::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(5,10,20,0) 25%, rgba(5,10,20,.55) 55%, rgba(5,10,20,.92) 100%); }
 .car-marca { position: absolute; right: -10px; top: -14px; z-index: -1; opacity: .13; }
 .car-marca svg { width: 260px; height: 260px; stroke: #fff; fill: none; stroke-width: 1.2; }

@@ -3013,9 +3013,9 @@
         <div class="evento-txt">${esc(e.t.tese ? "Tese: " + e.t.tese : e.t.q || "")}</div></div></li>`).join("")}</ol></div>` : `<div class="card card-pad"><p class="nota">${vazioTxt}</p></div>`;
   async function vPainelSTF(main) {
     const hoje = hojeISO();
-    const [l, sm, cp, pt, nots] = await Promise.all([temasRG(), sumulasSTF().catch(() => []), composicaoSTF().catch(() => null), D.man?.stf?.pauta ? pautaSTF() : null, noticiasSTF()]);
+    const [l, sm, cp, pt, nots, fs] = await Promise.all([temasRG(), sumulasSTF().catch(() => []), composicaoSTF().catch(() => null), D.man?.stf?.pauta ? pautaSTF() : null, noticiasSTF(), fundosCar()]);
     const sSTF = slidesSTF(l, pt, cp);
-    const slides = intercalar(slidesNoticias(nots), sSTF.teses, sSTF.pauta).slice(0, 8);
+    const slides = aplicarFundos(intercalar(slidesNoticias(nots), sSTF.teses, sSTF.pauta).slice(0, 8), fs);
     const emPauta = (pt?.temas || []).filter((x) => x.fim >= hoje).sort((a, b) => a.ini.localeCompare(b.ini));
     const ev90 = eventosRG(l, somaDias(hoje, -90));
     const pend = l.filter((x) => x._g === "andamento").sort((a, b) => (b.rgd || "").localeCompare(a.rgd || "") || b.n - a.n);
@@ -3070,7 +3070,7 @@
   }
   async function vPainel(main) {
     if (trib() === "stf") return vPainelSTF(main);
-    const hoje = hojeISO();
+    const hoje = hojeISO(), fundosP = fundosCar();
     // Resumo leve (painel.json, gerado na atualização): a página abre sem baixar as bases completas.
     const leve = D.man.painel ? await getJSON("data/painel.json").catch(() => null) : null;
     let evs, pl, dsTop, dsN, mesUlt;
@@ -3104,7 +3104,7 @@
     const sJ = slidesSTJ(evs, pl, dsTop);
     let slidesJ = intercalar(sJ.teses, sJ.dest, sJ.pauta);
     if (ambos()) { const nots = await noticiasSTF(); slidesJ = intercalar(slidesNoticias(nots).slice(0, 3), slidesJ); }
-    slidesJ = slidesJ.slice(0, 8);
+    slidesJ = aplicarFundos(slidesJ.slice(0, 8), await fundosP);
     main.innerHTML = `
       <section class="hero">
         <p class="sobretitulo">${fmtDiaL(hoje)}</p>
@@ -5200,24 +5200,40 @@
   // Destaques em cartões grandes, com troca automática (pausa ao passar o mouse, ao tocar ou com o
   // foco do teclado; sem movimento automático para quem pediu menos animação no sistema).
   const noticiasSTF = () => (D.man?.stf?.noticias ? carregar("stf-noticias", (l) => l).catch(() => []) : Promise.resolve([]));
+  // Fotos institucionais (Flickr oficial do STF e do STJ) para os destaques sem foto própria; variam a cada dia.
+  const fundosCar = () => (D.man?.stf?.noticias?.fundos ? carregar("carrossel-fundos", (l) => l).catch(() => []) : Promise.resolve([]));
+  function aplicarFundos(sls, fs) {
+    if (!fs?.length) return sls;
+    const dia = Math.floor(Date.now() / 864e5), cont = {};
+    for (const sl of sls) {
+      if (sl.img && !sl.retrato) continue;
+      const g = fs.filter((f) => f.trib === sl.trib); if (!g.length) continue;
+      const k = cont[sl.trib] = (cont[sl.trib] || 0) + 1;
+      const f = g[(dia * 3 + k) % g.length];
+      sl.bg = f.f; sl.bgAlt = f.alt; sl.bgCred = f.cred;
+    }
+    return sls;
+  }
   const CORES_CAR = [["#12325e", "#1f5aa6"], ["#3b1f5c", "#6b3fa0"], ["#0f4a43", "#1d8a74"], ["#5a2a12", "#b0582a"], ["#5c1530", "#a43a5c"], ["#1d3b16", "#4f8a2c"]];
   const corCar = (k) => { let h = 0; for (const c of String(k || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return CORES_CAR[h % CORES_CAR.length]; };
   const cortar = (t, n) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? `${t.slice(0, n - 1).replace(/\s+\S*$/, "")}…` : t; };
   function slideCar(sl, i, n) {
     const [c1, c2] = corCar(sl.ar || sl.kick);
-    const foto = sl.img && !sl.retrato;
+    const foto = sl.img && !sl.retrato, fundo = !foto && sl.bg, src = foto ? sl.img : fundo ? sl.bg : "";
+    const cred = sl.cred || (fundo ? `Imagem ilustrativa · ${sl.bgCred}` : "");
     const acao = sl.ext ? `href="${esc(sl.href)}" target="_blank" rel="noopener"` : sl.href ? `href="${esc(sl.href)}"` : 'href="#"';
-    return `<a class="car-sl${foto ? " car-foto" : ""}${sl.retrato ? " car-retrato" : ""}" ${acao} ${sl.data || ""} role="group" aria-roledescription="destaque" aria-label="${i + 1} de ${n}: ${esc(sl.tit)}" style="--c1:${c1};--c2:${c2}">
-        ${foto ? `<img class="car-img" src="${esc(sl.img)}" alt="${esc(sl.alt || "")}" loading="${i ? "lazy" : "eager"}" data-erro-remover="img">` : ""}
+    return `<a class="car-sl${src ? " car-foto" : ""}${fundo ? " car-fundo" : ""}${sl.retrato ? " car-retrato" : ""}" ${acao} ${sl.data || ""} role="group" aria-roledescription="destaque" aria-label="${i + 1} de ${n}: ${esc(sl.tit)}" style="--c1:${c1};--c2:${c2}">
+        ${src ? `<img class="car-img" src="${esc(src)}" alt="${esc((foto ? sl.alt : sl.bgAlt) || "")}" loading="${i ? "lazy" : "eager"}" decoding="async" data-erro-remover="img">` : ""}
         ${sl.retrato ? `<img class="car-min" src="${esc(sl.img)}" alt="" loading="lazy" data-erro-remover="img">` : ""}
-        ${!foto && !sl.retrato ? `<span class="car-marca" aria-hidden="true">${ico(sl.ico || "destaques")}</span>` : ""}
+        ${!src && !sl.retrato ? `<span class="car-marca" aria-hidden="true">${ico(sl.ico || "destaques")}</span>` : ""}
         <span class="car-tx">
           <span class="car-kick">${sl.trib ? `<b>${esc(sl.trib)}</b>` : ""}${esc(sl.kick)}</span>
           <span class="car-tit">${esc(sl.tit)}</span>
           ${sl.txt ? `<span class="car-res">${esc(sl.txt)}</span>` : ""}
           <span class="car-pe">${esc(sl.pe || "")}${sl.ext ? ` ${ico("externo")}` : ` ${ico("seta")}`}</span>
         </span>
-        ${sl.cred ? `<span class="car-cred">${esc(sl.cred)}</span>` : ""}
+        ${cred ? `<span class="car-cred">${esc(cred)}</span>` : ""}
+        ${n > 1 ? '<span class="car-prog" aria-hidden="true"><i></i></span>' : ""}
       </a>`;
   }
   function carrosselHTML(sls) {
@@ -5232,33 +5248,45 @@
       </div>` : ""}
     </section>`;
   }
+  // A troca automática segue a barra de tempo de cada destaque (fim da animação = próximo destaque);
+  // mouse, toque, foco, aba oculta e o botão de pausa congelam a barra e a aproximação da foto.
   function ligarCarrossel(root) {
     const car = $("#car", root); if (!car) return;
     const tri = $(".car-trilho", car), sls = $$(".car-sl", car), pts = $$("[data-car]", car);
-    if (sls.length < 2) return;
     const reduz = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let i = 0, timer = null, pausado = reduz, sobre = false;
-    const ir = (k, suave = true) => { i = (k + sls.length) % sls.length; tri.scrollTo({ left: sls[i].offsetLeft - tri.offsetLeft, behavior: suave && !reduz ? "smooth" : "auto" }); marcar(); };
-    const marcar = () => pts.forEach((b, k) => b.setAttribute("aria-selected", String(k === i)));
-    const parar = () => { clearInterval(timer); timer = null; };
-    const iniciar = () => { parar(); if (!pausado && !sobre) timer = setInterval(() => { if (!document.hidden && car.isConnected) ir(i + 1); else if (!car.isConnected) parar(); }, 7000); };
-    let fimRolagem;
-    tri.addEventListener("scroll", () => { clearTimeout(fimRolagem); fimRolagem = setTimeout(() => { const x = tri.scrollLeft; let m = 0, d = Infinity; sls.forEach((el, k) => { const dd = Math.abs(el.offsetLeft - tri.offsetLeft - x); if (dd < d) { d = dd; m = k; } }); i = m; marcar(); }, 80); }, { passive: true });
-    $(".car-ant", car).addEventListener("click", () => { ir(i - 1); iniciar(); });
-    $(".car-prox", car).addEventListener("click", () => { ir(i + 1); iniciar(); });
-    pts.forEach((b) => b.addEventListener("click", () => { ir(+b.dataset.car); iniciar(); }));
-    const bp = $(".car-pausa", car);
-    const marcarPausa = () => { bp.setAttribute("aria-pressed", String(pausado)); bp.setAttribute("aria-label", pausado ? "Retomar a troca automática" : "Pausar a troca automática"); car.classList.toggle("pausado", pausado); };
-    bp.addEventListener("click", () => { pausado = !pausado; marcarPausa(); iniciar(); });
-    car.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { sobre = true; parar(); } });
-    car.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") { sobre = false; iniciar(); } });
-    car.addEventListener("touchstart", () => { sobre = true; parar(); clearTimeout(car._t); car._t = setTimeout(() => { sobre = false; iniciar(); }, 12000); }, { passive: true });
-    car.addEventListener("focusin", () => { sobre = true; parar(); });
-    car.addEventListener("focusout", () => { sobre = false; iniciar(); });
-    car.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { ir(i + 1); e.preventDefault(); } if (e.key === "ArrowLeft") { ir(i - 1); e.preventDefault(); } });
+    car.classList.toggle("car-reduz", reduz);
+    let i = 0, pausado = reduz, sobre = false;
+    const atualizar = () => car.classList.toggle("parado", pausado || sobre || document.hidden);
+    // A foto que sai mantém a aproximação parada até sair da tela (sem salto visível durante a rolagem).
+    const destacar = () => {
+      sls.forEach((el, k) => { if (el.classList.contains("atual") && k !== i) { el.classList.replace("atual", "saindo"); clearTimeout(el._s); el._s = setTimeout(() => el.classList.remove("saindo"), 900); } });
+      const el = sls[i]; if (!el) return;
+      el.classList.remove("atual", "saindo"); void el.offsetWidth; el.classList.add("atual");
+    };
+    destacar();
     $$("[data-tema-rg]", car).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); abrirTemaRG(+a.dataset.temaRg); }));
     $$("[data-tema-car]", car).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); const [tp, n] = a.dataset.temaCar.split("|"); abrirTema(tp, +n); }));
-    marcarPausa(); iniciar();
+    if (sls.length < 2) return;
+    const marcar = () => pts.forEach((b, k) => b.setAttribute("aria-selected", String(k === i)));
+    const ir = (k, suave = true) => { i = (k + sls.length) % sls.length; tri.scrollTo({ left: sls[i].offsetLeft - tri.offsetLeft, behavior: suave && !reduz ? "smooth" : "auto" }); marcar(); destacar(); };
+    car.addEventListener("animationend", (e) => { if (e.animationName === "carProg" && e.target.closest(".car-sl") === sls[i]) ir(i + 1); });
+    let fimRolagem;
+    tri.addEventListener("scroll", () => { clearTimeout(fimRolagem); fimRolagem = setTimeout(() => { const x = tri.scrollLeft; let m = 0, d = Infinity; sls.forEach((el, k) => { const dd = Math.abs(el.offsetLeft - tri.offsetLeft - x); if (dd < d) { d = dd; m = k; } }); if (m !== i) { i = m; marcar(); destacar(); } }, 80); }, { passive: true });
+    $(".car-ant", car).addEventListener("click", () => ir(i - 1));
+    $(".car-prox", car).addEventListener("click", () => ir(i + 1));
+    pts.forEach((b) => b.addEventListener("click", () => ir(+b.dataset.car)));
+    const bp = $(".car-pausa", car);
+    const marcarPausa = () => { bp.setAttribute("aria-pressed", String(pausado)); bp.setAttribute("aria-label", pausado ? "Retomar a troca automática" : "Pausar a troca automática"); car.classList.toggle("pausado", pausado); atualizar(); };
+    bp.addEventListener("click", () => { pausado = !pausado; if (!pausado) car.classList.remove("car-reduz"); marcarPausa(); });
+    car.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { sobre = true; atualizar(); } });
+    car.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") { sobre = false; atualizar(); } });
+    car.addEventListener("touchstart", () => { sobre = true; atualizar(); clearTimeout(car._t); car._t = setTimeout(() => { sobre = false; atualizar(); }, 8000); }, { passive: true });
+    car.addEventListener("focusin", (e) => { if (e.target.matches(":focus-visible")) { sobre = true; atualizar(); } });
+    car.addEventListener("focusout", () => { if (sobre) { sobre = false; atualizar(); } });
+    const vis = () => { if (!car.isConnected) return document.removeEventListener("visibilitychange", vis); atualizar(); };
+    document.addEventListener("visibilitychange", vis);
+    car.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { ir(i + 1); e.preventDefault(); } if (e.key === "ArrowLeft") { ir(i - 1); e.preventDefault(); } });
+    marcarPausa();
   }
   // Intercala os grupos (notícia, tese, notícia, pauta...) para variar o que aparece.
   const intercalar = (...gs) => { const out = []; for (let k = 0; gs.some((g) => g[k]); k++) for (const g of gs) if (g[k]) out.push(g[k]); return out; };
@@ -6066,6 +6094,7 @@
   const VERSAO = "2026.10.02";
   const NOVIDADES = [
     ["2026-10-02", [
+      "Carrossel da Visão geral: barra de tempo em cada destaque (congela ao passar o mouse, tocar ou pausar), movimento lento de aproximação nas fotos e, nos destaques sem foto própria (teses, pautas e notícias sem imagem), fotos institucionais oficiais do STF e do STJ, identificadas como imagem ilustrativa e com o crédito do fotógrafo.",
       "Visão geral com destaques em cartões grandes, que passam sozinhos (pausa ao passar o mouse ou tocar, e há botão para pausar): no STF, as notícias oficiais do Tribunal com as fotos publicadas por ele, as teses fixadas e os temas em pauta, com a foto do relator; no STJ, teses de repetitivos, destaques do mês e temas em pauta.",
     ]],
     ["2026-10-01", [
