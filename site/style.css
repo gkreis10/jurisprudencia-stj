@@ -250,7 +250,7 @@ select { appearance: none; -webkit-appearance: none; padding-right: 34px; backgr
 .item-tit a { color: inherit; text-decoration: none; }
 @media (hover: hover) and (pointer: fine) { .item-tit a:hover { color: var(--pri); } }
 .meta { color: var(--tx-3); font-size: 13px; display: flex; flex-wrap: wrap; gap: 2px 0; }
-.meta > span + span::before { content: "·"; margin: 0 7px; color: var(--linha-2); }
+.meta > span:not(:last-child)::after { content: "·"; margin: 0 7px; color: var(--linha-2); }
 .item-sel { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
 .verb { font: 600 16.5px/1.5 var(--serif); margin: 0; color: var(--tx); overflow-wrap: anywhere; }
 .texto-serif { font: 16px/1.62 var(--serif); margin: 0; overflow-wrap: anywhere; }
@@ -530,7 +530,7 @@ code { font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
 .reel:not(.ativo) .reel-in { opacity: .55; transform: scale(0.975); }
 .reel-in > * { flex-shrink: 0; }
 .reel-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 16px; }
-.selo.area { cursor: pointer; border: 0; font: inherit; font-size: 12px; font-weight: 600; background: hsl(var(--h) 80% 50% / .12); color: hsl(var(--h) 65% 32%); transition: transform 140ms var(--ease-out); }
+.selo.area { cursor: pointer; border: 0; font: inherit; font-size: 12px; font-weight: 600; background: hsl(var(--h) 80% 50% / .12); color: hsl(var(--h) 65% 27%); transition: transform 140ms var(--ease-out); }
 .selo.area:active { transform: scale(0.96); }
 .selo.radar { background: var(--pri-bg); color: var(--pri); font-weight: 600; }
 .selo.radar svg { width: 12px; height: 12px; }
@@ -903,8 +903,8 @@ svg.gira { transform: rotate(180deg); }
 .jt-ed-cab > svg { width: 16px; height: 16px; opacity: .5; flex: none; transform: rotate(90deg); transition: transform 180ms var(--ease-out); }
 .jt-ed.aberta .jt-ed-cab > svg { transform: rotate(-90deg); }
 @media (hover: hover) and (pointer: fine) { .jt-ed-cab:hover { background: var(--sup-2); } }
-.jt-ed-num { flex: none; width: 54px; height: 54px; border-radius: 12px; display: grid; place-content: center; text-align: center; background: hsl(var(--h) 70% 50% / .1); color: hsl(var(--h) 60% 34%); font: 700 19px/1 var(--ui); font-variant-numeric: tabular-nums; }
-.jt-ed-num small { display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 3px; opacity: .8; }
+.jt-ed-num { flex: none; width: 54px; height: 54px; border-radius: 12px; display: grid; place-content: center; text-align: center; background: hsl(var(--h) 70% 50% / .1); color: hsl(var(--h) 60% 29%); font: 700 19px/1 var(--ui); font-variant-numeric: tabular-nums; }
+.jt-ed-num small { display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 3px; opacity: .92; }
 .jt-ed-tit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .jt-ed-tit b { font: 600 15.5px/1.3 var(--ui); }
 .jt-ed-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12.5px; color: var(--tx-3); }
@@ -1491,3 +1491,9 @@ html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b
   .car-retrato .car-tx { padding-right: 18px; padding-top: 118px; }
 }
 @media (prefers-reduced-motion: reduce) { .car-img, .car-pts button { transition: none; } }
+
+/* Aviso de coleta do STF atrasada (Visão geral). */
+.aviso-coleta { margin: 0 0 14px; border-color: var(--alta); background: var(--alta-bg); color: var(--tx); }
+.aviso-coleta svg { color: var(--alta); flex: none; }
+.aviso-coleta a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+@media (prefers-color-scheme: dark) { .novo { color: #2b0f0b; } }

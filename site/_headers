@@ -1,0 +1,8 @@
+/vendor/*
+  Cache-Control: public, max-age=604800
+/img/*
+  Cache-Control: public, max-age=86400
+/data/fundos/*
+  Cache-Control: public, max-age=86400
+/data/noticias/*
+  Cache-Control: public, max-age=86400

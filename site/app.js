@@ -1470,6 +1470,12 @@
     focoAnterior?.focus?.({ preventScroll: true });
   }
 
+  // Citação de tema repetitivo ou controvérsia do STJ: órgão, relator do processo paradigma (quando houver) e datas.
+  const refTemaSTJ = (x, procs = []) => {
+    const lc = procs.find((p) => p.lc && p.rel);
+    const rot = x.tp === "Tema" ? `Tema Repetitivo ${x.n}` : `${x.tp} n. ${x.n}`;
+    return `(STJ, ${rot}${x.org ? `, ${x.org}` : ""}${lc ? `, rel. Min. ${nomeMin(titulo(lc.rel))}` : ""}${x.julg ? `, julgado em ${fmtDataCit(x.julg)}` : ""}${x.pub ? `, DJe de ${fmtDataCit(x.pub)}` : ""}.)`;
+  };
   async function abrirTema(tp, n) {
     if (tp === "RG") return abrirTemaRG(n);
     const [t, pt, pl] = await Promise.all([temas(), procTemas(), pautas()]);
@@ -1496,6 +1502,8 @@
         <a class="btn btn-claro btn-peq" href="${URLS.tema(tp, n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>
         <a class="btn btn-claro btn-peq" href="#pesquisa?q=tema:${n}&p=u12&r=0" data-fechar>Acórdãos que citam</a>
         <button type="button" class="btn btn-claro btn-peq" id="g-radar">${ico("radar")} Acompanhar</button>
+        ${x.tese ? `<button type="button" class="btn btn-claro btn-peq" id="g-cit">${ico("copiar")} Copiar tese e citação</button>` : ""}
+        <button type="button" class="btn btn-claro btn-peq" id="g-socit">${ico("citar")} Copiar só a citação</button>
         <button type="button" class="btn btn-claro btn-peq btn-salvar" id="g-salvar" data-salvo-chave="t:${esc(tp)}-${esc(n)}" aria-pressed="${salvo}">${ico("salvar")} ${salvo ? "Salvo" : "Salvar"}</button>
       </div>
       <h3>Linha do tempo</h3>
@@ -1506,10 +1514,20 @@
       ${det ? `<h3>Mais informações</h3><dl class="dl">${det}</dl>` : ""}`;
     abrirGaveta(`${tp === "Tema" ? "Tema repetitivo" : tp} · ${x.org || "STJ"}`, `${tp} ${n}`, html);
     $("#g-radar").addEventListener("click", () => { adicionarTermo(tp === "Tema" ? `tema ${n}` : String(n)); });
+    $("#g-cit")?.addEventListener("click", () => copiar(`${teseParaPeca(x.tese)}\n${refTemaSTJ(x, procs)}`, "Tese e citação copiadas."));
+    $("#g-socit").addEventListener("click", () => copiar(refTemaSTJ(x, procs), "Citação copiada."));
     $("[data-tema-rg]", $("#gaveta-corpo"))?.addEventListener("click", (e) => abrirTemaRG(+e.currentTarget.dataset.temaRg));
     $("#g-salvar").addEventListener("click", (e) => { alternarSalvo(`t:${tp}-${n}`, { k: "t", tp, n }, e.currentTarget); e.currentTarget.lastChild.textContent = P.salvos[`t:${tp}-${n}`] ? " Salvo" : " Salvar"; });
     $$("[data-fechar]", $("#gaveta-corpo")).forEach((a) => a.addEventListener("click", fecharGaveta));
   }
+  // Citação de tema de repercussão geral: tema, leading case, relator (quando for ministro) e data da tese.
+  // Tese com itens numerados ("1) ... 2) ..."): cada item numa linha própria, para colar na peça.
+  const teseParaPeca = (t) => { const x = String(t || "").trim(); return /^1[.)]\s*\S/.test(x) ? x.replace(/(?<=[.;:)\]])\s*(?=[2-9][.)]\s*\p{Lu})/gu, "\n") : x; };
+  const refTemaRG = (x) => {
+    const rel = x.rel && !/^Presid/i.test(x.rel) ? `, rel. Min. ${nomeMin(x.rel)}` : "";
+    const quando = x.tese && x.dtese ? `, tese fixada em ${fmtDataCit(x.dtese)}` : "";
+    return `(STF, Tema ${x.n} da repercussão geral${x.lc ? `, ${x.lc}` : ""}${rel}${quando}.)`;
+  };
   async function abrirTemaRG(n) {
     const l = await temasRG().catch(() => null);
     const x = l?.idx.get(`RG-${n}`); if (!x) return toast(`Tema ${n} de repercussão geral não encontrado.`);
@@ -1536,7 +1554,8 @@
       <div class="acoes" style="margin-top:14px">
         <a class="btn btn-claro btn-peq" href="${URL_STF.tema(n)}" target="_blank" rel="noopener">Página oficial ${ico("externo")}</a>
         ${x.inc && x.lc ? `<a class="btn btn-claro btn-peq" href="${URL_STF.processo(x.inc)}" target="_blank" rel="noopener">Leading case: ${esc(x.lc)} ${ico("externo")}</a>` : ""}
-        ${x.tese ? `<button type="button" class="btn btn-claro btn-peq" id="grg-copiar">${ico("copiar")} Copiar tese</button>` : ""}
+        ${x.tese ? `<button type="button" class="btn btn-claro btn-peq" id="grg-copiar">${ico("copiar")} Copiar tese e citação</button>` : ""}
+        <button type="button" class="btn btn-claro btn-peq" id="grg-socit">${ico("citar")} Copiar só a citação</button>
         <button type="button" class="btn btn-claro btn-peq btn-salvar" id="grg-salvar" data-salvo-chave="${chave}" aria-pressed="${salvo}">${ico("salvar")} ${salvo ? "Salvo" : "Salvar"}</button>
       </div>
       <h3>Linha do tempo</h3>
@@ -1545,7 +1564,8 @@
       ${sumRel.length ? `<h3>Súmulas relacionadas</h3><div class="lista-rel">${sumRel.map((s) => `<p><button type="button" class="link-acao" data-sum-stf="${esc(s._k)}">${esc(s._rot)}/STF</button>${s._canc ? ` · ${esc(s.sit)}` : ""}</p>`).join("")}</div>` : ""}
       ${det ? `<h3>Mais informações</h3><dl class="dl">${det}</dl>` : ""}
       <p class="nota" style="margin-top:14px">Dados da lista oficial de temas de repercussão geral do STF.</p>`);
-    $("#grg-copiar")?.addEventListener("click", () => copiar(`${x.tese} (STF, Tema ${n} da repercussão geral${x.lc ? `, ${x.lc}` : ""}.)`, "Tese copiada."));
+    $("#grg-copiar")?.addEventListener("click", () => copiar(`${teseParaPeca(x.tese)}\n${refTemaRG(x)}`, "Tese e citação copiadas."));
+    $("#grg-socit").addEventListener("click", () => copiar(refTemaRG(x), "Citação copiada."));
     $("#grg-salvar").addEventListener("click", (e) => { alternarSalvo(chave, { k: "t", tp: "RG", n }, e.currentTarget); e.currentTarget.lastChild.textContent = P.salvos[chave] ? " Salvo" : " Salvar"; });
     $$("[data-tema-direto]", $("#gaveta-corpo")).forEach((b) => b.addEventListener("click", () => { const [tp, nn] = b.dataset.temaDireto.split("|"); abrirTema(tp, +nn); }));
   }
@@ -1960,7 +1980,7 @@
           ${acoes}
           <span class="dir">
             <button type="button" class="menos" data-f="menos" title="Mostrar menos desta matéria">Menos disso</button>
-            ${it.si || it.rg || it.sm || it.inf || citavel(it.r) ? `<button type="button" class="btn-ico so-largo" data-f="citacao" title="Copiar só a citação" aria-label="Copiar só a citação">${ico("citar")}</button>` : ""}
+            ${it.si || it.rg || it.sm || it.inf || it.t || citavel(it.r) ? `<button type="button" class="btn-ico so-largo" data-f="citacao" title="Copiar só a citação" aria-label="Copiar só a citação">${ico("citar")}</button>` : ""}
             <button type="button" class="btn-ico so-largo" data-f="copiar" title="Copiar tese e citação" aria-label="Copiar tese e citação">${ico("copiar")}</button>
             <button type="button" class="btn-ico" data-f="compartilhar" title="Compartilhar" aria-label="Compartilhar">${ico("link")}</button>
             ${`<button type="button" class="btn-ico btn-salvar" data-f="salvar" aria-pressed="${salvo}" title="Salvar (ou toque duas vezes no cartão)" aria-label="Salvar">${ico("salvar")}</button>`}
@@ -2478,7 +2498,7 @@
       const b = e.target.closest("[data-f]"); if (!b) return;
       const el = b.closest(".reel"); const it = vis[+el.dataset.i]; if (!it) return;
       const fn = b.dataset.f;
-      const textoIt = it.si ? citInfoSTF(it.si) : it.rg ? `Tema ${it.rg.n}/STF — ${it.rg.tese ? "Tese: " + it.rg.tese : it.rg.q}` : it.sm ? `${it.sm._rot}/STF: “${it.sm.t.trim().replace(/\.$/, "")}”.` : it.inf ? citInfo(it.inf) : it.t ? `${it.t.tp} ${it.t.n}/STJ — ${it.t.tese ? "Tese: " + it.t.tese : it.t.q}` : `${it.r.tese || it.r.tj ? (it.r.tese ? "Tese jurídica: " : "Tese de julgamento: ") + (it.r.tese || it.r.tj) + "\n" : ""}${citacao(it.r)}`;
+      const textoIt = it.si ? citInfoSTF(it.si) : it.rg ? `Tema ${it.rg.n}/STF — ${it.rg.tese ? "Tese: " + teseParaPeca(it.rg.tese) : it.rg.q}\n${refTemaRG(it.rg)}` : it.sm ? `${it.sm._rot}/STF: “${it.sm.t.trim().replace(/\.$/, "")}”.` : it.inf ? citInfo(it.inf) : it.t ? `${it.t.tp} ${it.t.n}/STJ — ${it.t.tese ? "Tese: " + teseParaPeca(it.t.tese) : it.t.q}\n${refTemaSTJ(it.t)}` : `${it.r.tese || it.r.tj ? (it.r.tese ? "Tese jurídica: " : "Tese de julgamento: ") + (it.r.tese || it.r.tj) + "\n" : ""}${citacao(it.r)}`;
       if (fn === "mais") { $(".reel-texto", el).classList.add("aberto"); b.hidden = true; }
       if (fn === "area") { f.ar = [b.dataset.ar]; aplicar(); toast(`Lendo só ${rotMat(b.dataset.ar)}.`); }
       if (fn === "tema") abrirTema(it.t.tp, it.t.n);
@@ -2488,7 +2508,7 @@
       if (fn === "acordao") abrirAcordao(it.r);
       if (fn === "info") abrirInformativo(it.inf);
       if (fn === "copiar") copiar(textoIt, "Tese e citação copiadas.");
-      if (fn === "citacao") copiar(it.si ? refInfoSTF(it.si) : it.rg ? `(STF, Tema ${it.rg.n} da repercussão geral.)` : it.sm ? `(STF, ${it.sm._rot}.)` : it.inf ? refInfo(it.inf) : citacao(it.r), "Citação copiada.");
+      if (fn === "citacao") copiar(it.si ? refInfoSTF(it.si) : it.rg ? refTemaRG(it.rg) : it.sm ? `(STF, ${it.sm._rot}.)` : it.inf ? refInfo(it.inf) : it.t ? refTemaSTJ(it.t) : citacao(it.r), "Citação copiada.");
       if (fn === "menos") {
         ajustarPeso(it.ar, -3);
         toast(it.ar.length ? `Certo. ${AREAS[it.ar[0]] || "Esta matéria"} vai aparecer menos.` : "Certo, vamos mostrar menos disso.");
@@ -3030,10 +3050,11 @@
         <h2>O que mudou no STF?</h2>
         <a class="btn-feed" href="#atualize" id="pn-feed">${ico("raio")}<span><b>Novidades para ler</b><small>Leitura rápida, uma tese por vez</small></span>${ico("seta")}</a>
         <form class="hero-busca" id="hero-f" role="search">
-          <input id="hero-q" type="search" placeholder="Assunto ou “tema 69” da repercussão geral" aria-label="Pesquisar temas de repercussão geral">
+          <input id="hero-q" type="search" placeholder="Assunto ou “tema 69”" aria-label="Pesquisar temas de repercussão geral por assunto ou número do tema">
           <button class="btn btn-pri" type="submit" aria-label="Pesquisar">${ico("pesquisa")}<span class="so-largo">Pesquisar</span></button>
         </form>
       </section>
+      ${avisoColetaSTF()}
       ${carrosselHTML(slides)}
       <div class="stats">
         <button type="button" class="stat" data-pn="mov"><span class="stat-ico ico-verde">${ico("repetitivos")}</span><span><b>${fmtInt(ev90.filter((e) => e.d >= somaDias(hoje, -30)).length)}</b><span>movimentações em repercussão geral (30 dias)</span></span></button>
@@ -3061,6 +3082,7 @@
     $$("[data-pn]", main).forEach((b) => b.addEventListener("click", () => { mostrar(b.dataset.pn); if (b.classList.contains("stat")) $(".painel-abas").scrollIntoView({ behavior: "smooth", block: "start" }); }));
     mostrar(abaIni);
     ligarCarrossel(main);
+    { const hq = $("#hero-q"); if (hq && matchMedia("(min-width: 700px)").matches) hq.placeholder = trib() === "stf" ? "Assunto ou “tema 69” da repercussão geral" : "Assunto, “tema 1234” ou número do processo"; }
     $("#hero-f").addEventListener("submit", (e) => {
       e.preventDefault();
       const q = $("#hero-q").value.trim(); if (!q) return;
@@ -3111,10 +3133,11 @@
         <h2>O que mudou no STJ?</h2>
         <a class="btn-feed" href="#atualize" id="pn-feed">${ico("raio")}<span><b>Novidades para ler</b><small>Leitura rápida, uma tese por vez</small></span>${ico("seta")}</a>
         <form class="hero-busca" id="hero-f" role="search">
-          <input id="hero-q" type="search" placeholder="Assunto, “tema 1234” ou número do processo" aria-label="Pesquisar">
+          <input id="hero-q" type="search" placeholder="Assunto ou “tema 1234”" aria-label="Pesquisar por assunto, número de tema ou número do processo">
           <button class="btn btn-pri" type="submit" aria-label="Pesquisar">${ico("pesquisa")}<span class="so-largo">Pesquisar</span></button>
         </form>
       </section>
+      ${avisoColetaSTF()}
       ${carrosselHTML(slidesJ)}
       <div class="stats">
         <button type="button" class="stat" data-pn="rep">
@@ -3171,6 +3194,7 @@
       }
     })();
     ligarCarrossel(main); fotosCarSTJ(main, slidesJ);
+    { const hq = $("#hero-q"); if (hq && matchMedia("(min-width: 700px)").matches) hq.placeholder = trib() === "stf" ? "Assunto ou “tema 69” da repercussão geral" : "Assunto, “tema 1234” ou número do processo"; }
     $("#hero-f").addEventListener("submit", (e) => {
       e.preventDefault();
       const q = $("#hero-q").value.trim(); if (!q) return;
@@ -3991,7 +4015,9 @@
 
   // ============================================================ DESTAQUES
   function campoBusca(id, ph, valor = "") {
-    return `<div class="campo-busca">${ico("pesquisa")}<input id="${id}" type="search" placeholder='${esc(ph)}' value="${esc(valor)}" autocomplete="off" spellcheck="false"></div>`;
+    // No celular o texto de ajuda não cabe no campo: fica só a parte principal (o texto completo vai no rótulo).
+    const curto = matchMedia("(max-width: 700px)").matches ? ph.split(/\s+(?:Ex\.:|·)/)[0].replace(/\.$/, "").replace("número do processo", "nº do processo") : ph;
+    return `<div class="campo-busca">${ico("pesquisa")}<input id="${id}" type="search" placeholder='${esc(curto)}'${curto !== ph ? ` aria-label='${esc(ph)}'` : ""} value="${esc(valor)}" autocomplete="off" spellcheck="false"></div>`;
   }
   const abasDestaques = (aba) => `<div class="segmentos" role="tablist" style="margin-bottom:14px">
       <button type="button" role="tab" data-ds-aba="" aria-selected="${aba !== "auto"}">Informativo do STJ</button>
@@ -6080,8 +6106,11 @@
   const VERSAO = "2026.10.02";
   const NOVIDADES = [
     ["2026-10-02", [
+      "Citação pronta para a peça nos temas: os botões “Copiar tese e citação” e “Copiar só a citação” (repercussão geral do STF e repetitivos do STJ) geram a referência com tribunal, tema, órgão, relator e datas, e os temas salvos também podem ser copiados com a citação.",
+      "Aviso na Visão geral quando a coleta dos dados do STF atrasa (mais de cinco dias sem atualização), com a data da última coleta e o caminho para a situação de cada fonte. A rotina diária também passa a falhar, com e-mail do GitHub, se o registro do STF ficar desatualizado.",
+      "Carregamento mais leve: a relação entre acórdãos e repetitivos (cerca de 3,5 MB) só é baixada quando o usuário se aproxima das telas que a usam, e imagens e fontes passam a ficar guardadas no navegador entre visitas.",
       "Carrossel da Visão geral maior, com barra de tempo em cada destaque, movimento lento de aproximação nas fotos e, nos destaques sem foto própria (teses, pautas e notícias sem imagem), fotos institucionais oficiais do STF e do STJ, identificadas como imagem ilustrativa e com o crédito do fotógrafo.",
-      "Visão geral com destaques em cartões grandes, que passam sozinhos (pausa ao passar o mouse ou tocar, e há botão para pausar): no STF, as notícias oficiais do Tribunal com as fotos publicadas por ele, as teses fixadas e os temas em pauta, com a foto do relator; no STJ, teses de repetitivos, destaques do mês e temas em pauta.",
+      "Visão geral com destaques em cartões grandes, que passam sozinhos: no STF, as notícias oficiais do Tribunal com as fotos publicadas por ele, as teses fixadas e os temas em pauta, com a foto do relator; no STJ, teses de repetitivos, destaques do mês e temas em pauta.",
     ]],
     ["2026-10-01", [
       "Composição do STF com perfil completo de cada ministro: contato do gabinete (telefone e e-mails para audiência e memoriais), vaga que ocupou, datas de indicação, nomeação e posse, formação, trajetória, currículo oficial e os temas e julgados de sua relatoria no acervo. Nova aba “Contatos”, com todos os gabinetes, a Presidência e as Secretarias das Turmas.",
@@ -6265,19 +6294,28 @@
       { nome: "Jurisprudência em Teses", dado: m.teses?.ultimaData, rot: m.teses?.ultima ? `edição ${m.teses.ultima}, de` : "", verif: m.teses?.coletadoEm, lim: 14, auto: false },
       { nome: "Composição do Tribunal", dado: "", verif: m.composicao?.em, auto: true },
       ...(m.stf ? [
-        // Quando o portal do STF recusa a rotina automática, vale o registro coletado à parte (semanal).
-        { nome: "STF · Repercussão geral", dado: "", extra: m.stf.temas?.temas ? `${fmtInt(m.stf.temas.temas)} temas` : "", verif: m.stf.temas?.em, auto: m.stf.temas?.origem !== "registro", lim: 10 },
-        { nome: "STF · Súmulas", dado: "", extra: m.stf.sumulas?.sumulas ? `${fmtInt(m.stf.sumulas.sumulas)} súmulas` : "", verif: m.stf.sumulas?.em, auto: m.stf.sumulas?.origem !== "registro", lim: 10 },
-        { nome: "STF · Informativo", dado: "", extra: m.stf.informativos?.julgados ? `${fmtInt(m.stf.informativos.julgados)} julgados · edição ${m.stf.informativos.ultima || ""}` : "", verif: m.stf.informativos?.em, auto: m.stf.informativos?.origem !== "registro", lim: 10 },
-        ...(m.stf.pauta ? [{ nome: "STF · Pauta", dado: "", extra: m.stf.pauta.processos != null ? `${fmtInt(m.stf.pauta.processos)} processos em sessões presenciais` : "", verif: m.stf.pauta.em, auto: m.stf.pauta.origem !== "registro", lim: 7 }] : []),
-        { nome: "STF · Composição", dado: "", extra: m.stf.composicao?.ministros ? `${fmtInt(m.stf.composicao.ministros)} ministros` : "", verif: m.stf.composicao?.em, auto: m.stf.composicao?.origem !== "registro", lim: 10 },
+        // Quando o portal do STF recusa a rotina automática, vale o registro coletado à parte (segundas e quintas):
+        // mais de 5 dias sem coleta indica que uma rodada falhou.
+        { nome: "STF · Repercussão geral", dado: "", extra: m.stf.temas?.temas ? `${fmtInt(m.stf.temas.temas)} temas` : "", verif: m.stf.temas?.em, auto: m.stf.temas?.origem !== "registro", lim: 5 },
+        { nome: "STF · Súmulas", dado: "", extra: m.stf.sumulas?.sumulas ? `${fmtInt(m.stf.sumulas.sumulas)} súmulas` : "", verif: m.stf.sumulas?.em, auto: m.stf.sumulas?.origem !== "registro", lim: 5 },
+        { nome: "STF · Informativo", dado: "", extra: m.stf.informativos?.julgados ? `${fmtInt(m.stf.informativos.julgados)} julgados · edição ${m.stf.informativos.ultima || ""}` : "", verif: m.stf.informativos?.em, auto: m.stf.informativos?.origem !== "registro", lim: 5 },
+        ...(m.stf.pauta ? [{ nome: "STF · Pauta", dado: "", extra: m.stf.pauta.processos != null ? `${fmtInt(m.stf.pauta.processos)} processos em sessões presenciais` : "", verif: m.stf.pauta.em, auto: m.stf.pauta.origem !== "registro", lim: 5 }] : []),
+        { nome: "STF · Composição", dado: "", extra: m.stf.composicao?.ministros ? `${fmtInt(m.stf.composicao.ministros)} ministros` : "", verif: m.stf.composicao?.em, auto: m.stf.composicao?.origem !== "registro", lim: 5 },
       ] : []),
     ];
     for (const x of L) {
       // A verificação é diária; três dias sem sucesso indicam que a fonte oficial não está respondendo.
-      x.defasada = x.auto ? dias(x.verif) > 3 || (x.lim && dias(x.dado) > x.lim) : dias(x.verif) > (x.lim || 60);
+      x.defasada = x.auto ? dias(x.verif) > 3 || (x.lim && x.dado && dias(x.dado) > x.lim) : dias(x.verif) > (x.lim || 60);
     }
     return L;
+  }
+  // Aviso discreto na Visão geral quando a coleta do STF (feita à parte, às segundas e quintas) está atrasada.
+  function avisoColetaSTF() {
+    if (!D.man?.stf || !comSTF()) return "";
+    const at = situacaoFontes(D.man).filter((x) => x.defasada && /^STF/.test(x.nome) && !x.auto);
+    if (!at.length) return "";
+    const ult = at.map((x) => x.verif).filter(Boolean).sort()[0];
+    return `<div class="aviso aviso-coleta" role="status">${ico("alerta")}<div>A coleta dos dados do STF está atrasada${ult ? ` (última em ${fmtData(ult.slice(0, 10))})` : ""}. Julgamentos e teses recentes do Supremo podem ainda não aparecer aqui; confira no <a href="https://portal.stf.jus.br/" target="_blank" rel="noopener">portal do STF</a>. <a href="#sobre?s=fontes">Situação de cada fonte</a></div></div>`;
   }
   function tabelaFontes(m) {
     const fd = (iso) => (iso ? fmtData(iso.slice(0, 10)) : "—");
@@ -6320,12 +6358,16 @@
     // No celular a barra lateral não aparece: a situação da base vai também para o rodapé.
     $("#rod-atualizado").innerHTML = `Versão ${VERSAO} (<a href="#sobre?s=novidades">novidades</a>) · Base verificada em ${esc(q)}${cobertura ? ` (${esc(cobertura)})` : ""} · ${defas.length ? `<a class="defas" href="#sobre?s=fontes">${defas.length} fonte${defas.length > 1 ? "s" : ""} com atraso</a>` : `<a href="#sobre?s=fontes">situação de cada fonte</a>`}.`;
     window.addEventListener("hashchange", rotear);
+    // Relação dos acórdãos com os repetitivos (3,5 MB de listas): só é baixada quando o usuário se aproxima
+    // das telas que a usam; as próprias telas também a pedem, se ainda não estiver pronta.
+    const aquecer = (e) => { if (e.target.closest?.('a[href^="#pesquisa"], a[href^="#destaques"], a[href^="#atualize"], #hero-q')) { prepararRefRep(); document.removeEventListener("pointerover", aquecer); document.removeEventListener("focusin", aquecer); } };
+    document.addEventListener("pointerover", aquecer, { passive: true }); document.addEventListener("focusin", aquecer);
     await rotear();
     atualizarContadorSalvos();
     // Contadores do menu (radar e leituras) dependem das bases completas: ficam para depois da tela aberta.
     const depois = window.requestIdleCallback || ((f) => setTimeout(f, 600));
     depois(() => {
-      atualizarContadorRadar(); atualizarContadorFeed(); prepararRefRep();
+      atualizarContadorRadar(); atualizarContadorFeed();
       conferirMudancasSalvos().then(({ novas }) => {
         if (!novas.length) return;
         const x = P.salvos[novas[0]];
