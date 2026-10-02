@@ -2138,12 +2138,13 @@
   // Seção padrão do "?": cada botão ou filtro não intuitivo da tela, com o que ele faz.
   const filtrosAjuda = (...l) => `<h3>O que cada botão e filtro faz</h3><ul class="lista-ajuda">${l.map(([r, t]) => `<li><b>${r}.</b> ${t}</li>`).join("")}</ul>`;
   const F_MATERIA = ["Matéria", "Ramo do direito (Civil, Penal, Tributário etc.) atribuído automaticamente pelo site, com assuntos mais específicos dentro de cada ramo. Aceita mais de uma escolha; o número ao lado mostra quantos itens há em cada uma."];
+  const TIT_BOL = { afet: "Início do tema", julg: "Julgamento ou tese fixada", pub: "Acórdão publicado", pauta: "Em pauta", mud: "Alteração no cadastro do tema (situação, tese ou inclusão na base)" };
   const BOLINHAS_MOV = `<h3>O que significam as bolinhas coloridas</h3><ul class="lista-ajuda">
         <li><span class="ponto" style="background:var(--pri)"></span> <b>Azul.</b> Início do tema: afetação ao rito (STJ) ou repercussão geral reconhecida (STF).</li>
         <li><span class="ponto" style="background:var(--ok)"></span> <b>Verde.</b> Julgamento: tema julgado ou tese fixada.</li>
         <li><span class="ponto" style="background:var(--acomp)"></span> <b>Azul-petróleo.</b> Acórdão publicado.</li>
         <li><span class="ponto" style="background:var(--rel)"></span> <b>Laranja.</b> Tema ou processo em pauta de julgamento.</li>
-        <li><span class="ponto" style="background:var(--tx-3)"></span> <b>Cinza.</b> Mudança registrada pelo site ao comparar as atualizações do Tribunal (por exemplo, nova situação do tema ou tese alterada) ou repercussão geral negada. A cor não indica se o resultado é bom ou ruim; o texto ao lado diz o que mudou.</li>
+        <li><span class="ponto" style="background:var(--tx-3)"></span> <b>Cinza.</b> Alteração no cadastro do tema, percebida pelo site quando o Tribunal atualiza seus dados. Não é uma decisão nova nem um resultado: é o aviso de que algum dado do tema mudou. O texto ao lado diz o quê, por exemplo: “Situação: Afetado → Julgado” (a situação do tema mudou), “Tese alterada” ou “Tese firmada registrada” (a tese foi incluída ou modificada), “Incluído na base” (o tema passou a constar nas fontes do site) e “Repercussão geral negada”. A data é a do dia em que a mudança foi percebida. A cor é neutra de propósito, porque a mudança pode ser favorável ou desfavorável conforme o seu caso.</li>
       </ul><p class="nota">Cada linha mostra a data do evento, o tema e o que aconteceu; toque nela para abrir o tema. Os mesmos pontos colorem a linha do tempo dentro de cada tema.</p>`;
   const glossarioSTF = (...ks) => `<h3>Entenda os termos</h3><ul class="lista-ajuda">${ks.map((k) => `<li><b>${TERMOS_STF[k][0]}.</b> ${TERMOS_STF[k][1]}</li>`).join("")}</ul>`;
   const AJUDA_VIEW = {
@@ -3192,7 +3193,7 @@
     return evs.sort((a, b) => (b.d > a.d ? 1 : b.d < a.d ? -1 : b.t.n - a.t.n));
   }
   const listaEventos = (evs, vazioTxt) => evs.length ? `<div class="card card-pad"><ol class="eventos">${evs.map((e) => `
-      <li class="evento" data-tema="${esc(e.t.tp)}|${e.t.n}"><span class="quando">${fmtData(e.d)}</span><span class="marco"><i class="${e.k}"></i></span>
+      <li class="evento" data-tema="${esc(e.t.tp)}|${e.t.n}"><span class="quando">${fmtData(e.d)}</span><span class="marco"><i class="${e.k}" title="${TIT_BOL[e.k] || ""}"></i></span>
         <div><div class="evento-tit">${seloTrib(e.t.trib || "stj")}<button type="button" data-abrir-tema>${esc(rotTema(e.t))} · ${esc(e.txt)}</button></div>
         <div class="evento-txt">${esc(e.t.tese ? "Tese: " + e.t.tese : e.t.q || "")}</div></div></li>`).join("")}</ol></div>` : `<div class="card card-pad"><p class="nota">${vazioTxt}</p></div>`;
   async function vPainelSTF(main) {
@@ -3330,7 +3331,7 @@
     const lista = (html) => `<div class="card card-pad"><ol class="eventos">${html}</ol></div>`;
     const PAINEL = {
       rep: { href: "#repetitivos?s=mov", html: () => ev30.length ? lista(ev30.slice(0, 6).map((e) => `
-            <li class="evento" data-tema="${esc(e.t.tp)}|${e.t.n}"><span class="quando">${fmtData(e.d)}</span><span class="marco"><i class="${e.k}"></i></span>
+            <li class="evento" data-tema="${esc(e.t.tp)}|${e.t.n}"><span class="quando">${fmtData(e.d)}</span><span class="marco"><i class="${e.k}" title="${TIT_BOL[e.k] || ""}"></i></span>
               <div><div class="evento-tit"><button type="button" data-abrir-tema>${esc(e.t.tp)} ${e.t.n} · ${esc(e.txt)}</button></div>
               <div class="evento-txt">${esc(e.t.tese ? "Tese: " + e.t.tese : e.t.q || "")}</div></div></li>`).join("")) : `<div class="card card-pad"><p class="nota">Nenhuma movimentação nos últimos 30 dias.</p></div>` },
       pau: { href: "#pautas?rel=1", html: () => { const l = unicos([...plTema, ...plRel.filter((p) => !p.temas?.length)], (p) => `${p.p}|${p.d}|${p.pet || ""}`).slice(0, 6);
@@ -4715,7 +4716,9 @@
       if (tk !== AC.token) return;
       const porRel = !cons.vazio && f.s === "auto";
       AC.lista = lista.sort(porRel ? (a, b) => b._sc - a._sc || b.dj.localeCompare(a.dj) : (a, b) => b.dj.localeCompare(a.dj)); AC.termos = cons.termos;
-      $("#ac-info").innerHTML = `<b>${fmtInt(lista.length)}</b> acórdão(s) publicado(s) desde ${fmtData(D.man.radar?.mesDe || "")}, ainda sem o arquivo mensal do STJ${f.o ? " nos órgãos escolhidos" : ""}${f.se ? "" : ", só os que já têm ementa"} · ${porRel ? "por relevância" : "mais recentes primeiro"}.${f.se ? "" : ` Para ver também os ${fmtInt((D.man.radar?.mesN || 0) - (D.man.radar?.mesEm || 0))} ainda sem ementa, ative “Incluir sem ementa”.`}${cons.vazio ? "" : " A busca por palavras só alcança os que já têm a ementa pelo texto integral."}${f.a || f.x || f.t ? " Os filtros de matéria, relevância e tese não se aplicam a eles." : ""} O órgão é estimado pelo relator até a chegada do arquivo mensal. ${explicacaoHTML(cons)}`;
+      const mesN = D.man.radar?.mesN || 0, mesEm = D.man.radar?.mesEm || 0, mm = rotMesCorrente();
+      $("#ac-info").innerHTML = `<button type="button" class="btn btn-claro btn-peq" id="ac-voltar-mes">← Voltar à lista geral</button> <span>Só os acórdãos publicados em ${mm}, ainda sem o arquivo mensal do STJ${f.o ? " (nos órgãos escolhidos)" : ""}: <b>${fmtInt(lista.length)}</b>, ${porRel ? "por relevância" : "mais recentes primeiro"}.${f.se || mesN <= mesEm ? "" : ` Há outros ${fmtInt(mesN - mesEm)} sem ementa; para vê-los, ative “Incluir sem ementa”.`}${f.a || f.x || f.t ? " Os filtros de matéria, relevância e tese não valem para estes." : ""}</span> ${explicacaoHTML(cons)}`;
+      $("#ac-voltar-mes").addEventListener("click", () => { AC.f.p = "todo"; AC.pil?.desenhar(); buscar(); window.scrollTo({ top: 0 }); });
       renderLista(true);
       return;
     }
@@ -4729,7 +4732,8 @@
         const lista = rec.filter((r) => temV(f.o, r.o)).sort((a, b) => (b.dj || "").localeCompare(a.dj || "") || (b.s ?? 0) - (a.s ?? 0));
         const m10 = (rm || []).filter((x) => doMes(x) && temV(f.o, x.tr) && (f.se || x.em)).slice(0, 10).map((x) => pseudoMes(x, x.em));
         AC.lista = [...m10, ...agrupar(lista.map((r) => Object.assign(r, { _dup: [] })))]; AC.termos = [];
-        $("#ac-info").innerHTML = `Acórdãos publicados mais recentemente${f.o ? " nos órgãos escolhidos" : ""}. Digite termos ou use os filtros para pesquisar em ${esc(rotPeriodo(f.p, meses))}.${m10.length ? ` <button type="button" class="link-acao" id="ac-ver-mes">Ver os publicados em ${rotMesCorrente()}</button>` : ""}`;
+        const emN = D.man.radar?.mesEm || 0;
+        $("#ac-info").innerHTML = `Acórdãos publicados mais recentemente${f.o ? ", nos órgãos escolhidos" : ""}. Digite termos ou use os filtros para pesquisar em ${esc(rotPeriodo(f.p, meses))}.${m10.length ? ` <button type="button" class="link-acao" id="ac-ver-mes">Ver só os publicados em ${rotMesCorrente()}${emN ? ` (${fmtInt(emN)})` : ""}</button>` : ""}`;
         $("#ac-ver-mes")?.addEventListener("click", () => { AC.f.p = "mes"; AC.pil?.desenhar(); buscar(); });
         renderLista(true);
         return;
@@ -6415,6 +6419,8 @@
     ["2026-10-02", [
       "Ficha do processo: o número de um processo (por exemplo, o leading case de um tema, os processos vinculados, as pautas do STJ e do STF e as notas do Informativo) agora é clicável e abre uma ficha com tudo o que o site tem sobre ele: temas, pautas, acórdãos, decisões monocráticas e notas do Informativo, cada item com link para a respectiva tela, além do botão para acompanhar o processo no Meu radar.",
       "Os botões “?” foram revistos: cada tela explica agora os filtros, botões e selos que não são intuitivos (como “Só relevantes”, “Exibir”, “Incluir sem ementa” e as ordenações), e a Pesquisa de acórdãos passou a explicar no “?” até onde vai a base, em vez de manter o aviso fixo na página.",
+      "Pesquisa de acórdãos: o botão dos publicados no mês corrente mostra a contagem e, dentro dessa visão, há o botão “Voltar à lista geral”. O texto do aviso ficou mais curto e a explicação detalhada está no “?”.",
+      "A bolinha cinza das movimentações agora tem explicação com exemplos (situação alterada, tese alterada, incluído na base) no “?”, e uma dica ao passar o cursor.",
       "Nas listas de movimentações, a bolinha de mudança de situação passou de vermelha para cinza, para não sugerir resultado negativo; o “?” da Visão geral e da Repercussão geral explica o significado de cada cor.",
       "STF mais próximo do STJ: o Resumo da semana e o Meu radar (assuntos e números de processos, com Panorama e Novidades) agora também funcionam no STF; a repercussão geral ganhou filtros por relator e por temas em pauta; a Pauta do STF ganhou busca e filtros por órgão, relator, data e repercussão geral; e o Painel do STF passou a ter a aba Meu radar. Os contatos dos gabinetes ficam dentro de Composição, ao final da lista de ministros, sem aba separada.",
       "Citação pronta para a peça nos temas: os botões “Copiar tese e citação” e “Copiar só a citação” (repercussão geral do STF e repetitivos do STJ) geram a referência com tribunal, tema, órgão, relator e datas, e os temas salvos também podem ser copiados com a citação.",
@@ -6597,7 +6603,7 @@
     const mes = rotMesCorrente(), n = D.man.radar?.mesN || 0;
     return `<h3>Até onde vai a base</h3><ul class="lista-ajuda">
       <li><b>Acórdãos.</b> Só os acórdãos colegiados (Corte Especial, Seções e Turmas) publicados nos Dados Abertos do STJ, de ${ms.length ? fmtMesL(ms[0]) : "—"} a ${ms.length ? fmtMesL(ms[ms.length - 1]) : "—"}. O STJ fecha um arquivo por mês; por isso o mês mais recente da base é o último arquivo fechado.</li>
-      <li><b>Publicados no mês corrente.</b> Os acórdãos de ${mes} ainda não têm o arquivo mensal do STJ${n ? ` (hoje são ${fmtInt(n)})` : ""}. Eles aparecem no alto da lista inicial, com a ementa tirada do texto integral publicado pelo Tribunal, e o botão “Ver os publicados em ${mes}” mostra só esses. Os filtros de matéria, relevância e tese, e a busca por palavras, só alcançam os que já têm ementa.</li>
+      <li><b>Publicados no mês corrente.</b> Os acórdãos de ${mes} ainda não têm o arquivo mensal do STJ${n ? ` (hoje são ${fmtInt(n)})` : ""}. Eles aparecem no alto da lista inicial, com a ementa tirada do texto integral publicado pelo Tribunal, e o botão “Ver só os publicados em ${mes}” mostra apenas esses; nessa visão, “← Voltar à lista geral” retorna à lista inicial (o filtro de período, no alto, também permite trocar). Enquanto o arquivo mensal não chega, o órgão julgador mostrado é estimado pelo relator. Os filtros de matéria, relevância e tese, e a busca por palavras, só alcançam os que já têm ementa.</li>
       <li><b>Decisões monocráticas.</b> Existem desde 2021, apenas com os dados da decisão (sem o texto). Aparecem na busca pelo número do processo, com link para a decisão oficial no STJ.</li>
       <li><b>Verificação.</b> A base foi conferida em ${verif}. Se a fonte atrasar, a página avisa.</li></ul>`;
   }

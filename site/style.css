@@ -1502,3 +1502,4 @@ html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b
 .link-proc { all: unset; cursor: pointer; color: inherit; font-weight: inherit; text-decoration: underline dotted; text-decoration-color: var(--tx-3); text-underline-offset: 3px; }
 .link-proc:focus-visible { outline: 2px solid var(--pri); outline-offset: 2px; border-radius: 4px; }
 @media (hover: hover) and (pointer: fine) { .link-proc:hover { color: var(--pri); text-decoration-style: solid; text-decoration-color: currentColor; } }
+#ac-info #ac-voltar-mes { margin: 0 10px 6px 0; }
