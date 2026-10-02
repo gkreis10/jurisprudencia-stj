@@ -966,9 +966,13 @@
   // ============================================================ meu radar
   async function calcularRadar() {
     if (!P.termos.length && !P.procs.length && !P.oabs.length) return [];
-    const [t, ix, pl, dj, pt, inf] = await Promise.all([temas(), indice(), pautas(), djen(), procTemas(), informativos().catch(() => [])]);
+    const vaziaSTJ = Object.assign([], { idx: new Map(), porReg: new Map(), porNum: new Map() });
+    const [t, ix, pl, dj, pt, inf] = comSTJ() ? await Promise.all([temas(), indice(), pautas(), djen(), procTemas(), informativos().catch(() => [])]) : [vaziaSTJ, [], [], [], vaziaSTJ, []];
+    const [rg, sfs, isf, pS] = comSTF() ? await Promise.all([temasRG().catch(() => []), sumulasSTF().catch(() => []), informativosSTF().catch(() => []), pautaSTF().catch(() => null)]) : [[], [], [], [], null];
     const emPauta = temasEmPauta(pl);
     const hoje = hojeISO(), lim30 = somaDias(hoje, -30);
+    const pautadosRG = new Map();
+    for (const x of pS?.temas || []) if (x.fim >= hoje) pautadosRG.set(x.tema, x);
     const out = new Map();
     const add = (k, item) => { if (!out.has(k)) out.set(k, item); else if (ordNivel(item.nivel) < ordNivel(out.get(k).nivel)) out.set(k, item); };
     for (const termo of P.termos) {
@@ -995,9 +999,21 @@
         add(`a|${r.id}`, { tipo: "acordao", nivel, d: r.dj, dNovo: r.dj, termo, obj: r });
         if (++c >= 150) break;
       }
+      if (comSTF()) {
+        for (const x of rg) {
+          if (tm ? x.n !== +tm[1] : !casa(x._n)) continue;
+          const ps = pautadosRG.get(x.n);
+          const nivel = ps ? "alta" : x._mov >= lim30 ? "alta" : x._g === "andamento" ? "rel" : "acomp";
+          add(`rg|${x.n}`, { tipo: "temarg", nivel, d: ps ? ps.ini : x._mov, dNovo: x._mov, termo, obj: x, pautaRG: ps });
+        }
+        if (!tm) {
+          for (const x of isf) if (casa(x._n)) add(`if|${x.id}`, { tipo: "infostf", nivel: x.tema || (x.ts || []).length ? "alta" : "rel", d: x.d, dNovo: x.d, termo, obj: x });
+          for (const x of sfs) if (casa(x._n)) add(`sf|${x._k}`, { tipo: "sumstf", nivel: x._canc ? "acomp" : "rel", d: x._d, dNovo: x._d, termo, obj: x });
+        } else for (const x of isf) if (x.tema === +tm[1]) add(`if|${x.id}`, { tipo: "infostf", nivel: "rel", d: x.d, dNovo: x.d, termo, obj: x });
+      }
     }
     // Decisões monocráticas nos processos acompanhados (desde 2021).
-    const mns = P.procs.length ? await monocraticasDe(P.procs.map(digitos), P.procs.map(digitos).filter((x) => x.length >= 10)).catch(() => []) : [];
+    const mns = P.procs.length && comSTJ() ? await monocraticasDe(P.procs.map(digitos), P.procs.map(digitos).filter((x) => x.length >= 10)).catch(() => []) : [];
     for (const proc of P.procs) {
       const nd = digitos(proc); if (!nd) continue;
       const bate = (reg, p) => reg === nd || digitos(p) === nd;
@@ -1006,6 +1022,12 @@
       for (const p of pl) if (bate(p.reg, p.p)) add(`p|${p.reg}|${p.d}|${p.pet || ""}`, { tipo: "pauta", nivel: "alta", d: p.d, dNovo: p.pub || hoje, termo: proc, obj: p });
       for (const x of dj) if (bate(x.reg, x.p)) add(`d|${x.reg}|${x.d}|${x.r || ""}`, { tipo: "djen", nivel: "rel", d: x.d, dNovo: x.d, termo: proc, obj: x });
       for (const r of ix) if (bate(r.reg, r.n)) add(`a|${r.id}`, { tipo: "acordao", nivel: "rel", d: r.dj, dNovo: r.dj, termo: proc, obj: r });
+      if (comSTF()) {
+        for (const x of rg) if (digitos(x.lc || "") === nd) add(`rg|${x.n}`, { tipo: "temarg", nivel: pautadosRG.has(x.n) ? "alta" : "rel", d: x._mov, dNovo: x._mov, termo: proc, obj: x, pautaRG: pautadosRG.get(x.n) });
+        for (const x of pS?.temas || []) if (x.fim >= hoje && digitos(x.num) === nd && !out.has(`rg|${x.tema}`)) { const tr = rg.find((r) => r.n === x.tema); if (tr) add(`rg|${x.tema}`, { tipo: "temarg", nivel: "alta", d: x.ini, dNovo: x.ini, termo: proc, obj: tr, pautaRG: x }); }
+        for (const x of pS?.presenciais || []) for (const it of x.itens || []) if (digitos(it.num) === nd && (!clp || it.cl.toLowerCase() === clp)) add(`ps|${x.d}|${it.cl}|${it.num}`, { tipo: "pautastf", nivel: "alta", d: x.d, dNovo: x.d, termo: proc, obj: { ...it, sessao: x } });
+        for (const x of isf) if (digitos(x.p || "") === nd) add(`if|${x.id}`, { tipo: "infostf", nivel: "rel", d: x.d, dNovo: x.d, termo: proc, obj: x });
+      }
       for (const v of pt.porReg.get(nd) || pt.porNum.get(nd) || []) {
         const x = t.idx.get(`${v.tp}-${v.n}`);
         if (x) add(`t|${x.tp}|${x.n}`, { tipo: "tema", nivel: "rel", d: x._mov, dNovo: x._mov, termo: proc, obj: x, vinculo: v });
@@ -2668,7 +2690,7 @@
   // Composição do STF: Plenário (Presidente, Vice-Presidente e demais por antiguidade) e as duas Turmas.
   async function vComposicaoSTF(main, p) {
     const c = await composicaoSTF();
-    const aba = ["ministros", "contatos"].includes(p.get("aba")) ? p.get("aba") : "orgaos";
+    const aba = p.get("aba") === "ministros" || p.get("aba") === "contatos" ? "ministros" : "orgaos";
     const hashDe = (a) => `#composicao?${ambos() ? "t=stf&" : ""}${a !== "orgaos" ? `aba=${a}` : ""}`.replace(/[?&]$/, "");
     main.innerHTML = `${abasTribComp("stf")}
       <div class="card card-pad cp-topo">
@@ -2683,7 +2705,6 @@
         <div class="segmentos" role="tablist">
           <button type="button" role="tab" data-cp-aba="orgaos" aria-selected="${aba === "orgaos"}">Plenário e Turmas</button>
           <button type="button" role="tab" data-cp-aba="ministros" aria-selected="${aba === "ministros"}">Ministros</button>
-          ${c.ministros.some((m) => m.gabinete) ? `<button type="button" role="tab" data-cp-aba="contatos" aria-selected="${aba === "contatos"}">Contatos</button>` : ""}
         </div>
       </div>
       <div id="cp-corpo" style="margin-top:14px"></div>`;
@@ -2723,13 +2744,12 @@
           <p class="nota" style="margin:0 0 12px">O Plenário reúne os onze ministros e julga, entre outros, as ações de controle de constitucionalidade e o mérito dos temas de repercussão geral. As duas Turmas, de cinco ministros cada, julgam os demais recursos e ações; o Presidente do Tribunal não integra Turma.${c.vagas ? ` <b>${c.vagas === 1 ? "Há uma cadeira vaga" : `Há ${c.vagas} cadeiras vagas`}</b> no Tribunal.` : ""}</p>
           <div class="cp-grade-org cp-stf-turmas">${cardOrgao(c.org.get("primeira-turma"), c, { presPrimeiro: true })}${cardOrgao(c.org.get("segunda-turma"), c, { presPrimeiro: true })}</div>
           ${cardOrgao(plen, c, { cls: "cp-ce" })}
-          ${ct["primeira-turma"] || ct["segunda-turma"] ? `<p class="nota" style="margin-top:10px">Secretarias: ${["primeira-turma", "segunda-turma"].filter((k) => ct[k]).map((k) => `${k === "primeira-turma" ? "1ª" : "2ª"} Turma, ${esc(ct[k].nome || "")}${ct[k].telefone ? ` (${linkTel(ct[k].telefone)})` : ""}`).join("; ")}. <a href="${hashDe("contatos")}">Todos os contatos</a>.</p>` : c.secretarioTurmas ? `<p class="nota" style="margin-top:10px">Secretaria das Turmas: ${esc(c.secretarioTurmas)}.</p>` : ""}`;
-      } else if (aba === "contatos") {
-        corpo.innerHTML = contatosHTML();
-        $$("[data-min]", corpo).forEach((b) => b.addEventListener("click", () => abrirMinistro(b.dataset.min)));
+          ${ct["primeira-turma"] || ct["segunda-turma"] ? `<p class="nota" style="margin-top:10px">Secretarias: ${["primeira-turma", "segunda-turma"].filter((k) => ct[k]).map((k) => `${k === "primeira-turma" ? "1ª" : "2ª"} Turma, ${esc(ct[k].nome || "")}${ct[k].telefone ? ` (${linkTel(ct[k].telefone)})` : ""}`).join("; ")}. <a href="${hashDe("ministros")}">Contatos de todos os gabinetes</a>.</p>` : c.secretarioTurmas ? `<p class="nota" style="margin-top:10px">Secretaria das Turmas: ${esc(c.secretarioTurmas)}.</p>` : ""}`;
       } else {
         corpo.innerHTML = `<p class="nota" style="margin:0 0 12px">Por ordem de antiguidade (data da posse no STF). Fotos do acervo livre do Wikimedia Commons, quando disponíveis.</p>
-          <div class="cp-grade-min">${c.ministros.map(cartao).join("")}</div>`;
+          <div class="cp-grade-min">${c.ministros.map(cartao).join("")}</div>
+          ${c.ministros.some((m) => m.gabinete) ? `<h2 class="jt-divisor" id="cp-contatos" style="margin-top:22px">Contatos dos gabinetes</h2>${contatosHTML()}` : ""}`;
+        if (p.get("aba") === "contatos") setTimeout(() => $("#cp-contatos")?.scrollIntoView({ block: "start" }), 50);
       }
     };
     desenhar();
@@ -2836,10 +2856,10 @@
   const VIEWS = [
     { id: "painel", tit: "Visão geral", sobre: "Painel diário", ico: "painel", fn: vPainel, stf: { sobre: "Painel do STF" } },
     { id: "atualize", g: "Acompanhar", tit: "Atualize-se", sobre: "Leitura do dia", ico: "raio", fn: vAtualize, cont2: true, stf: { sobre: "Leitura do dia no STF" }, ambos: { sobre: "Leitura do dia no STJ e no STF" } },
-    { id: "semana", g: "Acompanhar", tit: "Resumo da semana", sobre: "O que mudou em 7 dias", ico: "semana", fn: vSemana, trib: "stj" },
+    { id: "semana", g: "Acompanhar", tit: "Resumo da semana", sobre: "O que mudou em 7 dias", ico: "semana", fn: vSemana, stf: { sobre: "O que mudou em 7 dias no STF" }, ambos: { sobre: "O que mudou em 7 dias no STJ e no STF" } },
     { id: "destaques", g: "Acompanhar", tit: "Destaques", sobre: "Informativo do STJ e seleção automática", ico: "destaques", fn: vDestaques, trib: "stj" },
     { id: "infostf", g: "Acompanhar", tit: "Informativo do STF", sobre: "Julgamentos de destaque do Supremo", ico: "destaques", fn: vInfoSTF, trib: "stf", dados: () => !D.man || !!D.man.stf?.informativos },
-    { id: "radar", g: "Acompanhar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true, trib: "stj" },
+    { id: "radar", g: "Acompanhar", tit: "Meu radar", sobre: "Seus interesses", ico: "radar", fn: vRadar, cont: true },
     { id: "salvos", g: "Acompanhar", tit: "Salvos", sobre: "Pastas, avaliações e anotações", ico: "salvar", fn: vSalvos, cont3: true },
     { id: "pesquisa", g: "Pesquisar", tit: "Pesquisa de acórdãos", menu: "Acórdãos", sobre: "Acervo de acórdãos", ico: "pesquisa", fn: vPesquisa, trib: "stj", ambos: { menu: "Acórdãos do STJ" } },
     { id: "repetitivos", g: "Pesquisar", tit: "Precedentes qualificados", menu: "Repetitivos", sobre: "Repetitivos, IAC e controvérsias", ico: "repetitivos", fn: vRepetitivos,
@@ -3042,7 +3062,8 @@
     const teses12 = l.filter((x) => x.dtese >= somaDias(hoje, -365));
     const sv = sm.filter((x) => x.v && !x._canc);
     const pres = cp?.ministros.find((m) => (m.orgaos || []).some((o) => o.id === "plenario" && o.cargo === "Presidente"));
-    const abas = [["mov", "Movimentações", ev90.length], ...(emPauta.length ? [["pauta", "Em pauta", emPauta.length]] : []), ["pend", "Mérito pendente", pend.length], ["sv", "Súmulas vinculantes", sv.length]];
+    const abas = [["mov", "Movimentações", ev90.length], ...(emPauta.length ? [["pauta", "Em pauta", emPauta.length]] : []), ["pend", "Mérito pendente", pend.length], ["sv", "Súmulas vinculantes", sv.length], ["rad", "Meu radar", 0]];
+    const configurado = P.termos.length + P.procs.length > 0; let radarSTF = null;
     const abaIni = abas.some((a) => a[0] === P.painelAbaSTF) ? P.painelAbaSTF : "mov";
     main.innerHTML = `
       <section class="hero">
@@ -3073,6 +3094,8 @@
       pend: { href: "#repetitivos?sit=andamento&s=afet", html: () => `<ol class="lista">${pend.slice(0, 6).map((x) => linhaTema(x)).join("")}</ol>` },
       pauta: { href: "#pautastf", html: () => `<ol class="lista">${emPauta.slice(0, 6).map((p0) => { const t = l.idx.get(`RG-${p0.tema}`); return t ? linhaTema(t, `<span class="selo ${p0.ini <= hoje ? "alta" : "pri"}" title="${esc(ORG_STF[p0.o] || p0.o)}, sessão ${esc(p0.amb)}">${p0.ini <= hoje ? "Em julgamento" : "Pautado"} · ${p0.ini === p0.fim ? fmtData(p0.ini) : `${fmtData(p0.ini).slice(0, 5)} a ${fmtData(p0.fim).slice(0, 5)}`}</span>`) : ""; }).join("")}</ol>` },
       sv: { href: "#sumulas?esp=sv", html: () => `<ol class="lista">${sv.slice().sort((a, b) => b.n - a.n).slice(0, 5).map((x) => cardSumulaSTF(x, [])).join("")}</ol>` },
+      rad: { href: "#radar", html: () => configurado ? (!radarSTF ? esqueleto() : radarSTF.length ? `<div class="card card-pad"><ol class="eventos">${radarSTF.slice(0, 6).map(itemRadarCompacto).join("")}</ol></div>` : `<div class="card card-pad"><p class="nota">Nada encontrado ainda para os seus assuntos.</p></div>`)
+        : `<div class="card card-pad"><p class="texto-serif" style="margin-bottom:12px">Cadastre os assuntos e os números dos processos que você acompanha. O site avisa quando houver novidade no STF.</p><a class="btn btn-pri" href="#radar">${ico("mais1")} Configurar meu radar</a></div>` },
     };
     const mostrar = (k) => {
       P.painelAbaSTF = k; salvarP();
@@ -3081,6 +3104,12 @@
     };
     $$("[data-pn]", main).forEach((b) => b.addEventListener("click", () => { mostrar(b.dataset.pn); if (b.classList.contains("stat")) $(".painel-abas").scrollIntoView({ behavior: "smooth", block: "start" }); }));
     mostrar(abaIni);
+    if (configurado) calcularRadar().catch(() => []).then((r) => {
+      if (viewAtual !== "painel" || !main.isConnected) return;
+      radarSTF = r; const novos = r.filter((x) => x.novo);
+      const ab = $('#pn-abas [data-pn="rad"]'); if (ab && novos.length) ab.insertAdjacentHTML("beforeend", ` <span class="n">${novos.length > 99 ? "99+" : novos.length}</span>`);
+      if (P.painelAbaSTF === "rad") mostrar("rad");
+    });
     ligarCarrossel(main);
     { const hq = $("#hero-q"); if (hq && matchMedia("(min-width: 700px)").matches) hq.placeholder = trib() === "stf" ? "Assunto ou “tema 69” da repercussão geral" : "Assunto, “tema 1234” ou número do processo"; }
     $("#hero-f").addEventListener("submit", (e) => {
@@ -3213,14 +3242,18 @@
     if (it.tipo === "pauta") { tit = `${o.p}${o.pet ? " (" + o.pet + ")" : ""} em pauta`; txt = `${fmtDiaL(o.d)} · ${D.orgaos[o.o] || ""} · Rel. ${o.rel || ""}`; }
     if (it.tipo === "djen") { tit = `${o.p} · acórdão publicado`; txt = `${o.r || ""} ${o.t || ""} · Rel. ${titulo(o.rel)}`; }
     if (it.tipo === "mono") { tit = `${tituloMono(o)} · decisão monocrática`; txt = `${desfechoMono(o)} · ${relatorFmt(o.min)}`; }
-    const tema = it.tipo === "tema" ? ` data-tema="${esc(o.tp)}|${o.n}"` : "";
+    if (it.tipo === "temarg") { tit = `Tema ${fmtNumProc(o.n)}/STF`; txt = it.pautaRG ? `Em pauta em ${fmtData(it.pautaRG.ini)} · ${o.q || ""}` : o.tese ? `Tese: ${o.tese}` : o.q || ""; }
+    if (it.tipo === "infostf") { tit = `Informativo STF ${o.n} · ${o.p || ""}`; txt = o.t || ""; }
+    if (it.tipo === "sumstf") { tit = `${o._rot}/STF`; txt = o.t || ""; }
+    if (it.tipo === "pautastf") { tit = `${o.cl} ${o.num} em pauta`; txt = `${fmtDiaL(o.sessao.d)} · ${o.sessao.nome || ""}${o.rel ? ` · Rel. Min. ${o.rel}` : ""}`; }
+    const tema = it.tipo === "tema" || it.tipo === "temarg" ? ` data-tema="${esc(o.tp)}|${o.n}"` : "";
     return `<li class="evento"${tema}><span class="quando">${fmtData(it.d)}</span><span class="marco"><span class="ponto ${it.nivel}" style="margin-top:0"></span></span>
       <div><div class="evento-tit">${tema ? `<button type="button" data-abrir-tema>${esc(tit)}</button>` : esc(tit)} ${it.novo ? '<span class="selo novo">Novo</span>' : ""}</div>
       <div class="evento-txt">${esc(txt)}</div><div class="meta" style="margin-top:2px"><span>por “${esc(it.termo.replace(/"/g, ""))}”</span></div></div></li>`;
   }
 
   // ============================================================ MEU RADAR
-  const TIPO_RADAR = { tema: "Repetitivo", acordao: "Acórdão", informativo: "Informativo", pauta: "Em pauta", djen: "Publicação no DJEN", mono: "Decisão monocrática" };
+  const TIPO_RADAR = { tema: "Repetitivo", acordao: "Acórdão", informativo: "Informativo", pauta: "Em pauta", djen: "Publicação no DJEN", mono: "Decisão monocrática", temarg: "Repercussão geral", infostf: "Informativo do STF", sumstf: "Súmula do STF", pautastf: "Pauta do STF" };
   function areasItem(it) { return it.obj?.ar || (it.tipo === "pauta" && it.temaObj?.ar) || []; }
   function subsItem(it) { return it.obj?.sa || (it.tipo === "pauta" && it.temaObj?.sa) || []; }
   // Publicação do DJEN salva: quando o acórdão chega ao acervo, o salvo passa a ser o acórdão completo.
@@ -3338,6 +3371,18 @@
         <div class="acoes"><button type="button" class="link-acao" data-a-info="abrir">Ler a nota completa ${ico("seta")}</button>${por}
           <span class="dir">${botaoSalvar(`i:${o.id}`, { k: "i", id: o.id })}</span></div></li>`;
     }
+    if (it.tipo === "temarg" || it.tipo === "infostf" || it.tipo === "sumstf") {
+      const li = it.tipo === "temarg" ? linhaTema(o, `${it.pautaRG ? `<span class="selo alta">Em pauta ${fmtData(it.pautaRG.ini)}</span>` : ""}${novo}`, termos) : it.tipo === "infostf" ? cardInfoSTF(o, termos) : cardSumulaSTF(o, termos);
+      const marca = it.tipo === "temarg" ? "" : novo ? `<span class="selo novo">Novo</span>` : "";
+      return li.replace(/<\/li>\s*$/, `<div class="acoes" style="margin-top:6px">${marca}${por}</div></li>`);
+    }
+    if (it.tipo === "pautastf") return `<li class="card item item-radar">
+        <div class="item-cab">${nivel}<span class="item-tit">${esc(o.cl)} ${esc(o.num)}</span>${novo}
+          <span class="meta"><span>${esc(o.sessao.nome || "")}</span><span>${fmtData(o.sessao.d)}</span></span></div>
+        <div class="item-sel"><span class="selo alta">${TIPO_RADAR.pautastf}</span>${o.tema ? `<span class="selo pri">Tema ${fmtNumProc(o.tema)} RG</span>` : ""}</div>
+        <p class="nota">${o.rel ? `Rel. Min. ${esc(o.rel)}` : ""}${o.vista ? ` · vista: Min. ${esc(o.vista)}` : ""}${o.dest ? ` · destaque: Min. ${esc(o.dest)}` : ""}</p>
+        ${o.res ? `<p class="texto-serif">${esc(o.res.replace(/^1\.\s*/, "").slice(0, 400))}</p>` : ""}
+        <div class="acoes"><a class="link-acao" href="${URL_STF.pauta}" target="_blank" rel="noopener">Pauta no site do STF ${ico("externo")}</a>${por}</div></li>`;
     if (it.tipo === "pauta") return cardPauta(o, { por, novo, nivel });
     if (it.tipo === "mono") return cardMono(o).replace('<div class="item-cab">', `<div class="item-cab">${nivel}`).replace('<span class="selo">Decisão monocrática</span>', `<span class="selo">Decisão monocrática</span>${novo}`).replace('</div></li>', `${por}</div></li>`);
     return cardDjen(o, { por, novo, nivel });
@@ -3365,14 +3410,14 @@
         <div class="painel-filtros${vazioRadar ? "" : " fechado"}" id="rd-edit"><div>
           <div class="radar-forms">
             <div class="radar-bloco t-termos"><h3>Assunto</h3>
-              <form class="adicionar" data-lista="termos"><input placeholder='Ex.: "prescrição intercorrente"' aria-label="Novo assunto"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
+              <form class="adicionar" data-lista="termos"><input placeholder='${comSTJ() ? 'Ex.: "prescrição intercorrente"' : 'Ex.: "liberdade de expressão"'}' aria-label="Novo assunto"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
               <p class="nota">Aceita "expressão exata", e, ou, não, prescri* (todas as formas da palavra) e tema 1234.</p></div>
             <div class="radar-bloco t-procs"><h3>Processo</h3>
-              <form class="adicionar" data-lista="procs"><input placeholder="Ex.: REsp 2222623" aria-label="Novo processo"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
-              <p class="nota">Avisa quando entrar em pauta, tiver acórdão ou decisão monocrática.</p></div>
-            <div class="radar-bloco t-oabs"><h3>OAB</h3>
+              <form class="adicionar" data-lista="procs"><input placeholder="${comSTJ() ? "Ex.: REsp 2222623" : "Ex.: ADI 7903"}" aria-label="Novo processo"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
+              <p class="nota">${comSTJ() ? "Avisa quando entrar em pauta, tiver acórdão ou decisão monocrática." : "Avisa quando entrar em pauta ou for citado no Informativo do STF."}</p></div>
+            ${comSTJ() ? `<div class="radar-bloco t-oabs"><h3>OAB</h3>
               <form class="adicionar" data-lista="oabs"><input placeholder="Ex.: RS 12345" aria-label="Nova OAB"><button class="btn btn-pri" type="submit" aria-label="Adicionar">${ico("mais1")}</button></form>
-              <p class="nota">Mostra seus processos nas próximas pautas.</p></div>
+              <p class="nota">Mostra seus processos nas próximas pautas.</p></div>` : ""}
           </div>
           <div class="sugestoes" id="rd-sug"></div>
           <div class="acoes" style="margin-top:10px"><button type="button" class="btn btn-fant btn-peq" id="rd-link" title="Quem receber o link verá os termos, processos e OABs que você acompanha.">${ico("link")} Copiar link para usar em outro aparelho</button>
@@ -3388,7 +3433,7 @@
       </div>
       <div class="fd-filtros filtros-lista" id="rd-pil" hidden></div>
       <div id="rd-corpo" style="margin-top:6px"></div>`;
-    const SUGESTOES = ['"prescrição intercorrente"', '"plano de saúde"', '"dano moral" e "in re ipsa"', '"honorários advocatícios"', '"recuperação judicial"', '"alimentos"', '"bem de família"', '"execução fiscal"'];
+    const SUGESTOES = !comSTJ() ? ['"liberdade de expressão"', '"direito à saúde"', '"imunidade tributária"', '"improbidade administrativa"', '"ICMS"', '"servidor público"', '"tema 69"'] : ['"prescrição intercorrente"', '"plano de saúde"', '"dano moral" e "in re ipsa"', '"honorários advocatícios"', '"recuperação judicial"', '"alimentos"', '"bem de família"', '"execução fiscal"'];
     const ROT_K = { termos: "Assunto", procs: "Processo", oabs: "OAB" };
     const redesenharTags = () => {
       const tags = ["termos", "procs", "oabs"].flatMap((k) => P[k].map((v, i) => `<span class="tag t-${k}" title="${ROT_K[k]}">${esc(v)}<button type="button" data-rm="${k}|${i}" aria-label="Remover ${esc(v)}">${ico("x")}</button></span>`));
@@ -3426,7 +3471,7 @@
       { rot: "Prioridade", tipo: "um", get: () => F.nivel, set: (v) => (F.nivel = v), opcoes: () => [{ v: "", t: "Todas", n: contNv[""] }, { v: "novo", t: "Só novos", n: contNv.novo },
         { v: "alta", t: "Alta", n: contNv.alta, ponto: "alta" }, { v: "rel", t: "Relevante", n: contNv.rel, ponto: "rel" }, { v: "acomp", t: "Acompanhar", n: contNv.acomp, ponto: "acomp" }],
         nota: "Alta: tema em pauta ou movimentado há menos de 30 dias, processo seu em pauta ou acórdão de alta relevância. Relevante: tema em andamento, acórdão relevante ou publicado no seu processo." },
-      { rot: "Tipo", tipo: "varios", get: () => F.tipo, set: (v) => (F.tipo = v), opcoes: () => [{ v: "", t: "Tudo" }, ...[["tema", "Repetitivos"], ["acordao", "Acórdãos"], ["informativo", "Informativo"], ["pauta", "Pautas"], ["djen", "Publicações no DJEN"]].filter(([k]) => contTp[k]).map(([k, t]) => ({ v: k, t, n: contTp[k] }))] },
+      { rot: "Tipo", tipo: "varios", get: () => F.tipo, set: (v) => (F.tipo = v), opcoes: () => [{ v: "", t: "Tudo" }, ...[["tema", "Repetitivos"], ["temarg", "Repercussão geral"], ["acordao", "Acórdãos"], ["informativo", "Informativo"], ["infostf", "Informativo do STF"], ["sumstf", "Súmulas do STF"], ["pauta", "Pautas"], ["pautastf", "Pauta do STF"], ["djen", "Publicações no DJEN"]].filter(([k]) => contTp[k]).map(([k, t]) => ({ v: k, t, n: contTp[k] }))] },
       { rot: "Assunto", tipo: "varios", get: () => F.termo, set: (v) => (F.termo = v), opcoes: () => [{ v: "", t: "Todos" }, ...[...new Set(lista.map((x) => x.termo))].map((x) => ({ v: x, t: x }))] },
       { rot: "Matéria", tipo: "materia", get: () => F.area, set: (v) => (F.area = v), cont: () => contAr },
       defOrdem(() => F.s, (v) => (F.s = v), [{ v: "pri", t: "Prioridade" }, { v: "rec", t: "Mais recentes" }, { v: "termo", t: "Assunto acompanhado" }],
@@ -3445,7 +3490,7 @@
         return;
       }
       corpo.innerHTML = esqueleto();
-      const [t, pl] = await Promise.all([temas(), pautas()]);
+      const [t, pl] = comSTJ() ? await Promise.all([temas(), pautas()]) : [{ idx: new Map() }, []];
       lista = await calcularRadar();
       for (const it of lista) if (it.tipo === "pauta" && it.obj.temas?.length) { const [tp, n] = it.obj.temas[0]; it.temaObj = t.idx.get(`${tp}-${n}`); }
       void pl;
@@ -3477,6 +3522,7 @@
       }
       const sel = P.termos.includes(D.radarPan) ? D.radarPan : P.termos[0];
       corpo.innerHTML = esqueleto();
+      if (!comSTJ()) return renderPanoramaSTF(corpo, sel, false);
       const [t, ix, pl, inf, sm, jt] = await Promise.all([temas(), indice(), pautas(), informativos().catch(() => []), sumulas().catch(() => []), tesesJT().catch(() => [])]);
       const tm = /^tema\s*:?\s*(\d+)$/i.exec(sel.trim());
       const cons = tm ? null : Busca.compilar(sel);
@@ -3534,6 +3580,46 @@
         if (i >= 0 && !P.termos.includes(novo)) P.termos[i] = novo; D.radarPan = novo; salvarP(); redesenharTags(); renderPanorama(corpo); atualizarContadorRadar();
       });
       const ul = $("#pan-ac", corpo); if (ul) ligarCards(ul);
+      if (comSTF()) await renderPanoramaSTF(corpo, sel, true);
+    }
+    // Panorama do STF: teses fixadas, temas pendentes, súmulas e notas do Informativo sobre o assunto.
+    async function renderPanoramaSTF(corpo, sel, anexo) {
+      const [rg, sfs, isf, pS] = await Promise.all([temasRG().catch(() => []), sumulasSTF().catch(() => []), informativosSTF().catch(() => []), pautaSTF().catch(() => null)]);
+      const tm = /^tema\s*:?\s*(\d+)$/i.exec(sel.trim());
+      const cons = tm ? null : Busca.compilar(sel);
+      const hoje = hojeISO(), pautados = new Map((pS?.temas || []).filter((x) => x.fim >= hoje).map((x) => [x.tema, x]));
+      const temasA = rg.filter((x) => (tm ? x.n === +tm[1] : cons.testa(x._n)));
+      const firmadas = temasA.filter((x) => x.tese && x._g !== "cancelado").sort((a, b) => String(b.dtese || b._mov).localeCompare(String(a.dtese || a._mov)));
+      const pendentes = temasA.filter((x) => !x.tese && x._g === "andamento").sort((a, b) => (pautados.has(b.n) - pautados.has(a.n)) || String(b._mov).localeCompare(String(a._mov)));
+      const sums = tm ? [] : sfs.filter((x) => cons.testa(x._n)).sort((a, b) => (a._canc - b._canc) || b.n - a.n);
+      const infs = isf.filter((x) => (tm ? x.tema === +tm[1] : cons.testa(x._n))).sort((a, b) => String(b.d).localeCompare(String(a.d)));
+      const termos = tm ? [] : cons.termos, q = encodeURIComponent(sel);
+      const bloco = (id, tit, n, sub, conteudo, link) => `<section class="pan-bloco" id="pan-${id}">
+          <header><h3>${tit}</h3><span class="pan-n">${fmtInt(n)}</span>${sub ? `<span class="nota">${sub}</span>` : ""}${link && n ? `<a class="link-acao dir" href="${link}">Ver todos ${ico("seta")}</a>` : ""}</header>
+          ${n ? conteudo : `<p class="nota pan-nada">Nada encontrado nesta fonte.</p>`}</section>`;
+      const stat = (id, n, rot) => `<a class="pan-stat${n ? "" : " zero"}" href="#pan-${id}" data-pan-ir="${id}"><b>${fmtInt(n)}</b><span>${rot}</span></a>`;
+      const emPautaSel = (x) => (pautados.has(x.n) ? `<span class="selo alta">Em pauta ${fmtData(pautados.get(x.n).ini)}</span>` : "");
+      const corpoHTML = `
+        <div class="pan-stats">${stat("rgf", firmadas.length, "teses de repercussão geral fixadas")}${stat("rgp", pendentes.length, "temas com mérito pendente")}${stat("sf", sums.length, "súmulas do STF")}${stat("if", infs.length, "notas do Informativo do STF")}</div>
+        ${bloco("rgf", "Teses fixadas em repercussão geral", firmadas.length, "Têm observância obrigatória pelos demais órgãos do Judiciário.", `<ol class="lista">${firmadas.slice(0, 5).map((x) => linhaTema(x, "", termos)).join("")}</ol>`, `#repetitivos?q=${q}&sit=julgado`)}
+        ${bloco("rgp", "Temas com mérito pendente", pendentes.length, "Repercussão geral reconhecida e tese ainda não fixada.", `<ol class="lista">${pendentes.slice(0, 5).map((x) => linhaTema(x, emPautaSel(x), termos)).join("")}</ol>`, `#repetitivos?q=${q}&sit=andamento`)}
+        ${bloco("sf", "Súmulas do STF", sums.length, sums.some((x) => x._canc) ? "As canceladas ou superadas aparecem por último." : "", `<ol class="lista">${sums.slice(0, 5).map((x) => cardSumulaSTF(x, termos)).join("")}</ol>`, `#sumulas?q=${q}`)}
+        ${bloco("if", "Notas do Informativo do STF", infs.length, "Mais recentes primeiro.", `<ol class="lista-notas">${infs.slice(0, 4).map((x) => cardInfoSTF(x, termos)).join("")}</ol>`, `#infostf?q=${q}`)}`;
+      if (anexo) {
+        const alvo = document.createElement("div"); alvo.id = "pan-stf"; alvo.style.marginTop = "22px";
+        alvo.innerHTML = `<h2 class="jt-divisor">No STF</h2>${corpoHTML}`;
+        corpo.append(alvo);
+      } else {
+        corpo.innerHTML = `
+          ${P.termos.length > 1 ? `<div class="chips pan-termos" role="tablist">${P.termos.map((x) => `<button type="button" class="chip" role="tab" data-pan-t="${esc(x)}" aria-pressed="${x === sel}">${esc(x.replace(/"/g, ""))}</button>`).join("")}</div>` : ""}
+          <div class="card card-pad pan-resumo">
+            <p class="sobretitulo">Panorama do assunto</p>
+            <h2 class="pan-tit">${esc(sel.replace(/"/g, ""))}</h2>
+            <p class="nota">${tm ? `Tudo o que se refere ao Tema ${tm[1]} da repercussão geral.` : `O radar procura ${esc(cons.explicacao)} nos temas de repercussão geral, nas súmulas e no Informativo do STF. Use aspas para expressão exata.`}</p>
+          </div>${corpoHTML}`;
+        $$("[data-pan-t]", corpo).forEach((b) => b.addEventListener("click", () => { D.radarPan = b.dataset.panT; renderPanoramaSTF(corpo, b.dataset.panT, false); }));
+      }
+      $$("[data-pan-ir]", corpo).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); $(`#pan-${a.dataset.panIr}`, corpo)?.scrollIntoView({ behavior: "smooth", block: "start" }); }));
     }
     render();
   }
@@ -4742,14 +4828,25 @@
     prox: { rot: "Temas em pauta", selo: "Em pauta", cls: "alta", longo: "Temas repetitivos em pauta na semana seguinte" },
     proxc: { rot: "Controvérsias em pauta", selo: "Em pauta", cls: "alta", longo: "Controvérsias e outros precedentes em pauta na semana seguinte" },
   };
+  const TIPOS_SEM_STF = {
+    rteses: { rot: "Teses fixadas (STF)", selo: "Tese fixada · STF", cls: "ok", longo: "Teses fixadas em repercussão geral" },
+    rrec: { rot: "Repercussão geral reconhecida", selo: "Repercussão geral", cls: "rel", longo: "Temas com repercussão geral reconhecida" },
+    rinfo: { rot: "Informativo do STF", selo: "Informativo STF", cls: "info", longo: "Notas do Informativo do STF" },
+    rsum: { rot: "Súmulas do STF", selo: "Súmula · STF", cls: "acomp", longo: "Súmulas e súmulas vinculantes aprovadas" },
+    rprox: { rot: "Temas em pauta (STF)", selo: "Em pauta · STF", cls: "alta", longo: "Temas de repercussão geral em pauta na semana seguinte" },
+  };
   async function vSemana(main, p) {
+    const TIPOS = { ...(comSTJ() ? TIPOS_SEM : {}), ...(comSTF() ? TIPOS_SEM_STF : {}) };
     const hoje = hojeISO(), esta = segundaDe(hoje);
     const ini = segundaDe(/^\d{4}-\d{2}-\d{2}$/.test(p.get("s") || "") ? p.get("s") : hoje), fim = somaDias(ini, 6);
-    const f = { a: p.get("a") || "", tp: (p.get("tp") || "").split(",").filter((x) => TIPOS_SEM[x]), g: p.get("g") || "tipo" };
-    const [t, pl, inf, sm, fj] = await Promise.all([temas(), pautas(), informativos().catch(() => []), sumulas().catch(() => []), feedJulgados().catch(() => [])]);
+    const f = { a: p.get("a") || "", tp: (p.get("tp") || "").split(",").filter((x) => TIPOS[x]), g: p.get("g") || "tipo" };
+    const semSTJ = comSTJ() ? await Promise.all([temas(), pautas(), informativos().catch(() => []), sumulas().catch(() => []), feedJulgados().catch(() => [])]) : [Object.assign([], { idx: new Map() }), [], [], [], []];
+    const [t, pl, inf, sm, fj] = semSTJ;
+    const [rg, sfs, isf, pS] = comSTF() ? await Promise.all([temasRG().catch(() => []), sumulasSTF().catch(() => []), informativosSTF().catch(() => []), pautaSTF().catch(() => null)]) : [[], [], [], [], null];
     // Todas as novidades de uma semana, no mesmo formato.
     function novidades(i0) {
       const i1 = somaDias(i0, 6), na = (d) => d && d >= i0 && d <= i1, out = [];
+      if (comSTJ()) {
       for (const x of t) {
         if (x.tp === "Tema" && na(x.julg) && (x.tese || x._teseAguarda)) out.push({ tp: x.tese ? "teses" : "julgtema", d: x.julg, ds: [["Julgado", x.julg], ["Acórdão publicado", x.pub], ["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.tese ? limparTeseTxt(x.tese) : "Julgado; a tese será divulgada com a publicação do acórdão.", m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, ab: `t:${x.n}`, txt: `${x.tp} ${x.n}/STJ: ${x.tese || "julgado; tese a publicar"}` });
         if (na(x.afet) && x.q) out.push({ tp: "afet", d: x.afet, ds: [["Afetado", x.afet]], ar: x.ar, sa: x.sa, k: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}`, t: x.q, m: `${x.tp} ${fmtNumProc(x.n)} · ${x.org || ""}${/suspens/i.test(x.info || "") ? " · com suspensão de processos" : ""}`, ab: `t:${x.tp}|${x.n}`, txt: `${x.tp} ${x.n}/STJ (afetado): ${x.q}` });
@@ -4777,6 +4874,21 @@
         out.push({ tp: tt.tp === "Tema" ? "prox" : "proxc", d: g.d, ds: [["Sessão", g.d], ["Afetado", tt.afet]], ar: tt.ar, sa: tt.sa, k: `${tt.tp} ${fmtNumProc(tt.n)} · ${D.orgaos[g.o] || tt.org || ""}`, t: tt.q || "", m: `${procs.join(", ")} · ${fmtDiaL(g.d)}`, ab: `t:${tt.tp}|${tt.n}`,
           vinc: outros.map((o) => ({ ab: `t:${o.tp}|${o.n}`, rot: `${o.tp} ${fmtNumProc(o.n)}` })),
           txt: `${tt.tp} ${tt.n}/STJ${outros.length ? ` (também ${outros.map((o) => `${o.tp} ${o.n}`).join(", ")})` : ""}, em pauta em ${fmtData(g.d)} (${procs.join(", ")}): ${tt.q || ""}` });
+      }
+      }
+      if (comSTF()) {
+        const orgTema = (x) => ORG_STF[x.o] || x.o || "";
+        for (const x of rg) {
+          const nome = `Tema ${fmtNumProc(x.n)}/STF${x.lc ? ` · ${x.lc}` : ""}`;
+          if (na(x.dtese) && x.tese) out.push({ tp: "rteses", d: x.dtese, ds: [["Tese fixada", x.dtese]], ar: x.ar, sa: x.sa, k: nome, t: x.tese, m: nome, ab: `r:${x.n}`, txt: `Tema ${x.n}/STF, tese fixada em ${fmtData(x.dtese)}: ${x.tese}` });
+          if (na(x.rgd) && x.rgs === "sim" && x.q) out.push({ tp: "rrec", d: x.rgd, ds: [["Repercussão geral reconhecida", x.rgd]], ar: x.ar, sa: x.sa, k: nome, t: x.q, m: nome, ab: `r:${x.n}`, txt: `Tema ${x.n}/STF, repercussão geral reconhecida em ${fmtData(x.rgd)}: ${x.q}` });
+        }
+        for (const x of isf) if (na(x.d)) out.push({ tp: "rinfo", d: x.d, ds: [["Informativo", x.d]], ar: x.ar, sa: x.sa, k: x.t, t: x._res || (x.r || [])[0] || "", m: `Informativo STF ${x.n}${x.p ? ` · ${x.p}` : ""}`, ab: `f:${x.id}`, txt: `Informativo STF ${x.n}: ${x.t}` });
+        for (const x of sfs) if (na(x.data)) out.push({ tp: "rsum", d: x.data, ds: [[x.datat === "publicação" ? "Publicada" : "Aprovada", x.data]], ar: x.ar, sa: x.sa, k: `${x._rot}/STF`, t: x.t, m: `${x._rot}/STF`, ab: `u:${x._k}`, txt: `${x._rot}/STF: ${x.t}` });
+        for (const x of pS?.temas || []) if (x.ini <= somaDias(i1, 7) && x.fim > i1) {
+          const tm = rg.find((r) => r.n === x.tema);
+          out.push({ tp: "rprox", d: x.ini, ds: [["Sessão", x.ini]], ar: tm?.ar, sa: tm?.sa, k: `Tema ${fmtNumProc(x.tema)}/STF · ${orgTema(x)}`, t: tm?.q || `${x.cl} ${x.num}`, m: `Paradigma: ${x.cl} ${x.num}${tm?.rel ? ` · rel. ${tm.rel}` : ""}`, ab: `r:${x.tema}`, txt: `Tema ${x.tema}/STF, em pauta (${orgTema(x)}, sessão ${x.amb}: ${periodoSTF(x.ini, x.fim)}): ${tm?.q || ""}` });
+        }
       }
       return out;
     }
@@ -4806,7 +4918,7 @@
       datas: "uma", rotData: "Qualquer dia da semana desejada", max: hoje, rotAtalhos: "Semanas recentes", vertical: true,
       get: () => ini, set: (v) => { location.hash = `#semana?s=${segundaDe(v)}${f.a ? `&a=${f.a}` : ""}${f.tp.length ? `&tp=${f.tp.join(",")}` : ""}${f.g !== "tipo" ? `&g=${f.g}` : ""}`; },
       opcoes: () => semanas.map((w) => ({ v: w, t: `${w === esta ? "Esta semana · " : ""}${intervalo(w)}`, n: contSem.get(w) })) }], () => {});
-    const linha = (it) => { const tp = TIPOS_SEM[it.tp], a = (it.ar || [])[0];
+    const linha = (it) => { const tp = TIPOS[it.tp], a = (it.ar || [])[0];
       const datas = (it.ds || []).filter(([, d]) => d).map(([r, d]) => `<span><b>${esc(r)}</b> ${fmtData(d)}</span>`).join("");
       return `<li class="ncard ncard-sem" style="--h:${AREA_COR[a] ?? 222}"><div class="nota-cab"><span class="selo ${tp.cls}">${tp.selo}</span>${seloMat(it.ar, it.sa)}</div>
         ${datas ? `<div class="nota-datas">${datas}</div>` : ""}
@@ -4821,10 +4933,10 @@
       cA = contarMat(todos.filter((x) => !f.tp.length || f.tp.includes(x.tp)), (x) => x.ar, (x) => x.sa);
       const contT = {}; porMat.forEach((x) => (contT[x.tp] = (contT[x.tp] || 0) + 1));
       vis = porMat.filter((x) => !f.tp.length || f.tp.includes(x.tp));
-      $("#sem-resumo").innerHTML = Object.entries(TIPOS_SEM).filter(([k]) => contT[k]).map(([k, v]) => `<button type="button" class="capa-bloco ${v.cls}" data-sem-tp="${k}" aria-pressed="${f.tp.includes(k)}"><b>${fmtInt(contT[k])}</b><span>${v.longo}</span></button>`).join("");
+      $("#sem-resumo").innerHTML = Object.entries(TIPOS).filter(([k]) => contT[k]).map(([k, v]) => `<button type="button" class="capa-bloco ${v.cls}" data-sem-tp="${k}" aria-pressed="${f.tp.includes(k)}"><b>${fmtInt(contT[k])}</b><span>${v.longo}</span></button>`).join("");
       pil.desenhar();
       let grupos = [];
-      if (f.g === "tipo") grupos = Object.entries(TIPOS_SEM).map(([k, v]) => ({ tit: v.longo, cls: v.cls, itens: vis.filter((x) => x.tp === k).sort((a, b) => (b.s || 0) - (a.s || 0) || b.d.localeCompare(a.d)) }));
+      if (f.g === "tipo") grupos = Object.entries(TIPOS).map(([k, v]) => ({ tit: v.longo, cls: v.cls, itens: vis.filter((x) => x.tp === k).sort((a, b) => (b.s || 0) - (a.s || 0) || b.d.localeCompare(a.d)) }));
       if (f.g === "mat") grupos = [...Object.keys(AREAS), ""].map((a) => ({ tit: AREAS[a] || "Sem matéria identificada", h: AREA_COR[a], itens: vis.filter((x) => ((x.ar || [])[0] || "") === a) }));
       if (f.g === "dia") { const dias = [...new Set(vis.map((x) => x.d))].sort().reverse(); grupos = dias.map((d) => ({ tit: fmtDiaL(d).replace(/^./, (c) => c.toUpperCase()), itens: vis.filter((x) => x.d === d) })); }
       grupos = grupos.filter((g) => g.itens.length);
@@ -4837,7 +4949,7 @@
     }
     const pil = pilulas($("#sem-pil"), [
       { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => cA },
-      { rot: "Tipo", titulo: "Tipo de novidade", tipo: "multi", get: () => f.tp, set: (v) => (f.tp = v), opcoes: () => Object.entries(TIPOS_SEM).map(([k, v]) => ({ v: k, t: v.rot, n: todos.filter((x) => x.tp === k && casaMat(f.a, x.ar, x.sa)).length })) },
+      { rot: "Tipo", titulo: "Tipo de novidade", tipo: "multi", get: () => f.tp, set: (v) => (f.tp = v), opcoes: () => Object.entries(TIPOS).map(([k, v]) => ({ v: k, t: v.rot, n: todos.filter((x) => x.tp === k && casaMat(f.a, x.ar, x.sa)).length })) },
       defOrdem(() => f.g, (v) => (f.g = v), [{ v: "tipo", t: "Tipo de novidade" }, { v: "mat", t: "Matéria" }, { v: "dia", t: "Dia" }], "Escolha como agrupar as novidades da semana."),
     ], desenhar);
     $("#sem-resumo").addEventListener("click", (e) => { const b = e.target.closest("[data-sem-tp]"); if (!b) return; const k = b.dataset.semTp; f.tp = f.tp.includes(k) ? f.tp.filter((x) => x !== k) : [...f.tp, k]; desenhar(); });
@@ -4846,14 +4958,17 @@
       if (ler) { const tt = ler.closest(".ncard").querySelector(".nota-tese"); tt.classList.toggle("aberta"); ler.textContent = tt.classList.contains("aberta") ? "Recolher" : "Continuar lendo"; return; }
       const b = e.target.closest("[data-sem]"); if (!b) return;
       const [k, v] = [b.dataset.sem.slice(0, 1), b.dataset.sem.slice(2)];
+      if (k === "r") abrirTemaRG(+v);
+      if (k === "f") abrirInfoSTF(v);
+      if (k === "u") abrirSumulaSTF(v);
       if (k === "t") { const [tp, n] = v.includes("|") ? v.split("|") : ["Tema", v]; abrirTema(tp, +n); }
       if (k === "s") abrirSumula(+v);
       if (k === "i") { const l = await informativos(); abrirInformativo(l.idx.get(v)); }
       if (k === "a") { const r = fj.find((x) => String(x.id) === v); if (r) abrirAcordao(r); }
     });
     $("#sem-copiar").addEventListener("click", () => {
-      const tipos = Object.keys(TIPOS_SEM).filter((k) => vis.some((x) => x.tp === k));
-      const txt = [`Resumo do STJ — semana de ${intervalo(ini)}${f.a ? ` (${rotMat(f.a)})` : ""}`, ...tipos.map((k) => { const its = vis.filter((x) => x.tp === k); return `\n${TIPOS_SEM[k].longo.toUpperCase()} (${its.length})\n${its.slice(0, 12).map((it) => `• ${it.txt}${(it.ds || []).filter(([, d]) => d).length ? ` [${it.ds.filter(([, d]) => d).map(([r, d]) => `${r.toLowerCase()} em ${fmtData(d)}`).join("; ")}]` : ""}`).join("\n")}${its.length > 12 ? `\n• e mais ${its.length - 12}` : ""}`; }), `\nFonte: Radar STJ — ${location.href}`].join("\n");
+      const tipos = Object.keys(TIPOS).filter((k) => vis.some((x) => x.tp === k));
+      const txt = [`Resumo ${comSTJ() && comSTF() ? "do STJ e do STF" : comSTF() ? "do STF" : "do STJ"} — semana de ${intervalo(ini)}${f.a ? ` (${rotMat(f.a)})` : ""}`, ...tipos.map((k) => { const its = vis.filter((x) => x.tp === k); return `\n${TIPOS[k].longo.toUpperCase()} (${its.length})\n${its.slice(0, 12).map((it) => `• ${it.txt}${(it.ds || []).filter(([, d]) => d).length ? ` [${it.ds.filter(([, d]) => d).map(([r, d]) => `${r.toLowerCase()} em ${fmtData(d)}`).join("; ")}]` : ""}`).join("\n")}${its.length > 12 ? `\n• e mais ${its.length - 12}` : ""}`; }), `\nFonte: Radar STJ — ${location.href}`].join("\n");
       copiar(txt, "Resumo copiado. Cole no e-mail ou no WhatsApp.");
     });
     $("#sem-imprimir").addEventListener("click", () => window.print());
@@ -5358,7 +5473,7 @@
     if (ini <= h) return `<span class="selo alta">Em julgamento</span>`;
     return `<span class="selo pri">Pautado</span>`;
   }
-  async function vPautaSTF(main) {
+  async function vPautaSTF(main, p = new URLSearchParams()) {
     const [d, l] = await Promise.all([pautaSTF(), temasRG().catch(() => null)]);
     if (!d) { main.innerHTML = vazio("pautas", "Pauta do STF ainda sem dados", "A pauta será publicada na próxima coleta do registro do STF."); return; }
     const h = hojeISO();
@@ -5381,27 +5496,67 @@
         <p class="nota">${x.rel ? `Rel. Min. ${esc(x.rel)}` : ""}${x.vista ? ` · vista: Min. ${esc(x.vista)}` : ""}${x.dest ? ` · destaque: Min. ${esc(x.dest)}` : ""}</p>
         ${x.res ? `<p class="pt-res">${esc(x.res.replace(/^1\.\s*/, ""))}</p>` : ""}
       </li>`;
+    const f = { q: p.get("q") || "", o: p.get("o") || "", rl: p.get("rl") || "", d: p.get("d") || "", rg: p.get("rg") === "1", s: p.get("s") || "prox" };
+    const todosItens = pres.flatMap((x) => x.itens || []);
+    const relatores = [...new Set([...temasP.map((x) => l?.idx.get(`RG-${x.tema}`)?.rel), ...todosItens.map((x) => x.rel)].filter((r) => r && !/Presid/i.test(r)))].sort((a, b) => norm(a).localeCompare(norm(b)));
+    const diasSessao = [...new Set([...pres.map((x) => x.d)])].sort();
     main.innerHTML = `
       <div class="card card-pad cp-topo"><div>
         <p class="sobretitulo">Pauta conferida em ${fmtData(d.conferido)}</p>
         <h2 class="cp-tit">Pauta de julgamentos do STF</h2>
         <p class="nota">Conforme a <a href="${URL_STF.pauta}" target="_blank" rel="noopener">pauta oficial do STF ${ico("externo")}</a>, conferida duas vezes por semana. A pauta muda com frequência (inclusões, retiradas, pedidos de vista e destaque); confirme no site do Tribunal antes de agir.</p>
       </div></div>
-      <h3 class="sec-tit">Temas de repercussão geral em pauta</h3>
-      <p class="nota" style="margin:0 0 10px">Temas ainda sem tese cujo paradigma está pautado, inclusive em sessão virtual.</p>
-      ${temasP.length ? `<ul class="lista">${temasP.map(cartaoTema).join("")}</ul>` : `<p class="nota">Nenhum tema pendente pautado no período.</p>`}
-      <h3 class="sec-tit">Sessões presenciais</h3>
-      ${pres.length ? pres.map((x) => `<div class="card card-pad pt-sessao">
-          <p class="pt-cab"><b>${esc(x.nome || ORG_STF[x.o] || x.o)}</b> · ${fmtData(x.d)} (${diaSemana(x.d)})${x.ini.length > 10 ? `, ${esc(x.ini.slice(11, 16))}` : ""}${x.tipo ? ` · sessão ${esc(x.tipo)}` : ""}${x.num ? ` nº ${esc(x.num)}` : ""} ${situacaoPauta(x.d, x.d)}</p>
-          ${x.obs ? `<p class="nota">${esc(x.obs)}</p>` : ""}
-          <ol class="pt-lista">${x.itens.map(item).join("")}</ol>
-          <p class="nota"><a href="${esc(linkDia(x.d))}" target="_blank" rel="noopener">Pauta do dia no site do STF ${ico("externo")}</a></p>
-        </div>`).join("") : `<p class="nota">Nenhuma sessão presencial com pauta publicada no período.</p>`}
-      <h3 class="sec-tit">Sessões virtuais</h3>
-      ${virt.length ? `<div class="card card-pad"><table class="tab-fontes"><thead><tr><th>Período</th><th>Plenário</th><th>1ª Turma</th><th>2ª Turma</th><th></th></tr></thead><tbody>
-          ${virt.map((v) => `<tr><td>${periodoSTF(v.ini, v.fim)} ${situacaoPauta(v.ini, v.fim)}</td><td>${fmtInt(v.TP)}</td><td>${fmtInt(v["1T"])}</td><td>${fmtInt(v["2T"])}</td><td>${linkVirt(v) ? `<a href="${esc(linkVirt(v))}" target="_blank" rel="noopener">Lista ${ico("externo")}</a>` : ""}</td></tr>`).join("")}
-        </tbody></table><p class="nota">Número de processos em cada sessão virtual. A lista completa fica no site do STF.</p></div>` : `<p class="nota">Nenhuma sessão virtual futura no calendário.</p>`}`;
-    $$("[data-tema-rg]", main).forEach((b) => b.addEventListener("click", () => abrirTemaRG(+b.dataset.temaRg)));
+      <div id="ps-f" class="bloco-filtros" style="margin-top:14px">
+        ${campoBusca("ps-q", 'Processo, relator ou tema. Ex.: "ADI 7903" ou "tema 1234"', f.q)}
+        <div class="fd-filtros filtros-lista" id="ps-pil"></div>
+      </div>
+      <div class="barra-res"><p id="ps-info" aria-live="polite"></p></div>
+      <div id="ps-corpo"></div>`;
+    const corpo = $("#ps-corpo", main);
+    const desenhar = () => {
+      f.q = $("#ps-q").value.trim();
+      gravarHash("pautastf", { ...f, s: f.s === "prox" ? "" : f.s });
+      const qN = norm(f.q), qD = digitos(f.q), rls = listaV(f.rl).map(norm);
+      const temQ = (txt) => !qN || norm(txt).includes(qN) || (!!qD && /^\d+$/.test(f.q.replace(/[\s.\/-]/g, "")) && digitos(txt).includes(qD));
+      const ordRel = (a, b) => norm(a || "").localeCompare(norm(b || ""));
+      let tp = temasP.filter((x) => { const t = l?.idx.get(`RG-${x.tema}`); return (!f.o || x.o === f.o) && (!rls.length || rls.includes(norm(t?.rel || ""))) && (!f.d || (x.ini <= f.d && x.fim >= f.d))
+        && temQ(`${x.cl} ${x.num} tema ${x.tema} ${t?.q || ""} ${t?.rel || ""}`); });
+      if (f.s === "rela") tp = tp.slice().sort((a, b) => ordRel(l?.idx.get(`RG-${a.tema}`)?.rel, l?.idx.get(`RG-${b.tema}`)?.rel));
+      let ps = pres.filter((x) => (!f.o || x.o === f.o) && (!f.d || x.d === f.d)).map((x) => {
+        let its = (x.itens || []).filter((it) => (!rls.length || rls.includes(norm(it.rel || ""))) && (!f.rg || it.tema || it.rg) && temQ(`${it.cl} ${it.num} ${it.rel || ""} ${it.res || ""} ${it.tema ? "tema " + it.tema : ""}`));
+        if (f.s === "rela") its = its.slice().sort((a, b) => ordRel(a.rel, b.rel));
+        return { ...x, itens: its };
+      }).filter((x) => x.itens.length);
+      const filtrando = !!(f.q || f.o || f.rl || f.d || f.rg);
+      const nIt = ps.reduce((n, x) => n + x.itens.length, 0);
+      $("#ps-info").innerHTML = `<b>${fmtInt(tp.length)}</b> tema(s) de repercussão geral e <b>${fmtInt(nIt)}</b> processo(s) em sessões presenciais${f.rg ? " · só repercussão geral" : ""}`;
+      corpo.innerHTML = `
+        <h3 class="sec-tit">Temas de repercussão geral em pauta</h3>
+        <p class="nota" style="margin:0 0 10px">Temas ainda sem tese cujo paradigma está pautado, inclusive em sessão virtual.</p>
+        ${tp.length ? `<ul class="lista">${tp.map(cartaoTema).join("")}</ul>` : `<p class="nota">${filtrando ? "Nenhum tema encontrado com esses filtros." : "Nenhum tema pendente pautado no período."}</p>`}
+        <h3 class="sec-tit">Sessões presenciais</h3>
+        ${ps.length ? ps.map((x) => `<div class="card card-pad pt-sessao">
+            <p class="pt-cab"><b>${esc(x.nome || ORG_STF[x.o] || x.o)}</b> · ${fmtData(x.d)} (${diaSemana(x.d)})${x.ini.length > 10 ? `, ${esc(x.ini.slice(11, 16))}` : ""}${x.tipo ? ` · sessão ${esc(x.tipo)}` : ""}${x.num ? ` nº ${esc(x.num)}` : ""} ${situacaoPauta(x.d, x.d)}</p>
+            ${x.obs ? `<p class="nota">${esc(x.obs)}</p>` : ""}
+            <ol class="pt-lista">${x.itens.map(item).join("")}</ol>
+            <p class="nota"><a href="${esc(linkDia(x.d))}" target="_blank" rel="noopener">Pauta do dia no site do STF ${ico("externo")}</a></p>
+          </div>`).join("") : `<p class="nota">${filtrando ? "Nenhum processo encontrado com esses filtros." : "Nenhuma sessão presencial com pauta publicada no período."}</p>`}
+        ${filtrando ? "" : `<h3 class="sec-tit">Sessões virtuais</h3>
+        ${virt.length ? `<div class="card card-pad"><table class="tab-fontes"><thead><tr><th>Período</th><th>Plenário</th><th>1ª Turma</th><th>2ª Turma</th><th></th></tr></thead><tbody>
+            ${virt.map((v) => `<tr><td>${periodoSTF(v.ini, v.fim)} ${situacaoPauta(v.ini, v.fim)}</td><td>${fmtInt(v.TP)}</td><td>${fmtInt(v["1T"])}</td><td>${fmtInt(v["2T"])}</td><td>${linkVirt(v) ? `<a href="${esc(linkVirt(v))}" target="_blank" rel="noopener">Lista ${ico("externo")}</a>` : ""}</td></tr>`).join("")}
+          </tbody></table><p class="nota">Número de processos em cada sessão virtual. A lista completa fica no site do STF.</p></div>` : `<p class="nota">Nenhuma sessão virtual futura no calendário.</p>`}`}`;
+      $$("[data-tema-rg]", corpo).forEach((b) => b.addEventListener("click", () => abrirTemaRG(+b.dataset.temaRg)));
+    };
+    pilulas($("#ps-pil"), [
+      { rot: "Só repercussão geral", tipo: "toggle", get: () => f.rg, set: (v) => (f.rg = v), dica: "Processos de sessões presenciais ligados a temas de repercussão geral." },
+      { rot: "Data", tipo: "varios", vertical: true, get: () => f.d, set: (v) => (f.d = v), titulo: "Data da sessão", opcoes: () => [{ v: "", t: "Todas as datas" }, ...diasSessao.map((x) => ({ v: x, t: fmtDiaL(x) }))] },
+      { rot: "Órgão", tipo: "varios", vertical: true, get: () => f.o, set: (v) => (f.o = v), opcoes: () => [{ v: "", t: "Todos os órgãos" }, ...["TP", "1T", "2T"].map((k) => ({ v: k, t: ORG_STF[k] || k }))] },
+      { rot: "Relator", titulo: "Relator(a)", tipo: "varios", vertical: true, busca: "Buscar ministro(a)", get: () => f.rl, set: (v) => (f.rl = v),
+        opcoes: () => [{ v: "", t: "Todos os relatores" }, ...relatores.map((r) => ({ v: r, t: relatorFmt(r) }))] },
+      defOrdem(() => f.s, (v) => (f.s = v), [{ v: "prox", t: "Sessão mais próxima" }, { v: "rela", t: "Relator(a)" }], "As sessões ficam sempre agrupadas por dia; a ordem escolhida vale dentro de cada sessão."),
+    ], desenhar);
+    $("#ps-q").addEventListener("input", debounce(desenhar, 250));
+    desenhar();
   }
   async function vInfoSTF(main, p) {
     const [rec, ix] = await Promise.all([informativosSTF(), infoSTFIndice()]);
@@ -5560,6 +5715,8 @@
     const [t, pt, pl] = await Promise.all([precedentes(), comSTJ() ? procTemas() : vazioPT, comSTJ() ? pautas() : []]);
     const emPauta = temasEmPauta(pl);
     const soSTF = trib() === "stf";
+    // Temas de repercussão geral pautados (sessões presenciais ou virtuais do STF) entram no mesmo mapa.
+    if (comSTF()) { const pS = await pautaSTF(); for (const x of pS?.temas || []) if (x.fim >= hojeISO()) { const k = `RG-${x.tema}`; if (!emPauta.has(k)) emPauta.set(k, []); emPauta.get(k).push({ d: x.ini }); } }
     // Tipo padrão: temas repetitivos (STJ), temas de repercussão geral (STF) ou os dois.
     const TIPO0 = soSTF ? "" : ambos() ? "Tema|RG" : "Tema";
     const ufs = new Map();
@@ -5593,7 +5750,7 @@
       const qT = f.q.trim().replace(/^(tema|controv[eé]rsia|iac)\s*/i, "").replace(/\s*\/?\s*(stj|stf|rg)$/i, "").replace(/\./g, ""); const numero = /^\d+$/.test(qT) ? +qT : null;
       const c = numero != null ? Busca.compilar("") : Busca.compilar(f.q); termos = c.termos;
       const base = t.filter((x) => temV(f.tipo, x.tp) && temV(f.org, x.org) && (!f.uf || listaV(f.uf).some((u) => ufs.get(`${x.tp}-${x.n}`)?.has(u)))
-        && (!f.susp || /suspens/i.test(x.info || "")) && (!f.pauta || emPauta.has(`${x.tp}-${x.n}`)) && (!f.rel || norm(x.rel || "") === norm(f.rel))
+        && (!f.susp || /suspens/i.test(x.info || "")) && (!f.pauta || emPauta.has(`${x.tp}-${x.n}`)) && (!f.rel || listaV(f.rel).some((r) => norm(r) === norm(x.rel || "")))
         && (numero != null ? x.n === numero : c.testa(x._n)));
       ca = contarMat(base, (x) => x.ar, (x) => x.sa);
       const b2 = base.filter((x) => casaMat(f.a, x.ar, x.sa));
@@ -5602,7 +5759,7 @@
       // Nos temas de repercussão geral, a "afetação" é o reconhecimento da repercussão geral e o julgamento, a fixação da tese.
       const porData = (k, k2) => (a, b) => (b[k] || b[k2] || "").localeCompare(a[k] || a[k2] || "") || b.n - a.n;
       lista.sort({ num: (a, b) => b.n - a.n, numc: (a, b) => a.n - b.n, afet: porData("afet", "rgd"), julg: porData("julg", "dtese") }[f.s] || porData("_mov"));
-      $("#rp-info").innerHTML = `<b>${fmtInt(lista.length)}</b> registro(s) ${f.rel ? `com manifestação de ${esc(f.rel)} <button type="button" class="link-acao" id="rp-rel-x">${ico("x")} tirar</button> ` : ""}${explicacaoHTML(c)}`;
+      $("#rp-info").innerHTML = `<b>${fmtInt(lista.length)}</b> registro(s) ${f.rel ? `${soSTF ? "com relatoria de" : "com manifestação de"} ${esc(listaV(f.rel).join(", "))} <button type="button" class="link-acao" id="rp-rel-x">${ico("x")} tirar</button> ` : ""}${explicacaoHTML(c)}`;
       $("#rp-rel-x")?.addEventListener("click", () => { f.rel = ""; aplicar(); });
       render(true);
     };
@@ -5612,6 +5769,10 @@
         { v: "julgado", t: soSTF ? "Com tese fixada" : "Julgados", n: cont.julgado, ponto: "ok" }, ...(comSTF() ? [{ v: "semrg", t: "Sem repercussão geral", n: cont.semrg, ponto: "canc" }] : []), { v: "cancelado", t: "Cancelados/revisados", n: cont.cancelado, ponto: "canc" }],
         nota: comSTF() ? "Na repercussão geral, “em andamento” reúne os temas com repercussão geral reconhecida e mérito ainda pendente; “sem repercussão geral”, aqueles em que o STF a negou (em geral, por ser a questão infraconstitucional)." : "" },
       { rot: "Matéria", tipo: "materia", get: () => f.a, set: (v) => (f.a = v), cont: () => ca },
+      ...(soSTF ? [
+        { rot: "Relator", titulo: "Relator(a)", tipo: "varios", vertical: true, busca: "Buscar ministro(a)", get: () => f.rel, set: (v) => (f.rel = v),
+          opcoes: () => [{ v: "", t: "Todos os relatores" }, ...[...new Set(t.map((x) => x.rel).filter(Boolean))].sort((a, b) => norm(a).localeCompare(norm(b))).map((r) => ({ v: r, t: /Presid/i.test(r) ? r : relatorFmt(r), n: t.filter((x) => x.rel === r).length }))] },
+        { rot: "Em pauta", tipo: "toggle", get: () => f.pauta, set: (v) => (f.pauta = v), dica: "Só temas pautados nas próximas sessões do STF, presenciais ou virtuais." }] : []),
       ...(soSTF ? [] : [{ rot: "Tipo", titulo: "Tipo de precedente", tipo: "varios", vertical: true, padrao: TIPO0, semLimpar: true, get: () => f.tipo, set: (v) => (f.tipo = v), rotAtual: () => (ambos() ? "Repetitivos e repercussão geral" : "Temas repetitivos"), rotTodos: "Todos os tipos",
         opcoes: () => [{ v: "", t: "Todos os tipos" }, { v: "Tema", t: "Temas repetitivos (STJ)" }, ...(ambos() ? [{ v: "RG", t: "Repercussão geral (STF)" }] : []), { v: "Controvérsia", t: "Controvérsias" }, { v: "IAC", t: "IAC" }, { v: "SIRDR", t: "SIRDR" }, { v: "PUIL", t: "PUIL" }],
         nota: `<b>Tema repetitivo</b>: questão decidida pelo rito dos recursos repetitivos, com tese vinculante. ${ambos() ? "<b>Repercussão geral</b>: tema constitucional julgado pelo STF em recurso extraordinário, com tese de observância obrigatória. " : ""}<b>Controvérsia</b>: questão em triagem, ainda não afetada. <b>IAC</b>: incidente de assunção de competência. <b>SIRDR</b>: suspensão nacional em IRDR. <b>PUIL</b>: pedido de uniformização de interpretação de lei.` },
@@ -6106,6 +6267,7 @@
   const VERSAO = "2026.10.02";
   const NOVIDADES = [
     ["2026-10-02", [
+      "STF mais próximo do STJ: o Resumo da semana e o Meu radar (assuntos e números de processos, com Panorama e Novidades) agora também funcionam no STF; a repercussão geral ganhou filtros por relator e por temas em pauta; a Pauta do STF ganhou busca e filtros por órgão, relator, data e repercussão geral; e o Painel do STF passou a ter a aba Meu radar. Os contatos dos gabinetes ficam dentro de Composição, ao final da lista de ministros, sem aba separada.",
       "Citação pronta para a peça nos temas: os botões “Copiar tese e citação” e “Copiar só a citação” (repercussão geral do STF e repetitivos do STJ) geram a referência com tribunal, tema, órgão, relator e datas, e os temas salvos também podem ser copiados com a citação.",
       "Aviso na Visão geral quando a coleta dos dados do STF atrasa (mais de cinco dias sem atualização), com a data da última coleta e o caminho para a situação de cada fonte. A rotina diária também passa a falhar, com e-mail do GitHub, se o registro do STF ficar desatualizado.",
       "Carregamento mais leve: a relação entre acórdãos e repetitivos (cerca de 3,5 MB) só é baixada quando o usuário se aproxima das telas que a usam, e imagens e fontes passam a ficar guardadas no navegador entre visitas.",
@@ -6113,7 +6275,7 @@
       "Visão geral com destaques em cartões grandes, que passam sozinhos: no STF, as notícias oficiais do Tribunal com as fotos publicadas por ele, as teses fixadas e os temas em pauta, com a foto do relator; no STJ, teses de repetitivos, destaques do mês e temas em pauta.",
     ]],
     ["2026-10-01", [
-      "Composição do STF com perfil completo de cada ministro: contato do gabinete (telefone e e-mails para audiência e memoriais), vaga que ocupou, datas de indicação, nomeação e posse, formação, trajetória, currículo oficial e os temas e julgados de sua relatoria no acervo. Nova aba “Contatos”, com todos os gabinetes, a Presidência e as Secretarias das Turmas.",
+      "Composição do STF com perfil completo de cada ministro: contato do gabinete (telefone e e-mails para audiência e memoriais), vaga que ocupou, datas de indicação, nomeação e posse, formação, trajetória, currículo oficial e os temas e julgados de sua relatoria no acervo. Contatos de todos os gabinetes, da Presidência e das Secretarias das Turmas, ao final da lista de ministros.",
       "Pauta do STF dentro do site: sessões presenciais do Plenário e das Turmas (processos, relatores, vistas e destaques), calendário das sessões virtuais e, sobretudo, os temas de repercussão geral ainda sem tese que foram pautados. Esses temas também aparecem no Atualize-se, na Visão geral (aba “Em pauta”) e na linha do tempo do tema.",
       "Salvos: julgados do Informativo do STF agora podem ser salvos, organizados em pastas, avaliados e anotados, inclusive pelo Atualize-se.",
       "Informativo do STF: os nomes dos relatores das edições antigas foram uniformizados (por exemplo, “Ministra Ellen Gracie”, antes grafada de várias formas), o que corrige o filtro por relator.",
