@@ -5248,13 +5248,12 @@
     </section>`;
   }
   // A troca automática segue a barra de tempo de cada destaque (fim da animação = próximo destaque);
-  // só o mouse sobre o carrossel congela a barra e a aproximação da foto.
+  // a troca não para (as setas e os pontos continuam disponíveis para navegar).
   function ligarCarrossel(root) {
     const car = $("#car", root); if (!car) return;
     const tri = $(".car-trilho", car), sls = $$(".car-sl", car), pts = $$("[data-car]", car);
     const reduz = matchMedia("(prefers-reduced-motion: reduce)").matches;
     let i = 0;
-    const parar = (v) => car.classList.toggle("parado", v);
     // A foto que sai mantém a aproximação parada até sair da tela (sem salto visível durante a rolagem).
     const destacar = () => {
       sls.forEach((el, k) => { if (el.classList.contains("atual") && k !== i) { el.classList.replace("atual", "saindo"); clearTimeout(el._s); el._s = setTimeout(() => el.classList.remove("saindo"), 900); } });
@@ -5273,8 +5272,6 @@
     $(".car-ant", car).addEventListener("click", () => ir(i - 1));
     $(".car-prox", car).addEventListener("click", () => ir(i + 1));
     pts.forEach((b) => b.addEventListener("click", () => ir(+b.dataset.car)));
-    car.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") parar(true); });
-    car.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") parar(false); });
     car.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { ir(i + 1); e.preventDefault(); } if (e.key === "ArrowLeft") { ir(i - 1); e.preventDefault(); } });
   }
   // Intercala os grupos (notícia, tese, notícia, pauta...) para variar o que aparece.
@@ -6083,7 +6080,7 @@
   const VERSAO = "2026.10.02";
   const NOVIDADES = [
     ["2026-10-02", [
-      "Carrossel da Visão geral maior, com barra de tempo em cada destaque (congela só com o mouse sobre ele), movimento lento de aproximação nas fotos e, nos destaques sem foto própria (teses, pautas e notícias sem imagem), fotos institucionais oficiais do STF e do STJ, identificadas como imagem ilustrativa e com o crédito do fotógrafo.",
+      "Carrossel da Visão geral maior, com barra de tempo em cada destaque, movimento lento de aproximação nas fotos e, nos destaques sem foto própria (teses, pautas e notícias sem imagem), fotos institucionais oficiais do STF e do STJ, identificadas como imagem ilustrativa e com o crédito do fotógrafo.",
       "Visão geral com destaques em cartões grandes, que passam sozinhos (pausa ao passar o mouse ou tocar, e há botão para pausar): no STF, as notícias oficiais do Tribunal com as fotos publicadas por ele, as teses fixadas e os temas em pauta, com a foto do relator; no STJ, teses de repetitivos, destaques do mês e temas em pauta.",
     ]],
     ["2026-10-01", [
