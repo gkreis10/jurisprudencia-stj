@@ -231,6 +231,10 @@ else {
       const ng = await page.$$eval("#view .cp-gab", (l) => l.length);
       if (ng < cp.ministros.filter((m) => m.gabinete).length) falha(`contatos do STF: ${ng} cartões`); else ok(`contatos do STF: ${ng} cartões`);
     }
+    // Carrossel da Visão geral no modo STF.
+    await page.goto(BASE + "#painel"); await esperarTela();
+    const nCar = await page.$$eval("#car .car-sl", (l) => l.length).catch(() => 0);
+    if (!nCar) avisos.push("Visão geral (STF): carrossel sem destaques"); else ok(`Visão geral (STF): carrossel com ${nCar} destaques`);
     // Pauta do STF (opcional até a primeira coleta com pauta).
     if (tam("data/stf-pauta.json") > 0) {
       await page.goto(BASE + "#pautastf"); await esperarTela();

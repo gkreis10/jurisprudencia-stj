@@ -1550,13 +1550,90 @@ def atualizar_pauta() -> dict:
     return {"processos": n, "sessoes": len(reg.get("presenciais", [])), "origem": origem, **({"dataRegistro": reg.get("conferido", "")} if origem == "registro" else {})}
 
 
+# ------------------------------------------------------------ notícias do STF (portal de notícias, WordPress)
+URL_NOTICIAS = "https://noticias.stf.jus.br/wp-json/wp/v2/postsnoticias?per_page=30&_embed=wp:featuredmedia"
+REGISTRO_NOTICIAS = FONTE / "noticias.json"
+PASTA_FOTOS_NOT = SAIDA / "noticias"
+# Fora do carrossel: avisos institucionais, campanhas, eventos e a pauta do dia (que já tem página própria).
+NOT_FORA = re.compile(r"(?i)^nota d|ilumina|campanha|moot|inscri[çc]|concurso|semin[áa]rio|congresso|palestra|exposi[çc]|"
+                      r"direito sem juridiqu|confira a pauta|r[áa]dio|tv justi[çc]a|podcast|visita|homenage|posse d[eo]s? servidor")
+NOT_JUR = re.compile(r"(?i)\b(ADI|ADC|ADO|ADPF|RE|ARE|HC|MS|Rcl|Pet|Inq|AP|tema|repercuss[ãa]o|plen[áa]rio|turma|ministr[oa]|relator|decis[ãa]o|julg|"
+                     r"mant[ée]m|valida|fixa|derruba|suspende|nega|analisa|inconstitucional|constitucional)")
+
+
+def _limpo_html(t: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", t or ""))).strip()
+
+
+def coletar_noticias() -> list[dict]:
+    """Últimas notícias do STF sobre julgamentos, com a foto de destaque (tamanho médio) e o crédito."""
+    dados = json.loads(decodificar(baixar(URL_NOTICIAS, 60)))
+    out = []
+    for x in dados:
+        tit = _limpo_html(x.get("title", {}).get("rendered", ""))
+        res = _limpo_html(x.get("excerpt", {}).get("rendered", ""))
+        if not tit or NOT_FORA.search(tit) or not NOT_JUR.search(f"{tit} {res}"):
+            continue
+        fm = ((x.get("_embedded") or {}).get("wp:featuredmedia") or [{}])[0] or {}
+        tam = (fm.get("media_details") or {}).get("sizes") or {}
+        foto = next((tam[k]["source_url"] for k in ("medium_large", "large", "full") if k in tam and tam[k].get("width", 9999) <= 1100), "")
+        cred = _limpo_html((fm.get("caption") or {}).get("rendered", ""))
+        out.append({"id": x["id"], "d": x.get("date", "")[:16].replace("T", " "), "t": tit, "r": res, "url": x.get("link", ""),
+                    **({"foto": foto} if foto else {}), **({"cred": cred} if cred else {}), **({"alt": fm["alt_text"]} if fm.get("alt_text") else {})})
+        if len(out) >= 8:
+            break
+    if len(out) < 2:
+        raise RuntimeError(f"só {len(out)} notícia(s) aproveitável(is)")
+    return out
+
+
+def atualizar_noticias() -> dict:
+    """Notícias do STF no site (carrossel da Visão geral). Coleta direta; se o portal recusar, o registro da coleta
+    fora do GitHub. As fotos são copiadas para o próprio site (a política de conteúdo não carrega imagens de fora)."""
+    origem = "portal do STF"
+    try:
+        nots = coletar_noticias()
+        REGISTRO_NOTICIAS.write_text(json.dumps({"atualizado": HOJE, "noticias": nots}, ensure_ascii=False, indent=0), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        log(f"  notícias do STF: {e}; usa o registro")
+        origem = "registro"
+        nots = ler(REGISTRO_NOTICIAS, {}).get("noticias", [])
+    if not nots:
+        return {"erro": "sem notícias"}
+    PASTA_FOTOS_NOT.mkdir(parents=True, exist_ok=True)
+    usadas = set()
+    for n in nots:
+        if not n.get("foto"):
+            continue
+        arq = PASTA_FOTOS_NOT / f"{n['id']}.jpg"
+        if not arq.exists():
+            try:
+                b = baixar(n["foto"], 60)
+                if b[:3] != b"\xff\xd8\xff" and b[:4] != b"\x89PNG":
+                    raise ValueError("resposta sem imagem")
+                if len(b) > 600_000:
+                    raise ValueError(f"imagem grande demais ({len(b)} bytes)")
+                arq.write_bytes(b)
+            except Exception as e:  # noqa: BLE001
+                log(f"  foto da notícia {n['id']}: {e}")
+                continue
+        n["img"] = f"data/noticias/{n['id']}.jpg"
+        usadas.add(arq.name)
+    for velho in PASTA_FOTOS_NOT.glob("*.jpg"):
+        if velho.name not in usadas:
+            velho.unlink()
+    gravar(SAIDA / "stf-noticias.json", [{k: v for k, v in n.items() if k != "foto"} for n in nots])
+    return {"noticias": len(nots), "fotos": len(usadas), "origem": origem,
+            **({"dataRegistro": ler(REGISTRO_NOTICIAS, {}).get("atualizado", "")} if origem == "registro" else {})}
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--teses", type=int, default=2000, help="máximo de teses baixadas nesta execução")
     ap.add_argument("--sumulas", type=int, default=1000, help="máximo de enunciados de súmula baixados nesta execução")
     ap.add_argument("--minutos", type=int, default=25, help="tempo máximo para baixar teses e enunciados")
-    ap.add_argument("--so", default="", help="temas, sumulas, informativos, composicao ou pauta (padrão: todos)")
+    ap.add_argument("--so", default="", help="temas, sumulas, informativos, composicao, pauta ou noticias (padrão: todos)")
     ap.add_argument("--exportar", action="store_true", help="grava o registro em fontes/stf/ (temas e súmulas)")
     ap.add_argument("--coletar", action="store_true", help="coleta temas e súmulas só para o registro (fora do GitHub), sem as rotinas do STJ, e já o exporta")
     ap.add_argument("--preparar", action="store_true", help="usa o registro como base de comparação (coleta fora do GitHub)")
@@ -1578,6 +1655,13 @@ def main():
                 log(f"STF ({nome}): falhou: {e}")
                 res[nome] = {"erro": str(e)[:200]}
         try:
+            nots = coletar_noticias()
+            REGISTRO_NOTICIAS.write_text(json.dumps({"atualizado": HOJE, "noticias": nots}, ensure_ascii=False, indent=0), encoding="utf-8")
+            res["noticias"] = {"noticias": len(nots)}
+        except Exception as e:  # noqa: BLE001
+            log(f"STF (notícias): não coletadas: {e}")
+            res["noticias"] = {"erro": str(e)[:200]}
+        try:
             res["pauta"] = coletar_pauta()
         except Exception as e:  # noqa: BLE001
             log(f"STF (pauta): não conferida: {e}")
@@ -1587,14 +1671,14 @@ def main():
         except Exception as e:  # noqa: BLE001
             log(f"STF (composicao): não conferida: {e}")  # não impede o envio dos demais
             res["composicao"] = {"erro": str(e)[:200]}
-        falhou = [n for n, r in res.items() if n not in ("composicao", "pauta") and ("erro" in r or r.get("origem") == "registro")]
+        falhou = [n for n, r in res.items() if n not in ("composicao", "pauta", "noticias") and ("erro" in r or r.get("origem") == "registro")]
         if falhou:
             log(f"COLETA NÃO REALIZADA: portal do STF indisponível para {', '.join(falhou)}; registro mantido.")
             raise SystemExit(2)
         exportar_registro()
         log("COLETA CONCLUÍDA: " + json.dumps(res, ensure_ascii=False))
         return
-    for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas)), ("informativos", atualizar_informativos), ("composicao", atualizar_composicao), ("pauta", atualizar_pauta)):
+    for nome, f in (("temas", lambda: atualizar_temas(args.teses)), ("sumulas", lambda: atualizar_sumulas(args.sumulas)), ("informativos", atualizar_informativos), ("composicao", atualizar_composicao), ("pauta", atualizar_pauta), ("noticias", atualizar_noticias)):
         if args.so and nome != args.so:
             continue
         try:
@@ -1610,7 +1694,7 @@ def main():
         agora = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
         ant = man.get("stf", {})
         stf = {}
-        for nome in ("temas", "sumulas", "informativos", "composicao", "pauta"):
+        for nome in ("temas", "sumulas", "informativos", "composicao", "pauta", "noticias"):
             r = res.get(nome)
             reg = r and "erro" not in r and r.get("origem") in ("registro", "registro do Radar")
             if reg and ant.get(nome) and ant[nome].get("origem") != "registro":
