@@ -288,7 +288,7 @@ mark { background: var(--real); color: inherit; border-radius: 3px; padding: 0 2
 .evento .marco i.julg { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
 .evento .marco i.pub { background: var(--acomp); box-shadow: 0 0 0 3px var(--acomp-bg); }
 .evento .marco i.pauta { background: var(--rel); box-shadow: 0 0 0 3px var(--rel-bg); }
-.evento .marco i.mud { background: var(--alta); box-shadow: 0 0 0 3px var(--alta-bg); }
+.evento .marco i.mud { background: var(--tx-3); box-shadow: 0 0 0 3px var(--linha); }
 .evento-tit { font-weight: 600; font-size: 14.5px; }
 .evento-tit button { all: unset; cursor: pointer; color: var(--tx); }
 .evento-tit button:focus-visible { outline: 2px solid var(--pri); border-radius: 4px; }
@@ -300,7 +300,7 @@ mark { background: var(--real); color: inherit; border-radius: 3px; padding: 0 2
 .tl li { position: relative; padding: 0 0 16px 28px; }
 .tl li::before { content: ""; position: absolute; left: 3px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--sup); border: 2.5px solid var(--pri); }
 .tl li.julg::before { border-color: var(--ok); } .tl li.pub::before { border-color: var(--acomp); }
-.tl li.pauta::before { border-color: var(--rel); } .tl li.futuro::before { border-style: dashed; }
+.tl li.mud::before { border-color: var(--tx-3); } .tl li.pauta::before { border-color: var(--rel); } .tl li.futuro::before { border-style: dashed; }
 .tl .d { font-size: 12.5px; color: var(--tx-3); font-variant-numeric: tabular-nums; }
 .tl .t { font-weight: 600; font-size: 14.5px; }
 
@@ -1497,3 +1497,8 @@ html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b
 .aviso-coleta svg { color: var(--alta); flex: none; }
 .aviso-coleta a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 @media (prefers-color-scheme: dark) { .novo { color: #2b0f0b; } }
+
+/* Número de processo clicável (abre a ficha do processo) */
+.link-proc { all: unset; cursor: pointer; color: inherit; font-weight: inherit; text-decoration: underline dotted; text-decoration-color: var(--tx-3); text-underline-offset: 3px; }
+.link-proc:focus-visible { outline: 2px solid var(--pri); outline-offset: 2px; border-radius: 4px; }
+@media (hover: hover) and (pointer: fine) { .link-proc:hover { color: var(--pri); text-decoration-style: solid; text-decoration-color: currentColor; } }
