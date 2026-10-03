@@ -87,6 +87,25 @@ jobs:
             .cache
           key: dados-stj-${{ github.run_id }}
 
+      # Cada execução completa grava uma cópia nova dos dados (cerca de 500 MB). Sem limpeza, as
+      # cópias antigas se acumulam e esgotam a cota de armazenamento do GitHub. Depois de gravar
+      # a nova, apaga as anteriores; se a nova não tiver sido gravada, as antigas são mantidas.
+      - name: Apagar cópias antigas dos dados
+        if: always() && steps.modo.outputs.so_site != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHAVE_NOVA: dados-stj-${{ github.run_id }}
+        run: |
+          lista=$(gh cache list --repo "${{ github.repository }}" --key dados-stj- --limit 100 --json id,key)
+          if echo "$lista" | jq -e --arg k "$CHAVE_NOVA" 'any(.[]; .key == $k)' > /dev/null; then
+            echo "$lista" | jq -r --arg k "$CHAVE_NOVA" '.[] | select(.key != $k) | .id' | while read -r id; do
+              gh cache delete "$id" --repo "${{ github.repository }}" && echo "Cópia antiga apagada: $id"
+            done
+          else
+            echo "A cópia nova não foi gravada; as antigas foram mantidas."
+          fi
+
       # O GitHub desativa rotinas agendadas de repositórios sem atividade por
       # 60 dias. Reativar a rotina a cada execução reinicia essa contagem.
       - name: Manter a rotina agendada ativa
