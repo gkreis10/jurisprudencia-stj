@@ -115,6 +115,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/atualizar.yml/enable"
 
+      # As miniaturas dos ministros não ficam no repositório: são geradas a partir da cópia
+      # guardada em .cache/fotos. Numa execução só do site (ou quando a coleta falha), elas
+      # não são recriadas; sem esta etapa, o site seria publicado sem as fotos.
+      - name: Recolocar as fotos dos ministros
+        run: |
+          mkdir -p site/img/ministros
+          if ls .cache/fotos/*.jpg > /dev/null 2>&1; then
+            cp -n .cache/fotos/*.jpg site/img/ministros/
+          fi
+          echo "Fotos no site: $(ls site/img/ministros | wc -l)"
+
       # Pasta publicada: acórdãos compactados, para o acervo longo caber no GitHub Pages.
       - name: Empacotar o site
         run: python scripts/empacotar.py
