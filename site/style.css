@@ -1503,3 +1503,5 @@ html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b
 .link-proc:focus-visible { outline: 2px solid var(--pri); outline-offset: 2px; border-radius: 4px; }
 @media (hover: hover) and (pointer: fine) { .link-proc:hover { color: var(--pri); text-decoration-style: solid; text-decoration-color: currentColor; } }
 #ac-info #ac-voltar-mes { margin: 0 10px 6px 0; }
+
+/* Fotos dos ministros: recolocadas pelo workflow a partir do cache (outubro/2026). */
