@@ -67,7 +67,13 @@ jobs:
         if: steps.modo.outputs.so_site != 'true'
         run: pip install pdfplumber
 
+      # Se o portal do STJ recusar o acesso (erro 403), esta etapa termina com erro, mas as fontes
+      # que funcionaram (publicações do DJEN, pautas etc.) foram atualizadas e as demais mantêm os
+      # dados anteriores. O site é publicado mesmo assim, depois da conferência automática, e a
+      # execução é marcada com erro no último passo, para o GitHub avisar por e-mail.
       - name: Atualizar dados
+        id: coleta
+        continue-on-error: true
         if: steps.modo.outputs.so_site != 'true'
         run: python scripts/atualizar.py --desde 2000-01 --dias-radar 15
 
@@ -158,3 +164,9 @@ jobs:
       - name: Conferir se a coleta do STF está em dia
         if: ${{ always() && github.event_name == 'schedule' }}
         run: python scripts/conferir_stf.py
+
+      - name: Avisar se a coleta do STJ falhou
+        if: ${{ always() && steps.coleta.outcome == 'failure' }}
+        run: |
+          echo "::error::A coleta do STJ falhou (provavel bloqueio do portal). O site foi publicado com os dados anteriores dessas fontes."
+          exit 1
