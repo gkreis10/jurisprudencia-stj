@@ -34,6 +34,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -68,13 +69,29 @@ def log(*a):
 # --------------------------------------------------------------------------
 # Rede
 # --------------------------------------------------------------------------
+BLOQUEADOS: set[str] = set()  # servidores que responderam 403 nesta execução
+
+
 def baixar(url: str, tentativas: int = 5, timeout: int = 600) -> bytes:
+    host = urllib.parse.urlparse(url).netloc
+    if host in BLOQUEADOS:
+        # O servidor já recusou o acesso nesta execução: insistir só aumentaria os pedidos.
+        raise RuntimeError(f"Falha ao baixar {url}: acesso recusado (HTTP 403); novas tentativas suspensas nesta execução")
     ultimo = None
     for i in range(tentativas):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 403:
+                BLOQUEADOS.add(host)
+                log(f"  ! acesso recusado (HTTP 403) por {host}; sem novas tentativas nesta execução")
+                raise RuntimeError(f"Falha ao baixar {url}: HTTP Error 403: Forbidden") from e
+            ultimo = e
+            espera = 10 * (i + 1)
+            log(f"  ! falha ({e}); nova tentativa em {espera}s: {url[-70:]}")
+            time.sleep(espera)
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             ultimo = e
             espera = 10 * (i + 1)
