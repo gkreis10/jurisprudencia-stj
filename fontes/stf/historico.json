@@ -1,3 +1,12 @@
 [
-{"d":"2026-09-30","tp":"RG","n":1071,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Mérito julgado"}
+{"d":"2026-09-30","tp":"RG","n":1071,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Mérito julgado"},
+{"d":"2026-10-05","tp":"RG","n":1489,"ev":"novo","para":"Em definição"},
+{"d":"2026-10-05","tp":"RG","n":1488,"ev":"novo","para":"Em definição"},
+{"d":"2026-10-05","tp":"RG","n":1487,"ev":"rg","de":"Em definição","para":"Não há repercussão geral (questão infraconstitucional)"},
+{"d":"2026-10-05","tp":"RG","n":1487,"ev":"situacao","de":"Em julgamento","para":"Analisada Preliminar de Repercussão Geral"},
+{"d":"2026-10-05","tp":"RG","n":1486,"ev":"rg","de":"Em definição","para":"Há repercussão geral com reafirmação de Jurisprudência"},
+{"d":"2026-10-05","tp":"RG","n":1486,"ev":"situacao","de":"Em julgamento","para":"Mérito julgado"},
+{"d":"2026-10-05","tp":"RG","n":1477,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Trânsito em Julgado"},
+{"d":"2026-10-05","tp":"RG","n":1470,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-10-05","tp":"RG","n":1469,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"}
 ]

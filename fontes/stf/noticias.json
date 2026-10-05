@@ -1,79 +1,78 @@
 {
-"atualizado": "2026-10-02",
+"atualizado": "2026-10-05",
 "noticias": [
 {
-"id": 166681,
-"d": "2026-10-01 19:23",
-"t": "STF começa a analisar se créditos presumidos de ICMS podem ser incluídos na base de cálculo do PIS e da Cofins",
-"r": "Na sessão de hoje, foram ouvidas as manifestações das partes envolvidas no recurso e de entidades interessadas admitidas no processo",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-comeca-a-analisar-se-creditos-presumidos-de-icms-podem-ser-incluidos-na-base-de-calculo-do-pis-e-da-cofins/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/03/02125318/Fachada-do-STF-Antonio-16-768x512.jpg",
-"cred": "Foto: Antonio Augusto/STF",
-"alt": "Foto dos arcos do prédio do STF"
+"id": 166751,
+"d": "2026-10-05 09:00",
+"t": "Aos 38 anos, Constituição segue dando respostas aos desafios do Brasil",
+"r": "Quase quatro décadas depois de sua promulgação, a Constituição de 1988 tornou-se a bússola com a qual o país enfrenta seus conflitos, assegura direitos e protege as próprias regras do jogo democrático",
+"url": "https://noticias.stf.jus.br/postsnoticias/aos-38-anos-constituicao-segue-dando-respostas-aos-desafios-do-brasil/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/02192105/EXTRA-Materia-Portal-38-anos-da-CF-1.png",
+"alt": "Banner com as cores da bandeira brasileira e o texto, no centro, \"Constituição Federal de 1988\" em fonte pequena e \"38 anos\" em fonte grande."
 },
 {
-"id": 166678,
-"d": "2026-10-01 19:03",
-"t": "Discussão no STF sobre aplicação do Estatuto da Pessoa Idosa a planos de saúde deve ter solução conjunta",
-"r": "Matéria será analisada no Núcleo de Soluções Consensuais para obtenção de proposta de solução conjunta em duas ações sobe o tema",
-"url": "https://noticias.stf.jus.br/postsnoticias/discussao-no-stf-sobre-aplicacao-do-estatuto-da-pessoa-idosa-a-planos-de-saude-deve-ter-solucao-conjunta/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/01190150/55562222807_0910b4ba17_c-768x513.jpg",
+"id": 166759,
+"d": "2026-10-05 08:00",
+"t": "Confira destaques da pauta do Plenário para outubro",
+"r": "Julgamentos previstos abrangem temas como fretamento de ônibus por aplicativo, regras da Reforma da Previdência de 2019, PIS/Cofins, recusa a tratamento por questões religiosas e acesso a dados em investigações criminais",
+"url": "https://noticias.stf.jus.br/postsnoticias/confira-destaques-da-pauta-do-plenario-para-outubro/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2025/12/02101029/10-outubro_banner-home_700x374_pauta-plenario.png",
+"alt": "Arte gráfica com texto Pauta do Plenário Setembro"
+},
+{
+"id": 166755,
+"d": "2026-10-04 13:12",
+"t": "Presidente do STF reafirma importância de eleições livres, transparentes e auditáveis",
+"r": "Após votar, ministro Edson Fachin afirmou que as eleições representam o exercício pleno da soberania e da cidadania popular",
+"url": "https://noticias.stf.jus.br/postsnoticias/presidente-do-stf-reafirma-importancia-de-eleicoes-livres-transparentes-e-auditaveis/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/04130608/EF_fala_votacao-1024x639.jpeg",
+"cred": "Ministro Edson Fachin faz pronunciamento após votar no primeiro turno das eleições gerais de 2026",
+"alt": "Ministro Edson Fachin faz pronunciamento após votar no primeiro turno das eleições gerais de 2026"
+},
+{
+"id": 166752,
+"d": "2026-10-03 19:16",
+"t": "Ministros lamentam falecimento do jornalista Márcio Chaer",
+"r": "Jornalista foi fundador e diretor do Conjur, portal especializado em notícias do Judiciário",
+"url": "https://noticias.stf.jus.br/postsnoticias/ministros-lamentam-falecimento-do-jornalista-marcio-chaer/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/09/25171315/55518620578_4177351196_o-1-1024x683.jpg",
+"alt": "Fotografia do edifício-sede do STF sob um céu azul sem nuvens."
+},
+{
+"id": 166740,
+"d": "2026-10-03 12:00",
+"t": "Julgamento sobre aplicação do estatuto do idoso a planos de saúde é destaque no Supremo na Semana",
+"r": "Episódio #204 está disponível nas principais plataformas de áudio e no YouTube",
+"url": "https://noticias.stf.jus.br/postsnoticias/julgamento-sobre-aplicacao-do-estatuto-do-idoso-a-planos-de-saude-e-destaque-no-supremo-na-semana/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/02191706/noticia_portal_700x374_ep-204-1.png",
+"alt": "Banner na cor azul com o texto \"Supremo na Semana - episódio 204\""
+},
+{
+"id": 166739,
+"d": "2026-10-02 17:40",
+"t": "Subvenção para tarifa social de energia não pode ser tributada pelo ICMS, decide STF",
+"r": "Corte impede Bahia e Rondônia de incluir repasse da União às concessionárias na base de cálculo do imposto",
+"url": "https://noticias.stf.jus.br/postsnoticias/subvencao-para-tarifa-social-de-energia-nao-pode-ser-tributada-pelo-icms-decide-stf/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2025/11/04173848/Fachada13_Fellipe_Sampaio-1024x682.jpg",
+"cred": "Foto: Fellipe Sampaio/STF",
+"alt": "Foto do prédio do STF em dia chuvoso"
+},
+{
+"id": 166736,
+"d": "2026-10-02 17:33",
+"t": "PDT questiona no STF regra sobre recondução à presidência da Câmara de Salvador",
+"r": "Partido pede que sucessão automática por vacância não seja considerada para fins de limitação de mandatos consecutivos no comando da Casa",
+"url": "https://noticias.stf.jus.br/postsnoticias/pdt-questiona-no-stf-regra-sobre-reconducao-a-presidencia-da-camara-de-salvador/"
+},
+{
+"id": 166714,
+"d": "2026-10-02 15:34",
+"t": "Presidente do STF recebe missão eleitoral da OEA",
+"r": "Em encontro no gabinete da Presidência do STF, ministro Fachin destacou a importância da Missão de Observação Eleitoral da OEA",
+"url": "https://noticias.stf.jus.br/postsnoticias/presidente-do-stf-recebe-missao-eleitoral-da-oea/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/02173207/Comitiva_OEA-768x513.jpg",
 "cred": "Foto: Alejandro Zambrana/STF",
-"alt": "Sessão Plenária do STF"
-},
-{
-"id": 166677,
-"d": "2026-10-01 18:16",
-"t": "Falta de regulamentação da avaliação biopsicossocial de deficiência é objeto de ADO no Supremo",
-"r": "AnaPcD pede critérios para avaliação da deficiência que considerem as condições de vida e as barreiras enfrentadas, além do diagnóstico médico",
-"url": "https://noticias.stf.jus.br/postsnoticias/falta-de-regulamentacao-da-avaliacao-biopsicossocial-de-deficiencia-e-objeto-de-ado-no-supremo/"
-},
-{
-"id": 166672,
-"d": "2026-10-01 17:35",
-"t": "Regras do programa Desenrola Brasil 3.0 são questionadas no STF",
-"r": "Associação de defesa de usuários de bancos alega que regras atuais podem excluir pessoas em situação de vulnerabilidade",
-"url": "https://noticias.stf.jus.br/postsnoticias/regras-do-programa-desenrola-brasil-3-0-sao-questionadas-no-stf/"
-},
-{
-"id": 166669,
-"d": "2026-10-01 17:15",
-"t": "Supremo mantém norma nacional sobre estrutura das PMs e dos bombeiros",
-"r": "Decisão validou regras federais que estabelecem estrutura básica para os quadros das corporações militares estaduais",
-"url": "https://noticias.stf.jus.br/postsnoticias/supremo-mantem-norma-nacional-sobre-estrutura-das-pms-e-dos-bombeiros/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/03/02125520/Fachada-do-STF-Antonio-19-768x512.jpg",
-"cred": "Foto: Antonio Augusto/STF",
-"alt": "Foto da placa do prédio do STF"
-},
-{
-"id": 166664,
-"d": "2026-10-01 15:12",
-"t": "STF multa advogado por inserção de comando oculto de IA em petição de réu do 8 de janeiro",
-"r": "Na mesma decisão, ministro Alexandre de Moraes manteve Acordo de Não Persecução Penal celebrado com a PGR",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-multa-advogado-por-insercao-de-comando-oculto-de-ia-em-peticao-de-reu-do-8-de-janeiro/",
-"foto": "https://noticias.stf.jus.br/wp-content/uploads/2025/03/Fellipe-Sampaio-Revista-Suprema-18-768x512.jpg",
-"cred": "Foto: Fellipe Sampaio/ STF",
-"alt": "A imagem mostra a escultura da Estátua da Justiça, esculpida em pedra, representando a Justiça. Ao fundo, o céu azul com nuvens esbranquiçadas e laranjas."
-},
-{
-"id": 166654,
-"d": "2026-09-30 20:08",
-"t": "STF fixa critérios para multa a empresas com dívida tributária que distribuem lucros",
-"r": "Penalidade só pode incidir se crédito estiver definitivamente constituído e inscrito em dívida ativa, exigível e sem garantia",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-fixa-criterios-para-multa-a-empresas-com-divida-tributaria-que-distribuem-lucros/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2025/11/06105744/Projeto-Cartao-Postal-Rosine-Coutinho-11-768x367.jpg",
-"cred": "Foto: Bruno Carneiro/SCO/STF",
-"alt": "Edifício-sede do STF"
-},
-{
-"id": 166651,
-"d": "2026-09-30 19:08",
-"t": "Servidor com vínculo público contínuo pode escolher regime previdenciário, decide STF",
-"r": "Plenário fixou tese sobre ingresso no serviço público e previdência complementar",
-"url": "https://noticias.stf.jus.br/postsnoticias/servidor-com-vinculo-publico-continuo-pode-escolher-regime-previdenciario-decide-stf/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/09/30190750/55561586248_6e4031fc43_c-768x513.jpg",
-"cred": "foto: Alejandro Zambrana/STF",
-"alt": "Advogada na tribuna diante do plenário do STF"
+"alt": "Audiência com Chefe da Missão da Organização dos Estados Americanos de observação das Eleições 2026."
 }
 ]
 }
