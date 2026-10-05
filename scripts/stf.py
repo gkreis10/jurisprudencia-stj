@@ -1390,8 +1390,8 @@ def gravar_ministros(semente: dict) -> None:
 def conferir_composicao() -> dict:
     """Coleta fora do GitHub: confere as páginas oficiais do STF e guarda o resultado no registro (ministros.json).
 
-    O registro só é regravado quando algo mudou ou quando a última conferência tem mais de 6 dias, para não
-    gerar envio à toa; o site mostra a data dessa conferência como a da verificação da composição.
+    A data da conferência é gravada a cada execução bem-sucedida; o site a mostra como a da verificação da
+    composição. A data "atualizado" só avança quando algo mudou.
     """
     semente = ler(FONTE / "ministros.json", {})
     trabalho = [dict(m) for m in semente["ministros"]]
@@ -1413,13 +1413,12 @@ def conferir_composicao() -> dict:
         log(f"  contatos (Quem é quem): {e}")
     mudou_perfis = perfis != semente.get("perfis", {}) or contatos != semente.get("contatos", {})
     mudou = ids != semente.get("ordem") or cargos != semente.get("cargos") or turmas != semente.get("turmas")
-    try:
-        idade = (dt.date.fromisoformat(HOJE) - dt.date.fromisoformat(semente.get("conferido", "2000-01-01"))).days
-    except ValueError:
-        idade = 999
-    if mudou or mudou_perfis or idade >= 6:
-        semente.update({"atualizado": HOJE, "conferido": HOJE, "ordem": ids, "cargos": cargos, "turmas": turmas, "perfis": perfis, "contatos": contatos})
-        gravar_ministros(semente)
+    # Grava sempre a data da conferência ("conferido"), para o site mostrar a fonte em dia mesmo sem
+    # mudanças; a data "atualizado" só avança quando algo mudou.
+    if mudou or mudou_perfis:
+        semente["atualizado"] = HOJE
+    semente.update({"conferido": HOJE, "ordem": ids, "cargos": cargos, "turmas": turmas, "perfis": perfis, "contatos": contatos})
+    gravar_ministros(semente)
     log(f"STF: composição conferida nas páginas oficiais ({len(ids)} ministros; {'houve mudança' if mudou else 'sem mudança'}"
         f"{'; perfis atualizados' if mudou_perfis else ''}).")
     return {"ministros": len(ids), "origem": "portal do STF", "mudou": mudou, "perfis": len(perfis), **({"perfisMudaram": True} if mudou_perfis else {})}

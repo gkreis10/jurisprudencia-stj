@@ -9,7 +9,7 @@ Uso:  python scripts/stf_envio.py PASTA_BASE PASTA_NOVA SAIDA "mensagem do commi
   PASTA_BASE  cópia do repositório ANTES da coleta (contém fontes/stf/*.json)
   PASTA_NOVA  cópia DEPOIS da coleta
   SAIDA       pasta onde gravar passo1.js (reconstrução), passo3.js (envio) e resumo.json
-Sem mudanças além da linha "atualizado", nada é gerado e o código de saída é 3.
+Sem nenhuma mudança (nem de data), nada é gerado e o código de saída é 3.
 """
 from __future__ import annotations
 
@@ -84,7 +84,8 @@ def main() -> int:
     ops_todos, resumo = {}, {}
     for f in arquivos:
         a_txt, b_txt = ler(base / f), ler(nova / f)
-        if not b_txt or sem_data(a_txt) == sem_data(b_txt):
+        # Envia também quando só a data mudou: ela registra a conferência e mantém a fonte "em dia" no site.
+        if not b_txt or a_txt == b_txt:
             continue
         a, b = linhas(a_txt), linhas(b_txt)
         ops, mudou = [], 0
