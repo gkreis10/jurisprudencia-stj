@@ -277,7 +277,7 @@ def temas_do_registro(e: Exception) -> dict:
     for x0 in reg["temas"]:
         x = {"tp": "RG", **x0}
         ass = [a.strip() for a in str(x.get("ass", "")).split(";") if a.strip()]
-        x["ar"], x["sa"] = areas_stf(ass, f"{x['q']} {x.get('desc', '')} {x.get('tese', '')}")
+        x["ar"], x["sa"] = areas_stf(ass, f"{x.get('q', '')} {x.get('desc', '')} {x.get('tese', '')}")
         for k in ("ar", "sa"):
             if not x[k]:
                 del x[k]
@@ -295,6 +295,9 @@ def atualizar_temas(limite_teses: int) -> dict:
         temas = ler_temas(pagina)
         if len(temas) < 1000:
             raise RuntimeError(f"lista de temas do STF incompleta ({len(temas)})")
+        sem_titulo = [x["n"] for x in temas if not x.get("q")]
+        if sem_titulo:  # tema recém-criado ou com a página em formato diferente: segue sem o título
+            log(f"  temas do STF sem título no portal: {', '.join(str(n) for n in sem_titulo[:20])}")
     except Exception as e:  # noqa: BLE001
         return temas_do_registro(e)
     semente = {str(x["n"]): {"d": x["dtese"], "t": x["tese"]} for x in ler(REGISTRO_TEMAS, {}).get("temas", []) if x.get("tese") and x.get("dtese")}
@@ -323,7 +326,7 @@ def atualizar_temas(limite_teses: int) -> dict:
             x["tese"] = t
     gravar(CACHE / "stf-teses.json", {k: v for k, v in cache.items() if semente.get(k) != v})
     for x in temas:
-        x["ar"], x["sa"] = areas_stf(x.get("ass", []), f"{x['q']} {x.get('desc', '')} {x.get('tese', '')}")
+        x["ar"], x["sa"] = areas_stf(x.get("ass", []), f"{x.get('q', '')} {x.get('desc', '')} {x.get('tese', '')}")
         if not x["sa"]:
             del x["sa"]
         if not x["ar"]:
