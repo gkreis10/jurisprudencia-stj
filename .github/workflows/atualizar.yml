@@ -125,6 +125,12 @@ jobs:
       - name: Atualizar dados do STF
         run: python scripts/stf.py --minutos 50
 
+      # Notícias do STJ para o carrossel: um único acesso ao feed oficial (RSS) de notícias do portal do
+      # STJ, oferecido pelo Tribunal para leitura por programas. Se não responder, o site segue sem elas.
+      - name: Notícias do STJ
+        continue-on-error: true
+        run: python scripts/noticias_stj.py
+
       # Cada coleta grava uma cópia nova dos dados (cerca de 500 MB). Sem limpeza, as cópias
       # antigas se acumulam e esgotam a cota de armazenamento do GitHub. Depois de a nova ter sido
       # gravada, apaga as anteriores; se não tiver sido gravada, as antigas são mantidas.
