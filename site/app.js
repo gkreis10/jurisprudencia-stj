@@ -2158,7 +2158,7 @@
         <li>O botão do alto leva ao <b>Atualize-se</b>, com as novidades ainda não lidas.</li>
         <li>O campo de busca aceita assunto, “tema 1234” ou número de processo e leva à Pesquisa.</li>
         <li>As abas resumem os <b>repetitivos</b> movimentados nos últimos 30 dias, as <b>pautas</b> com temas ou julgamentos na Corte Especial e nas Seções, os <b>destaques</b> do mês e as novidades do <b>Meu radar</b>.</li>
-        <li>Os destaques em cartões grandes passam sozinhos; use as setas ou os pontos para trocar de cartão. Nos cartões sem foto própria, a imagem de fundo é uma foto institucional oficial, com o crédito indicado.</li>
+        <li>Os destaques em cartões grandes passam sozinhos: notícias oficiais do STJ (do feed de notícias do portal do Tribunal, que abrem no site do STJ), teses de repetitivos, acórdãos em destaque e pautas. Use as setas ou os pontos para trocar de cartão. Nos cartões sem foto própria, a imagem de fundo é uma foto institucional oficial, com o crédito indicado.</li>
         <li>Os quadros numerados (repetitivos, pautas, destaques e radar) resumem o momento e abrem a lista correspondente logo abaixo.</li>
       </ul>
       ${BOLINHAS_MOV}`),
@@ -3299,7 +3299,9 @@
     const abaIni = abas.some((a) => a[0] === P.painelAba) ? P.painelAba : "rep";
     const sJ = slidesSTJ(evs, pl, dsTop);
     let slidesJ = intercalar(sJ.teses, sJ.dest, sJ.pauta);
-    if (ambos()) { const nots = await noticiasSTF(); slidesJ = intercalar(slidesNoticias(nots).slice(0, 3), slidesJ); }
+    const notsJ = slidesNoticias(await noticiasSTJ(), "STJ").slice(0, 3);
+    const notsF = ambos() ? slidesNoticias(await noticiasSTF()).slice(0, 2) : [];
+    slidesJ = intercalar(notsJ, notsF, slidesJ);
     slidesJ = aplicarFundos(slidesJ.slice(0, 8), await fundosP);
     main.innerHTML = `
       <section class="hero">
@@ -5491,6 +5493,8 @@
   // Destaques em cartões grandes, com troca automática (pausa ao passar o mouse, ao tocar ou com o
   // foco do teclado; sem movimento automático para quem pediu menos animação no sistema).
   const noticiasSTF = () => (D.man?.stf?.noticias ? carregar("stf-noticias", (l) => l).catch(() => []) : Promise.resolve([]));
+  // Notícias do STJ: feed oficial (RSS) do portal, lido a cada publicação do site.
+  const noticiasSTJ = () => (D.man?.noticiasSTJ ? carregar("stj-noticias", (l) => l).catch(() => []) : Promise.resolve([]));
   // Fotos institucionais (Flickr oficial do STF e do STJ) para os destaques sem foto própria; variam a cada dia.
   const fundosCar = () => (D.man?.stf?.noticias?.fundos ? carregar("carrossel-fundos", (l) => l).catch(() => []) : Promise.resolve([]));
   function aplicarFundos(sls, fs) {
@@ -5567,8 +5571,8 @@
   }
   // Intercala os grupos (notícia, tese, notícia, pauta...) para variar o que aparece.
   const intercalar = (...gs) => { const out = []; for (let k = 0; gs.some((g) => g[k]); k++) for (const g of gs) if (g[k]) out.push(g[k]); return out; };
-  function slidesNoticias(nots) {
-    return nots.slice(0, 5).map((x) => ({ trib: "STF", kick: ` · Notícia · ${fmtData(x.d)}`, tit: x.t, txt: cortar(x.r, 190), img: x.img, alt: x.alt, cred: x.cred, href: x.url, ext: true, pe: "Ler no portal do STF", ar: "noticia" }));
+  function slidesNoticias(nots, trib = "STF") {
+    return nots.slice(0, 5).map((x) => ({ trib, kick: ` · Notícia · ${fmtData(x.d)}`, tit: x.t, txt: cortar(x.r, 190), img: x.img, alt: x.alt, cred: x.cred, href: x.url, ext: true, pe: `Ler no portal do ${trib}`, ar: "noticia" }));
   }
   function slidesSTF(l, pt, cp) {
     const hoje = hojeISO();
@@ -6416,6 +6420,9 @@
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
   const VERSAO = "2026.10.02";
   const NOVIDADES = [
+    ["2026-10-05", [
+      "Visão geral do STJ: o carrossel de destaques passou a trazer as notícias oficiais do STJ, tiradas do feed de notícias (RSS) do portal do Tribunal; cada cartão abre a notícia no site do STJ.",
+    ]],
     ["2026-10-02", [
       "Ficha do processo: o número de um processo (por exemplo, o leading case de um tema, os processos vinculados, as pautas do STJ e do STF e as notas do Informativo) agora é clicável e abre uma ficha com tudo o que o site tem sobre ele: temas, pautas, acórdãos, decisões monocráticas e notas do Informativo, cada item com link para a respectiva tela, além do botão para acompanhar o processo no Meu radar.",
       "Os botões “?” foram revistos: cada tela explica agora os filtros, botões e selos que não são intuitivos (como “Só relevantes”, “Exibir”, “Incluir sem ementa” e as ordenações), e a Pesquisa de acórdãos passou a explicar no “?” até onde vai a base, em vez de manter o aviso fixo na página.",
