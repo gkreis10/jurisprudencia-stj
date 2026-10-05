@@ -1,10 +1,20 @@
 name: Atualizar e publicar
 
+# Duas etapas:
+#  1. coletar: consulta o portal do STJ a partir do computador do escritório (o portal recusa os
+#     servidores do GitHub). Roda às segundas e quintas, ao meio-dia, e quando acionada à mão.
+#  2. publicar: remonta o site com os dados guardados e o publica na Cloudflare. Roda a cada
+#     envio de arquivos e depois da coleta; não consulta o STJ.
 on:
   schedule:
-    # Todos os dias às 07h (horário de Brasília = UTC-3).
-    - cron: "0 10 * * *"
+    # Segundas e quintas, 12h (horário de Brasília = UTC-3).
+    - cron: "0 15 * * 1,4"
   workflow_dispatch:
+    inputs:
+      carga_inicial:
+        description: "Coletar do zero, sem a cópia dos dados guardada (carga pesada; só se a cópia sumiu)"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: ["site/**", "scripts/**", "fontes/**", "functions/**", ".github/workflows/**"]
@@ -13,14 +23,81 @@ permissions:
   contents: read
   actions: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
-  atualizar:
-    runs-on: ubuntu-24.04
+  coletar:
+    # Só na agenda ou à mão. Se o computador do escritório estiver desligado, a tarefa fica
+    # esperando por ele e a publicação segue com os dados anteriores (ver o job "publicar").
+    if: ${{ github.event_name != 'push' }}
+    runs-on: self-hosted
     timeout-minutes: 240
+    concurrency:
+      group: coleta-stj
+      cancel-in-progress: false
+    outputs:
+      coleta: ${{ steps.coleta.outcome }}
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v6
+
+      # Os dados ficam guardados entre as execuções; assim, a cada coleta só se baixa o que
+      # for novo no Portal de Dados Abertos do STJ.
+      - name: Restaurar dados anteriores
+        id: restaura
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            site/data
+            .cache
+          key: dados-stj-${{ github.run_id }}
+          restore-keys: dados-stj-
+          enableCrossOsArchive: true
+
+      # Sem a cópia, a coleta recomeçaria do zero e faria centenas de acessos ao STJ de uma vez.
+      # Isso só é permitido de propósito (opção "carga_inicial" da execução manual).
+      - name: Conferir a cópia dos dados
+        id: base
+        if: ${{ steps.restaura.outputs.cache-matched-key == '' && inputs.carga_inicial != true }}
+        shell: powershell
+        run: |
+          Write-Output "::error::A cópia dos dados guardada no GitHub não foi encontrada. A coleta foi interrompida para não recomeçar do zero no portal do STJ."
+          exit 1
+
+      - name: Instalar dependências
+        shell: powershell
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --quiet pdfplumber
+
+      # Se o portal do STJ recusar o acesso (erro 403), a coleta para no primeiro recuo e esta
+      # etapa termina com erro; as fontes que já tinham sido atualizadas ficam gravadas e as
+      # demais mantêm os dados anteriores. O site é publicado mesmo assim.
+      - name: Atualizar dados
+        id: coleta
+        continue-on-error: true
+        shell: powershell
+        run: .\.venv\Scripts\python.exe scripts\atualizar.py --desde 2000-01 --dias-radar 15
+
+      - name: Guardar dados
+        if: ${{ always() && steps.base.outcome != 'failure' }}
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            site/data
+            .cache
+          key: dados-stj-${{ github.run_id }}
+          enableCrossOsArchive: true
+
+  publicar:
+    needs: coletar
+    # Roda mesmo se a coleta foi pulada (envio de arquivos), falhou ou nem chegou a começar.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
         with:
@@ -30,9 +107,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Os dados ficam em cache entre as execuções; assim, a cada dia só se
-      # baixa o que for novo no Portal de Dados Abertos do STJ.
-      - name: Restaurar dados anteriores
+      - name: Restaurar dados
         uses: actions/cache/restore@v5
         with:
           path: |
@@ -40,64 +115,21 @@ jobs:
             .cache
           key: dados-stj-${{ github.run_id }}
           restore-keys: dados-stj-
-
-      # Quando o envio muda só a aparência do site (pasta site/, proteção da Cloudflare ou
-      # README), não é preciso consultar o STJ de novo: o site é remontado com os dados
-      # guardados. A consulta completa continua na execução diária das 7h e sempre que
-      # mudarem as rotinas (scripts/), as fontes (fontes/) ou este arquivo.
-      - name: Verificar se é preciso consultar o STJ
-        id: modo
-        env:
-          ANTES: ${{ github.event.before }}
-        run: |
-          so_site=false
-          if [ "${{ github.event_name }}" = "push" ] && [ -f site/data/manifest.json ]; then
-            if mudou=$(git diff --name-only "$ANTES" "$GITHUB_SHA" 2>/dev/null) && [ -n "$mudou" ]; then
-              if ! printf '%s\n' "$mudou" | grep -qvE '^(site/|functions/|README\.md$)'; then
-                so_site=true
-              fi
-            fi
-          fi
-          echo "so_site=$so_site" >> "$GITHUB_OUTPUT"
-          if [ "$so_site" = true ]; then
-            echo "Só o site mudou: usa os dados guardados, sem consultar o STJ." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          enableCrossOsArchive: true
 
       - name: Instalar dependências
-        if: steps.modo.outputs.so_site != 'true'
         run: pip install pdfplumber
 
-      # Se o portal do STJ recusar o acesso (erro 403), esta etapa termina com erro, mas as fontes
-      # que funcionaram (publicações do DJEN, pautas etc.) foram atualizadas e as demais mantêm os
-      # dados anteriores. O site é publicado mesmo assim, depois da conferência automática, e a
-      # execução é marcada com erro no último passo, para o GitHub avisar por e-mail.
-      - name: Atualizar dados
-        id: coleta
-        continue-on-error: true
-        if: steps.modo.outputs.so_site != 'true'
-        run: python scripts/atualizar.py --desde 2000-01 --dias-radar 15
-
-      # STF: temas de repercussão geral, súmulas e composição (páginas oficiais do Supremo).
-      # Se o portal do STF não responder, o site mantém os dados da execução anterior. Roda mesmo
-      # quando o STJ falha: os dados ficam guardados para a próxima publicação.
+      # STF: temas de repercussão geral, súmulas e composição (registro em fontes/stf, coletado à
+      # parte). Se o portal do STF não responder, o site mantém os dados do registro.
       - name: Atualizar dados do STF
-        if: always() && steps.modo.outputs.so_site != 'true'
         run: python scripts/stf.py --minutos 50
 
-      - name: Guardar dados
-        if: always() && steps.modo.outputs.so_site != 'true'
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            site/data
-            .cache
-          key: dados-stj-${{ github.run_id }}
-
-      # Cada execução completa grava uma cópia nova dos dados (cerca de 500 MB). Sem limpeza, as
-      # cópias antigas se acumulam e esgotam a cota de armazenamento do GitHub. Depois de gravar
-      # a nova, apaga as anteriores; se a nova não tiver sido gravada, as antigas são mantidas.
+      # Cada coleta grava uma cópia nova dos dados (cerca de 500 MB). Sem limpeza, as cópias
+      # antigas se acumulam e esgotam a cota de armazenamento do GitHub. Depois de a nova ter sido
+      # gravada, apaga as anteriores; se não tiver sido gravada, as antigas são mantidas.
       - name: Apagar cópias antigas dos dados
-        if: always() && steps.modo.outputs.so_site != 'true'
+        if: ${{ needs.coletar.result == 'success' || needs.coletar.result == 'failure' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -109,7 +141,7 @@ jobs:
               gh cache delete "$id" --repo "${{ github.repository }}" && echo "Cópia antiga apagada: $id"
             done
           else
-            echo "A cópia nova não foi gravada; as antigas foram mantidas."
+            echo "Nenhuma cópia nova foi gravada nesta execução; as antigas foram mantidas."
           fi
 
       # O GitHub desativa rotinas agendadas de repositórios sem atividade por
@@ -122,8 +154,7 @@ jobs:
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/atualizar.yml/enable"
 
       # As miniaturas dos ministros não ficam no repositório: são geradas a partir da cópia
-      # guardada em .cache/fotos. Numa execução só do site (ou quando a coleta falha), elas
-      # não são recriadas; sem esta etapa, o site seria publicado sem as fotos.
+      # guardada em .cache/fotos. Sem esta etapa, o site seria publicado sem as fotos.
       - name: Recolocar as fotos dos ministros
         run: |
           mkdir -p site/img/ministros
@@ -159,14 +190,14 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy _site --project-name=jurisprudencia-stj-gkreis10 --branch=main
 
-      # Alerta de coleta do STF atrasada: depois de publicar, a execução diária termina com erro
+      # Alerta de coleta do STF atrasada: depois de publicar, a execução agendada termina com erro
       # (e o GitHub avisa por e-mail) se o registro do STF, coletado à parte, tiver mais de 5 dias.
       - name: Conferir se a coleta do STF está em dia
         if: ${{ always() && github.event_name == 'schedule' }}
         run: python scripts/conferir_stf.py
 
       - name: Avisar se a coleta do STJ falhou
-        if: ${{ always() && steps.coleta.outcome == 'failure' }}
+        if: ${{ always() && (needs.coletar.result == 'failure' || needs.coletar.outputs.coleta == 'failure') }}
         run: |
-          echo "::error::A coleta do STJ falhou (provavel bloqueio do portal). O site foi publicado com os dados anteriores dessas fontes."
+          echo "::error::A coleta do STJ falhou (portal indisponível ou acesso recusado, ou o computador do escritório estava desligado). O site foi publicado com os dados anteriores dessas fontes."
           exit 1
