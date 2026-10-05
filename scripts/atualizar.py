@@ -32,6 +32,7 @@ import shutil
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -71,6 +72,24 @@ def log(*a):
 # --------------------------------------------------------------------------
 BLOQUEADOS: set[str] = set()  # servidores que responderam 403 nesta execução
 
+# Intervalo mínimo entre dois acessos ao mesmo servidor, em segundos. O robots.txt do Portal de
+# Dados Abertos do STJ pede "Crawl-Delay: 10"; vale também para os downloads feitos em paralelo.
+INTERVALO_MIN = {"dadosabertos.web.stj.jus.br": 10.0, "scon.stj.jus.br": 5.0}
+_ULTIMO_ACESSO: dict[str, float] = {}
+_TRAVA_ACESSO = threading.Lock()
+
+
+def aguardar_vez(host: str) -> None:
+    intervalo = INTERVALO_MIN.get(host, 0.0)
+    if not intervalo:
+        return
+    with _TRAVA_ACESSO:
+        vez = max(time.monotonic(), _ULTIMO_ACESSO.get(host, float("-inf")) + intervalo)
+        _ULTIMO_ACESSO[host] = vez
+    espera = vez - time.monotonic()
+    if espera > 0:
+        time.sleep(espera)
+
 
 def baixar(url: str, tentativas: int = 5, timeout: int = 600) -> bytes:
     host = urllib.parse.urlparse(url).netloc
@@ -80,6 +99,7 @@ def baixar(url: str, tentativas: int = 5, timeout: int = 600) -> bytes:
     ultimo = None
     for i in range(tentativas):
         try:
+            aguardar_vez(host)
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
