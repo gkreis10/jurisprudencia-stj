@@ -237,33 +237,110 @@
           <h1 data-modo-tit>Entrar</h1>
           <p class="acesso-sub" data-modo-sub>Use o seu e-mail e a sua senha. Na primeira vez, crie a sua conta.</p>
           <label>E-mail<input type="email" name="email" autocomplete="username" required autofocus></label>
-          <label>Senha<input type="password" name="senha" autocomplete="current-password" required></label>
+          <label data-senha>Senha<input type="password" name="senha" autocomplete="current-password" required></label>
           <label data-so-criar hidden>Repita a senha<input type="password" name="rep" autocomplete="new-password"></label>
           <p class="acesso-msg" role="alert"></p>
           <button type="submit" class="btn btn-pri" data-modo-bt>Entrar</button>
           <p class="acesso-troca"><span data-modo-per>Ainda não tem conta?</span> <button type="button" class="acesso-link" data-trocar>Criar conta</button></p>
-          <p class="acesso-nota">Esqueceu a senha? Fale com o administrador do site.</p>
+          <p class="acesso-troca" data-so-entrar><button type="button" class="acesso-link" data-esqueci>Esqueci minha senha</button></p>
         </form>`;
       const f = el.querySelector("form");
-      f.addEventListener("submit", (ev) => (f.dataset.modo === "criar" ? criarConta(ev) : entrar(ev)));
-      el.querySelector("[data-trocar]").addEventListener("click", () => modoEntrada(f, f.dataset.modo === "criar" ? "entrar" : "criar"));
+      f.addEventListener("submit", (ev) => (f.dataset.modo === "criar" ? criarConta(ev) : f.dataset.modo === "recuperar" ? pedirNovaSenha(ev) : entrar(ev)));
+      el.querySelector("[data-trocar]").addEventListener("click", () => modoEntrada(f, f.dataset.modo && f.dataset.modo !== "entrar" ? "entrar" : "criar"));
+      el.querySelector("[data-esqueci]").addEventListener("click", () => modoEntrada(f, "recuperar"));
       document.body.appendChild(el);
     }
     el.querySelector(".acesso-msg").textContent = msg;
     el.querySelector('input[name="email"]').focus();
   }
+  const MODOS = {
+    entrar: { tit: "Entrar", sub: "Use o seu e-mail e a sua senha. Na primeira vez, crie a sua conta.", bt: "Entrar", per: "Ainda não tem conta?", troca: "Criar conta" },
+    criar: { tit: "Criar conta", sub: "Informe o seu e-mail e escolha uma senha de ao menos 8 caracteres. O Meu radar e os salvos ficarão guardados nesta conta.", bt: "Criar conta", per: "Já tem conta?", troca: "Entrar" },
+    recuperar: { tit: "Esqueci minha senha", sub: "Informe o e-mail da sua conta. Enviaremos um link para você criar uma nova senha.", bt: "Enviar link", per: "Lembrou a senha?", troca: "Entrar" },
+  };
   function modoEntrada(f, modo) {
-    const criar = modo === "criar";
+    const m = MODOS[modo] || MODOS.entrar;
     f.dataset.modo = modo;
-    f.querySelector("[data-modo-tit]").textContent = criar ? "Criar conta" : "Entrar";
-    f.querySelector("[data-modo-sub]").textContent = criar ? "Informe o seu e-mail e escolha uma senha de ao menos 8 caracteres. O Meu radar e os salvos ficarão guardados nesta conta." : "Use o seu e-mail e a sua senha. Na primeira vez, crie a sua conta.";
-    f.querySelector("[data-modo-bt]").textContent = criar ? "Criar conta" : "Entrar";
-    f.querySelector("[data-modo-per]").textContent = criar ? "Já tem conta?" : "Ainda não tem conta?";
-    f.querySelector("[data-trocar]").textContent = criar ? "Entrar" : "Criar conta";
-    f.querySelector("[data-so-criar]").hidden = !criar;
-    f.senha.autocomplete = criar ? "new-password" : "current-password";
+    f.querySelector("[data-modo-tit]").textContent = m.tit;
+    f.querySelector("[data-modo-sub]").textContent = m.sub;
+    f.querySelector("[data-modo-bt]").textContent = m.bt;
+    f.querySelector("[data-modo-per]").textContent = m.per;
+    f.querySelector("[data-trocar]").textContent = m.troca;
+    f.querySelector("[data-so-criar]").hidden = modo !== "criar";
+    f.querySelector("[data-senha]").hidden = modo === "recuperar";
+    f.querySelector("[data-so-entrar]").hidden = modo !== "entrar";
+    f.senha.autocomplete = modo === "criar" ? "new-password" : "current-password";
     f.querySelector(".acesso-msg").textContent = "";
+    f.querySelector(".acesso-msg").classList.remove("ok");
     f.email.focus();
+  }
+  const rotuloBt = (f) => (MODOS[f.dataset.modo] || MODOS.entrar).bt;
+
+  // "Esqueci minha senha": o Supabase envia um link ao e-mail; ao clicar, a pessoa volta ao site já
+  // identificada e define a nova senha (ver lerRetornoDoEmail). A resposta é a mesma exista ou não a conta.
+  async function pedirNovaSenha(ev) {
+    ev.preventDefault();
+    const f = ev.currentTarget, bt = f.querySelector("[data-modo-bt]"), msg = f.querySelector(".acesso-msg");
+    const email = f.email.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.textContent = "Informe um e-mail válido."; return; }
+    bt.disabled = true; bt.textContent = "Enviando…"; msg.textContent = ""; msg.classList.remove("ok");
+    try {
+      const r = await chamar(`${AUTH}/recover?redirect_to=${encodeURIComponent(location.origin + "/")}`, { metodo: "POST", corpo: { email } });
+      if (r.ok) { msg.classList.add("ok"); msg.textContent = "Se houver uma conta com este e-mail, enviamos um link para criar uma nova senha. Confira a caixa de entrada e o spam."; }
+      else msg.textContent = r.status === 429 ? "Muitos pedidos em pouco tempo. Aguarde alguns minutos e tente de novo." : "Não foi possível enviar o link agora. Tente de novo em instantes.";
+    } catch {
+      msg.textContent = "Sem conexão com o servidor de acesso. Confira a internet e tente de novo.";
+    } finally { bt.disabled = false; bt.textContent = rotuloBt(f); }
+  }
+
+  // Volta do link enviado por e-mail (#access_token=...&type=recovery, ou #error=... se expirou).
+  async function lerRetornoDoEmail() {
+    const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const limparEndereco = () => history.replaceState(null, "", location.pathname + location.search);
+    if (h.get("error") || h.get("error_code")) {
+      limparEndereco();
+      return { erro: /expired/i.test(h.get("error_code") || h.get("error_description") || "") ? "O link expirou ou já foi usado. Peça um novo em “Esqueci minha senha”." : "Não foi possível usar o link recebido. Peça um novo em “Esqueci minha senha”." };
+    }
+    if (!h.get("access_token") || !h.get("refresh_token")) return null;
+    const tipo = h.get("type") || "";
+    limparEndereco();
+    const token = h.get("access_token");
+    const u = await chamar(`${AUTH}/user`, { token });
+    if (!u.ok || !u.j?.id) return { erro: "O link expirou ou já foi usado. Peça um novo em “Esqueci minha senha”." };
+    guardarSessao({ access_token: token, refresh_token: h.get("refresh_token"), expires_at: Number(h.get("expires_at")) || undefined, expires_in: Number(h.get("expires_in")) || 3600, user: u.j });
+    return { tipo };
+  }
+  function telaNovaSenha() {
+    document.documentElement.classList.add("acesso-bloqueado");
+    const el = document.createElement("div");
+    el.id = "acesso"; el.className = "acesso";
+    el.innerHTML = `
+      <form class="acesso-caixa" novalidate>
+        <div class="acesso-marca"><span class="marca-ico">${ICO}</span><span><b>Radar STJ · STF</b><small>Jurisprudência em movimento</small></span></div>
+        <h1>Nova senha</h1>
+        <p class="acesso-sub">Conta: ${esc(S?.user?.email)}. Escolha uma nova senha de ao menos 8 caracteres.</p>
+        <label>Nova senha<input type="password" name="nova" autocomplete="new-password" required autofocus></label>
+        <label>Repita a nova senha<input type="password" name="rep" autocomplete="new-password" required></label>
+        <p class="acesso-msg" role="alert"></p>
+        <button type="submit" class="btn btn-pri">Salvar e entrar</button>
+      </form>`;
+    el.querySelector("form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const f = ev.currentTarget, msg = f.querySelector(".acesso-msg"), bt = f.querySelector("button");
+      if (f.nova.value.length < 8) { msg.textContent = "Use ao menos 8 caracteres."; return; }
+      if (f.nova.value !== f.rep.value) { msg.textContent = "As duas senhas não conferem."; return; }
+      bt.disabled = true; msg.textContent = "";
+      try {
+        if (!(await renovar())) { msg.textContent = "O link expirou. Peça um novo em “Esqueci minha senha”."; return; }
+        const r = await chamar(`${AUTH}/user`, { metodo: "PUT", token: S.access_token, corpo: { password: f.nova.value } });
+        if (!r.ok) { msg.textContent = /same|different/i.test(r.j?.msg || r.j?.message || r.j?.error_code || "") ? "A nova senha deve ser diferente da anterior." : "Não foi possível salvar a nova senha. Tente de novo."; return; }
+        el.remove();
+        await abrir();
+        avisoTopo("Senha alterada.");
+      } catch { msg.textContent = "Sem conexão. Tente de novo."; } finally { bt.disabled = false; }
+    });
+    document.body.appendChild(el);
+    el.querySelector('input[name="nova"]').focus();
   }
 
   async function entrar(ev) {
@@ -283,7 +360,7 @@
       await abrir();
     } catch {
       msg.textContent = "Sem conexão com o servidor de acesso. Confira a internet e tente de novo.";
-    } finally { bt.disabled = false; bt.textContent = f.dataset.modo === "criar" ? "Criar conta" : "Entrar"; }
+    } finally { bt.disabled = false; bt.textContent = rotuloBt(f); }
   }
 
   async function criarConta(ev) {
@@ -311,7 +388,7 @@
         : "Não foi possível criar a conta agora. Tente de novo em instantes.";
     } catch {
       msg.textContent = "Sem conexão com o servidor de acesso. Confira a internet e tente de novo.";
-    } finally { bt.disabled = false; bt.textContent = f.dataset.modo === "criar" ? "Criar conta" : "Entrar"; }
+    } finally { bt.disabled = false; bt.textContent = rotuloBt(f); }
   }
 
   async function abrir() {
@@ -436,6 +513,10 @@
 
   // -------------------------------------------------------------------------- início
   async function iniciar() {
+    let volta = null;
+    try { volta = await lerRetornoDoEmail(); } catch { volta = { erro: "Sem conexão com o servidor de acesso. Confira a internet e tente de novo." }; }
+    if (volta?.erro) { limparSessao(); telaEntrada(volta.erro); return; }
+    if (volta?.tipo === "recovery") { telaNovaSenha(); return; }
     if (!S?.refresh_token || !S?.user?.id) { limparSessao(); telaEntrada(); return; }
     document.documentElement.classList.add("acesso-bloqueado");
     if (await renovar()) { await abrir(); return; }

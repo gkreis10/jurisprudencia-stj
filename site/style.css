@@ -1548,3 +1548,5 @@ html.acesso-bloqueado body > :not(.acesso):not(.toasts):not(script) { display: n
 .acesso-troca { margin: -4px 0 0; font-size: 13.5px; color: var(--tx-2); text-align: center; }
 .acesso-link { font: inherit; font-weight: 600; color: var(--pri); background: none; border: 0; padding: 2px 2px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .acesso-link:focus-visible { outline: 2px solid var(--pri); outline-offset: 2px; border-radius: 4px; }
+.acesso-msg.ok { color: var(--ok); }
+.acesso-caixa [hidden] { display: none !important; }
