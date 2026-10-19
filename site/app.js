@@ -6430,7 +6430,7 @@
   const VERSAO = "2026.10.02";
   const NOVIDADES = [
     ["2026-10-19", [
-      "Usuário individual: cada pessoa entra com o próprio e-mail e senha, e o Meu radar, os salvos, as pastas e as anotações passam a ficar guardados na conta, disponíveis em qualquer computador ou celular. Na primeira entrada em cada navegador, o que já estava salvo nele é levado para a conta. O botão com a inicial, no alto da página, mostra a conta e permite trocar a senha ou sair.",
+      "Usuário individual: cada pessoa entra com o próprio e-mail e senha (na primeira vez, cria a conta na própria tela de entrada, em “Criar conta”), e o Meu radar, os salvos, as pastas e as anotações passam a ficar guardados na conta, disponíveis em qualquer computador ou celular. Na primeira entrada em cada navegador, o que já estava salvo nele é levado para a conta. O botão com a inicial, no alto da página, mostra a conta e permite trocar a senha ou sair.",
     ]],
     ["2026-10-05", [
       "Visão geral do STJ: o carrossel de destaques passou a trazer as notícias oficiais do STJ, tiradas do feed de notícias (RSS) do portal do Tribunal; cada cartão abre a notícia no site do STJ.",

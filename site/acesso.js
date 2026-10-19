@@ -1,8 +1,7 @@
 // Acesso ao site com usuário individual (Supabase) e sincronização dos dados salvos entre aparelhos.
 //
 // Como funciona:
-//  1. Sem sessão, mostra a tela de entrada (e-mail e senha). As contas são criadas pelo administrador
-//     no painel do Supabase; o cadastro aberto fica desligado.
+//  1. Sem sessão, mostra a tela de entrada (e-mail e senha), com a opção de a própria pessoa criar a conta.
 //  2. Com a sessão, grava o passe de acesso num cookie do próprio site; a função da Cloudflare
 //     (functions/_middleware.js) confere esse passe antes de entregar o programa e os dados.
 //  3. Busca os dados salvos da pessoa (Meu radar, salvos, pastas, anotações e preferências), coloca-os
@@ -10,7 +9,8 @@
 //     este módulo, que envia a nova versão ao Supabase em poucos segundos.
 //
 // A chave publicável do Supabase é pública por natureza: a proteção dos dados vem das regras da tabela
-// (cada pessoa só lê e grava a própria linha) e do cadastro fechado.
+// (cada pessoa só lê e grava a própria linha). Com o autocadastro ligado, qualquer pessoa com o endereço
+// do site pode criar uma conta; para restringir, basta desligar "Allow new users to sign up" no Supabase.
 (() => {
   "use strict";
   const CFG = {
@@ -224,6 +224,7 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const ICO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M6.5 7h11M6.5 7 3.5 13h6zM17.5 7l-3 6h6z"/></svg>';
 
+  // Tela de entrada com dois modos: "Entrar" (conta existente) e "Criar conta" (autocadastro com e-mail e senha).
   function telaEntrada(msg = "") {
     document.documentElement.classList.add("acesso-bloqueado");
     let el = document.getElementById("acesso");
@@ -233,31 +234,48 @@
       el.innerHTML = `
         <form class="acesso-caixa" novalidate>
           <div class="acesso-marca"><span class="marca-ico">${ICO}</span><span><b>Radar STJ · STF</b><small>Jurisprudência em movimento</small></span></div>
-          <h1>Entrar</h1>
-          <p class="acesso-sub">Acesso restrito ao escritório. Use o e-mail e a senha cadastrados para você.</p>
+          <h1 data-modo-tit>Entrar</h1>
+          <p class="acesso-sub" data-modo-sub>Use o seu e-mail e a sua senha. Na primeira vez, crie a sua conta.</p>
           <label>E-mail<input type="email" name="email" autocomplete="username" required autofocus></label>
           <label>Senha<input type="password" name="senha" autocomplete="current-password" required></label>
+          <label data-so-criar hidden>Repita a senha<input type="password" name="rep" autocomplete="new-password"></label>
           <p class="acesso-msg" role="alert"></p>
-          <button type="submit" class="btn btn-pri">Entrar</button>
-          <p class="acesso-nota">Esqueceu a senha ou ainda não tem acesso? Fale com o administrador do site.</p>
+          <button type="submit" class="btn btn-pri" data-modo-bt>Entrar</button>
+          <p class="acesso-troca"><span data-modo-per>Ainda não tem conta?</span> <button type="button" class="acesso-link" data-trocar>Criar conta</button></p>
+          <p class="acesso-nota">Esqueceu a senha? Fale com o administrador do site.</p>
         </form>`;
-      el.querySelector("form").addEventListener("submit", entrar);
+      const f = el.querySelector("form");
+      f.addEventListener("submit", (ev) => (f.dataset.modo === "criar" ? criarConta(ev) : entrar(ev)));
+      el.querySelector("[data-trocar]").addEventListener("click", () => modoEntrada(f, f.dataset.modo === "criar" ? "entrar" : "criar"));
       document.body.appendChild(el);
     }
     el.querySelector(".acesso-msg").textContent = msg;
     el.querySelector('input[name="email"]').focus();
   }
+  function modoEntrada(f, modo) {
+    const criar = modo === "criar";
+    f.dataset.modo = modo;
+    f.querySelector("[data-modo-tit]").textContent = criar ? "Criar conta" : "Entrar";
+    f.querySelector("[data-modo-sub]").textContent = criar ? "Informe o seu e-mail e escolha uma senha de ao menos 8 caracteres. O Meu radar e os salvos ficarão guardados nesta conta." : "Use o seu e-mail e a sua senha. Na primeira vez, crie a sua conta.";
+    f.querySelector("[data-modo-bt]").textContent = criar ? "Criar conta" : "Entrar";
+    f.querySelector("[data-modo-per]").textContent = criar ? "Já tem conta?" : "Ainda não tem conta?";
+    f.querySelector("[data-trocar]").textContent = criar ? "Entrar" : "Criar conta";
+    f.querySelector("[data-so-criar]").hidden = !criar;
+    f.senha.autocomplete = criar ? "new-password" : "current-password";
+    f.querySelector(".acesso-msg").textContent = "";
+    f.email.focus();
+  }
 
   async function entrar(ev) {
     ev.preventDefault();
-    const f = ev.currentTarget, bt = f.querySelector("button"), msg = f.querySelector(".acesso-msg");
+    const f = ev.currentTarget, bt = f.querySelector("[data-modo-bt]"), msg = f.querySelector(".acesso-msg");
     const email = f.email.value.trim(), senha = f.senha.value;
     if (!email || !senha) { msg.textContent = "Informe o e-mail e a senha."; return; }
     bt.disabled = true; bt.textContent = "Entrando…"; msg.textContent = "";
     try {
       const r = await chamar(`${AUTH}/token?grant_type=password`, { metodo: "POST", corpo: { email, password: senha } });
       if (!r.ok || !r.j?.access_token) {
-        msg.textContent = r.status === 400 || r.status === 401 ? "E-mail ou senha incorretos." : r.status === 429 ? "Muitas tentativas. Aguarde alguns minutos e tente de novo." : "Não foi possível entrar agora. Tente de novo em instantes.";
+        msg.textContent = r.status === 400 || r.status === 401 ? "E-mail ou senha incorretos. Se ainda não tem conta, clique em “Criar conta”." : r.status === 429 ? "Muitas tentativas. Aguarde alguns minutos e tente de novo." : "Não foi possível entrar agora. Tente de novo em instantes.";
         return;
       }
       guardarSessao(r.j);
@@ -265,7 +283,35 @@
       await abrir();
     } catch {
       msg.textContent = "Sem conexão com o servidor de acesso. Confira a internet e tente de novo.";
-    } finally { bt.disabled = false; bt.textContent = "Entrar"; }
+    } finally { bt.disabled = false; bt.textContent = f.dataset.modo === "criar" ? "Criar conta" : "Entrar"; }
+  }
+
+  async function criarConta(ev) {
+    ev.preventDefault();
+    const f = ev.currentTarget, bt = f.querySelector("[data-modo-bt]"), msg = f.querySelector(".acesso-msg");
+    const email = f.email.value.trim(), senha = f.senha.value;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.textContent = "Informe um e-mail válido."; return; }
+    if (senha.length < 8) { msg.textContent = "A senha deve ter ao menos 8 caracteres."; return; }
+    if (senha !== f.rep.value) { msg.textContent = "As duas senhas não conferem."; return; }
+    bt.disabled = true; bt.textContent = "Criando…"; msg.textContent = "";
+    try {
+      const r = await chamar(`${AUTH}/signup`, { metodo: "POST", corpo: { email, password: senha } });
+      const erro = `${r.j?.code || ""} ${r.j?.error_code || ""} ${r.j?.msg || r.j?.message || ""}`;
+      if (r.ok && r.j?.access_token) {
+        guardarSessao(r.j);
+        f.senha.value = ""; f.rep.value = "";
+        await abrir();
+        return;
+      }
+      if (r.ok) { msg.textContent = "Conta criada, mas o acesso ainda depende de confirmação. Fale com o administrador do site."; return; }
+      msg.textContent = /already|exists|registered/i.test(erro) ? "Já existe uma conta com este e-mail. Clique em “Entrar”."
+        : /weak|password/i.test(erro) ? "Senha fraca. Use ao menos 8 caracteres, misturando letras e números."
+        : /signup.*disabled|not allowed/i.test(erro) ? "A criação de contas está desativada. Fale com o administrador do site."
+        : r.status === 429 ? "Muitas tentativas. Aguarde alguns minutos e tente de novo."
+        : "Não foi possível criar a conta agora. Tente de novo em instantes.";
+    } catch {
+      msg.textContent = "Sem conexão com o servidor de acesso. Confira a internet e tente de novo.";
+    } finally { bt.disabled = false; bt.textContent = f.dataset.modo === "criar" ? "Criar conta" : "Entrar"; }
   }
 
   async function abrir() {
