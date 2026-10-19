@@ -1505,3 +1505,43 @@ html[data-tribunal="ambos"] .marca-ico { background: linear-gradient(145deg, #3b
 #ac-info #ac-voltar-mes { margin: 0 10px 6px 0; }
 
 /* Fotos dos ministros: recolocadas pelo workflow a partir do cache (outubro/2026). */
+
+/* ================================================================ acesso (usuário individual) */
+html.acesso-bloqueado body > :not(.acesso):not(.toasts):not(script) { display: none !important; }
+.acesso { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 24px 16px; background: radial-gradient(1200px 600px at 20% 0%, #1b3156 0%, var(--nav) 60%); overflow-y: auto; }
+.acesso-modal { background: rgba(10, 16, 28, .55); backdrop-filter: blur(4px); }
+.acesso-caixa { width: 100%; max-width: 380px; background: var(--sup); color: var(--tx); border-radius: 18px; padding: 28px 26px 22px; box-shadow: var(--sombra-3); display: flex; flex-direction: column; gap: 14px; }
+.acesso-marca { display: flex; align-items: center; gap: 11px; margin-bottom: 4px; }
+.acesso-marca b { display: block; font-size: 15.5px; }
+.acesso-marca small { display: block; font-size: 12px; color: var(--tx-3); }
+.acesso-caixa h1 { margin: 2px 0 0; font-size: 22px; letter-spacing: -.01em; }
+.acesso-sub { margin: -6px 0 2px; color: var(--tx-2); font-size: 14px; line-height: 1.45; }
+.acesso-caixa label { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--tx-2); }
+.acesso-caixa input { font: inherit; font-size: 16px; font-weight: 400; color: var(--tx); background: var(--sup-2); border: 1px solid var(--linha-2); border-radius: var(--raio-s); padding: 11px 12px; transition: border-color 160ms ease, box-shadow 160ms ease; }
+.acesso-caixa input:focus { outline: none; border-color: var(--pri); box-shadow: 0 0 0 3px var(--pri-bg); }
+.acesso-caixa .btn { justify-content: center; min-height: 44px; font-size: 15px; }
+.acesso-msg { margin: 0; min-height: 1.2em; color: var(--alta); font-size: 13.5px; }
+.acesso-msg:empty { min-height: 0; margin-top: -8px; }
+.acesso-nota { margin: 2px 0 0; font-size: 12.5px; color: var(--tx-3); line-height: 1.45; }
+.acesso-acoes { display: flex; gap: 10px; justify-content: flex-end; }
+.acesso-acoes .btn { min-width: 110px; }
+
+.topo-in:has(.conta) { justify-content: flex-start; }
+.topo-in:has(.conta) .topo-busca { margin-left: auto; }
+.conta { position: relative; flex: none; }
+.conta-bt { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--linha-2); background: var(--pri-bg); color: var(--pri-2); font: 700 15px/1 var(--ui); cursor: pointer; display: grid; place-items: center; transition: transform 160ms var(--ease-out), box-shadow 160ms ease; }
+.conta-bt:active { transform: scale(.96); }
+.conta-bt:focus-visible { outline: 2px solid var(--pri); outline-offset: 2px; }
+.conta-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 60; min-width: 240px; max-width: min(320px, calc(100vw - 32px)); background: var(--sup); border: 1px solid var(--linha); border-radius: 14px; box-shadow: var(--sombra-3); padding: 8px; display: flex; flex-direction: column; }
+.conta-menu[hidden] { display: none; }
+.conta-email { margin: 6px 10px 2px; font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.conta-sinc { margin: 0 10px 8px; font-size: 12.5px; color: var(--ok); }
+.conta-sinc[data-estado="erro"] { color: var(--rel); }
+.conta-sinc[data-estado="pend"] { color: var(--tx-3); }
+.conta-menu button { text-align: left; font: inherit; font-size: 14px; color: var(--tx); background: none; border: 0; border-radius: 9px; padding: 9px 10px; cursor: pointer; border-top: 1px solid transparent; }
+.conta-menu button + button { margin-top: 1px; }
+@media (hover: hover) and (pointer: fine) {
+  .conta-bt:hover { box-shadow: 0 0 0 3px var(--pri-bg); }
+  .conta-menu button:hover { background: var(--sup-3); }
+}
+@media (max-width: 860px) { .conta-bt { width: 42px; height: 42px; } }

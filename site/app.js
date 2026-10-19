@@ -92,7 +92,9 @@
       try { return JSON.parse(localStorage.getItem(CHAVE)) || {}; } catch { return {}; }
     },
     // Falha ao gravar (armazenamento cheio ou bloqueado): avisa de forma persistente, em vez de perder o dado em silêncio.
+    // Com usuário conectado (acesso.js), cada gravação também segue para a conta da pessoa, em poucos segundos.
     gravar(o) {
+      try { window.RadarConta?.alterou(o); } catch { /* sem conta: só neste navegador */ }
       try { localStorage.setItem(CHAVE, JSON.stringify(o)); Store.falhou = false; $("#aviso-armaz")?.remove(); return true; }
       catch (e) { Store.falhou = true; avisoArmazenamento(e); return false; }
     },
@@ -726,8 +728,15 @@
 
   // ================================================================= dados
   const D = { man: null, orgaos: {}, shards: new Map(), cache: {} };
+  // Os dados só são entregues com o passe de acesso válido (functions/_middleware.js); se ele tiver
+  // expirado (computador em repouso, por exemplo), renova e tenta de novo uma vez.
+  async function buscarRede(url, opc) {
+    let r = await fetch(url, opc);
+    if (r.status === 401 && window.RadarConta && (await window.RadarConta.renovar())) r = await fetch(url, opc);
+    return r;
+  }
   async function getJSON(url) {
-    const r = await fetch(url, { cache: "no-cache" });
+    const r = await buscarRede(url, { cache: "no-cache" });
     if (!r.ok) throw new Error(`${r.status} ao carregar ${url}`);
     return r.json();
   }
@@ -905,7 +914,7 @@
         // Meses antigos quase não mudam: aproveita o cache do navegador; os recentes são sempre conferidos.
         const mesArq = /acordaos\/(\d{4}-\d{2})\//.exec(url)?.[1] || "";
         const antigo = mesArq && D.man?.meses?.[3] && mesArq < D.man.meses[3].m;
-        const r = await fetch(`${url}.gz`, { cache: antigo ? "default" : "no-cache", signal });
+        const r = await buscarRede(`${url}.gz`, { cache: antigo ? "default" : "no-cache", signal });
         if (r.ok) {
           const buf = new Uint8Array(await r.arrayBuffer());
           const txt = buf[0] === 0x1f && buf[1] === 0x8b ? await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text() : new TextDecoder().decode(buf);
@@ -6420,6 +6429,9 @@
   // Versão do site e novidades (o que mudou para quem usa, inclusive critérios e cobertura).
   const VERSAO = "2026.10.02";
   const NOVIDADES = [
+    ["2026-10-19", [
+      "Usuário individual: cada pessoa entra com o próprio e-mail e senha, e o Meu radar, os salvos, as pastas e as anotações passam a ficar guardados na conta, disponíveis em qualquer computador ou celular. Na primeira entrada em cada navegador, o que já estava salvo nele é levado para a conta. O botão com a inicial, no alto da página, mostra a conta e permite trocar a senha ou sair.",
+    ]],
     ["2026-10-05", [
       "Visão geral do STJ: o carrossel de destaques passou a trazer as notícias oficiais do STJ, tiradas do feed de notícias (RSS) do portal do Tribunal; cada cartão abre a notícia no site do STJ.",
     ]],
