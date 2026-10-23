@@ -2,13 +2,13 @@ name: Atualizar e publicar
 
 # Duas etapas:
 #  1. coletar: consulta o portal do STJ a partir do computador do escritório (o portal recusa os
-#     servidores do GitHub). Roda às segundas e quintas, ao meio-dia, e quando acionada à mão.
+#     servidores do GitHub). Roda às segundas, quartas e sextas, ao meio-dia, e quando acionada à mão.
 #  2. publicar: remonta o site com os dados guardados e o publica na Cloudflare. Roda a cada
 #     envio de arquivos e depois da coleta; não consulta o STJ.
 on:
   schedule:
-    # Segundas e quintas, 12h (horário de Brasília = UTC-3).
-    - cron: "0 15 * * 1,4"
+    # Segundas, quartas e sextas, 12h (horário de Brasília = UTC-3).
+    - cron: "0 15 * * 1,3,5"
   workflow_dispatch:
     inputs:
       carga_inicial:
