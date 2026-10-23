@@ -1,8 +1,9 @@
 name: Atualizar e publicar
 
 # Duas etapas:
-#  1. coletar: consulta o portal do STJ a partir do computador do escritório (o portal recusa os
-#     servidores do GitHub). Roda às segundas, quartas e sextas, ao meio-dia, e quando acionada à mão.
+#  1. coletar: consulta os portais do STJ e do STF a partir do computador do escritório (os dois
+#     portais recusam os servidores do GitHub). Roda às segundas, quartas e sextas, ao meio-dia, e
+#     quando acionada à mão.
 #  2. publicar: remonta o site com os dados guardados e o publica na Cloudflare. Roda a cada
 #     envio de arquivos e depois da coleta; não consulta o STJ.
 on:
@@ -20,7 +21,8 @@ on:
     paths: ["site/**", "scripts/**", "fontes/**", "functions/**", ".github/workflows/**"]
 
 permissions:
-  contents: read
+  # "write" para gravar no repositório o registro do STF coletado no computador do escritório.
+  contents: write
   actions: write
 
 jobs:
@@ -35,6 +37,7 @@ jobs:
       cancel-in-progress: false
     outputs:
       coleta: ${{ steps.coleta.outcome }}
+      stf: ${{ steps.stf.outcome }}
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
@@ -89,6 +92,38 @@ jobs:
           key: dados-stj-${{ github.run_id }}
           enableCrossOsArchive: true
 
+      # STF: temas de repercussão geral, súmulas, Informativo, pauta, notícias e composição.
+      # Atualiza o registro em fontes/stf (uma consulta por vez, com intervalo). Se o portal do STF
+      # recusar o acesso ou não responder, o registro fica como estava e nada é gravado.
+      - name: Coletar o STF
+        id: stf
+        if: ${{ always() && steps.base.outcome != 'failure' }}
+        continue-on-error: true
+        shell: powershell
+        run: .\.venv\Scripts\python.exe scripts\stf.py --coletar --minutos 40
+
+      # Grava no repositório o registro do STF que mudou. Envios feitos por esta rotina não
+      # disparam outra execução; o job "publicar" lê a versão mais recente do repositório.
+      - name: Gravar o registro do STF
+        if: ${{ always() && steps.stf.outcome == 'success' }}
+        continue-on-error: true
+        shell: powershell
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add fontes/stf
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "Registro do STF sem mudanças."
+            exit 0
+          }
+          $hoje = Get-Date -Format "dd/MM/yyyy"
+          git commit -m "STF: coleta de $hoje (computador do escritório)"
+          git pull --rebase --autostash origin main
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
   publicar:
     needs: coletar
     # Roda mesmo se a coleta foi pulada (envio de arquivos), falhou ou nem chegou a começar.
@@ -99,8 +134,10 @@ jobs:
       group: pages
       cancel-in-progress: false
     steps:
+      # Versão mais recente do repositório (inclui o registro do STF gravado pela coleta).
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v6
@@ -197,7 +234,7 @@ jobs:
           command: pages deploy _site --project-name=jurisprudencia-stj-gkreis10 --branch=main
 
       # Alerta de coleta do STF atrasada: depois de publicar, a execução agendada termina com erro
-      # (e o GitHub avisa por e-mail) se o registro do STF, coletado à parte, tiver mais de 5 dias.
+      # (e o GitHub avisa por e-mail) se o registro do STF tiver mais de 5 dias.
       - name: Conferir se a coleta do STF está em dia
         if: ${{ always() && github.event_name == 'schedule' }}
         run: python scripts/conferir_stf.py
@@ -207,3 +244,8 @@ jobs:
         run: |
           echo "::error::A coleta do STJ falhou (portal indisponível ou acesso recusado, ou o computador do escritório estava desligado). O site foi publicado com os dados anteriores dessas fontes."
           exit 1
+
+      - name: Avisar se a coleta do STF falhou
+        if: ${{ always() && needs.coletar.result != 'skipped' && needs.coletar.outputs.stf == 'failure' }}
+        run: |
+          echo "::warning::A coleta do STF no computador do escritório não foi concluída (portal recusou ou não respondeu). O site seguiu com o registro anterior do STF."
