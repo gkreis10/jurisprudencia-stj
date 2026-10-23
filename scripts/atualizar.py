@@ -786,7 +786,7 @@ def atualizar_temas() -> dict:
             except ValueError:
                 continue
             procs.append(limpar_vazios({
-                "tp": x.get("tipoPrecedente", "").strip(), "n": num,
+                "tp": (x.get("tipoPrecedente") or x.get("tipo_precedente") or x.get("tipo") or "").strip(), "n": num,
                 "p": (x.get("Processo") or "").strip(),
                 "reg": (x.get("numeroRegistro") or "").strip(),
                 "lc": (x.get("leadingCase") or "").strip() == "S",
@@ -962,7 +962,7 @@ def atualizar_pautas() -> dict:
     reg2t: dict[str, list] = {}
     for x in ler_json(SITE_DATA / "processos_temas.json", []):
         if x.get("reg"):
-            reg2t.setdefault(x["reg"], []).append([x["tp"], x["n"]])
+            reg2t.setdefault(x["reg"], []).append([x.get("tp") or "Tema", x["n"]])
     hoje = HOJE.isoformat()
     itens, vistos = [], set()
     for x in bruto:
