@@ -41,5 +41,10 @@
 {"d":"2026-10-23","tp":"RG","n":516,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"},
 {"d":"2026-10-23","tp":"RG","n":516,"ev":"tese"},
 {"d":"2026-10-23","tp":"RG","n":118,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Mérito julgado"},
-{"d":"2026-10-23","tp":"RG","n":106,"ev":"situacao","de":"Mérito julgado","para":"Cancelado"}
+{"d":"2026-10-23","tp":"RG","n":106,"ev":"situacao","de":"Mérito julgado","para":"Cancelado"},
+{"d":"2026-10-26","tp":"RG","n":1494,"ev":"rg","de":"Em definição","para":"Há repercussão geral"},
+{"d":"2026-10-26","tp":"RG","n":1494,"ev":"situacao","de":"Em julgamento","para":"Analisada Preliminar de Repercussão Geral"},
+{"d":"2026-10-26","tp":"RG","n":1493,"ev":"rg","de":"Em definição","para":"Há repercussão geral"},
+{"d":"2026-10-26","tp":"RG","n":1493,"ev":"situacao","de":"Em julgamento","para":"Analisada Preliminar de Repercussão Geral"},
+{"d":"2026-10-26","tp":"RG","n":1482,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Trânsito em Julgado"}
 ]

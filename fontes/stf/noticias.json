@@ -1,6 +1,54 @@
 {
-"atualizado": "2026-10-23",
+"atualizado": "2026-10-26",
 "noticias": [
+{
+"id": 167200,
+"d": "2026-10-26 10:00",
+"t": "Ambiente virtual concentra maior parte das decisões colegiadas do STF",
+"r": "Em 2025, o Tribunal registrou 23.031 decisões colegiadas em julgamentos virtuais e 107 em sessões presenciais",
+"url": "https://noticias.stf.jus.br/postsnoticias/ambiente-virtual-concentra-maior-parte-das-decisoes-colegiadas-do-stf/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/23190136/EXTRA-STF-Dados-Decisoes-no-ambiente-virtual-700x374-1.png",
+"alt": "Ilustração com tela de um computador que remete a Estátua da Justiça e um gráfico que indica crescimento"
+},
+{
+"id": 167228,
+"d": "2026-10-25 18:28",
+"t": "STF prorroga votação até as 19h em locais onde urnas permaneceram abertas após as 17h",
+"r": "Decisão considera denúncias de candidaturas sobre falhas no transporte público",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-prorroga-votacao-ate-as-19h-em-locais-onde-urnas-permaneceram-abertas-apos-as-17h/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2024/08/13122440/bancoImagemSco_AP_363858.jpg",
+"cred": "Foto: STF/SCO",
+"alt": "Estátua da Justiça diante do edifício-sede do STF"
+},
+{
+"id": 167214,
+"d": "2026-10-25 12:34",
+"t": "Presidente do STF defende respeito à soberania popular e pede paz nas eleições",
+"r": "Ministro Edson Fachin também destacou que a Justiça Eleitoral cumpriu seu dever constitucional",
+"url": "https://noticias.stf.jus.br/postsnoticias/presidente-do-stf-defende-respeito-a-soberania-popular-e-pede-paz-nas-eleicoes/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/25123422/Fachin-eleicoes-1024x683.jpg",
+"cred": "Foto: Luiz Silveira/STF"
+},
+{
+"id": 167204,
+"d": "2026-10-23 20:12",
+"t": "STF rejeita pedido para liberar gratuidade em transporte interestadual no segundo turno das eleições",
+"r": "Ministra Cármen Lúcia considerou que o pedido buscava ampliar entendimento do STF sobre gratuidade do transporte municipal e intermunicipal, sem trazer elementos nem ponderar consequências da decisão",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-rejeita-pedido-para-liberar-gratuidade-em-transporte-interestadual-no-segundo-turno-das-eleicoes/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/23201133/transporte-urbano_mcamgo_abr_09082023-11-1024x613.webp",
+"cred": "Foto: Marcelo Camargo/Agência Brasil",
+"alt": "Pessoas saltando de ônibus"
+},
+{
+"id": 167197,
+"d": "2026-10-23 15:38",
+"t": "STF valida conciliação em crimes de menor potencial ofensivo pela Polícia Civil de São Paulo",
+"r": "Para o Plenário, audiências em delegacias não invadem competências do Judiciário e do Ministério Público",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-valida-conciliacao-de-crimes-de-menor-potencial-ofensivo-pela-policia-civil-de-sao-paulo/",
+"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/23153803/WhatsApp-Image-2026-02-12-at-11.11.03-1024x768.jpeg",
+"cred": "Foto: Governo de SP",
+"alt": "Delegacia da Polícia Civil de São Paulo"
+},
 {
 "id": 167190,
 "d": "2026-10-23 12:42",
@@ -29,55 +77,6 @@
 "foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/03/02125107/Fachada-do-STF-Antonio-13-1024x683.jpg",
 "cred": "Foto: Antonio Augusto/STF",
 "alt": "Foto em formato paisagem do prédio do STF ao entardecer e a Estátua da Justiça em primeiro plano"
-},
-{
-"id": 167172,
-"d": "2026-10-22 18:09",
-"t": "STF define início do prazo de dez anos para devolução de cobranças indevidas na conta de luz",
-"r": "Decisão complementa julgamento sobre lei que autoriza Aneel a definir a devolução",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-define-inicio-do-prazo-de-dez-anos-para-devolucao-de-cobrancas-indevidas-na-conta-de-luz/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/22180820/55604827652_b63cf34f71_c-768x512.jpg",
-"cred": "Foto: Gustavo Moreno/STF",
-"alt": "Sessão plenária do STF"
-},
-{
-"id": 167169,
-"d": "2026-10-22 17:19",
-"t": "STF lança nova edição de publicação trilíngue com resumos de julgamentos",
-"r": "Publicação reúne decisões proferidas pelo Plenário entre maio e agosto de 2026 e aborda temas como ampliação do alcance da Lei Maria da Penha, igualdade salarial de gênero e mineração em terras indígenas",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-lanca-nova-edicao-de-publicacao-trilingue-com-resumos-de-julgamentos-da-corte/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/22171749/BANNER_NOTICIA-1.png",
-"alt": "Card com a logo da publicação e o nome \"STF Bulletin\""
-},
-{
-"id": 167155,
-"d": "2026-10-22 09:38",
-"t": "PDT questiona no STF regras de distribuição de sobras eleitorais nas eleições proporcionais",
-"r": "Para o partido, método das maiores médias pode gerar distorções na distribuição de cadeiras e comprometer a representatividade política",
-"url": "https://noticias.stf.jus.br/postsnoticias/pdt-questiona-no-stf-regras-de-distribuicao-de-sobras-eleitorais-nas-eleicoes-proporcionais/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2025/11/05135529/Rosinei-Coutinho-aa_48A6063-5-1024x698.jpg",
-"cred": "Foto: Rosinei Coutinho/STF",
-"alt": "Detalhe arquitetônico do edifício-sede do STF com Congresso Nacional ao fundo"
-},
-{
-"id": 167151,
-"d": "2026-10-21 19:33",
-"t": "STF mantém regras de organização da Polícia Penal de São Paulo",
-"r": "Plenário rejeitou questionamentos à legislação estadual, com divergência parcial do ministro Luiz Fux",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-mantem-regras-de-organizacao-da-policia-penal-de-sao-paulo/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/21183245/55604162484_220c8800ae_c-768x513.jpg",
-"cred": "Foto: Antonio Augusto/STF",
-"alt": "Sessão plenária do STF"
-},
-{
-"id": 167148,
-"d": "2026-10-21 18:27",
-"t": "STF decide que ISS não integra base de cálculo do PIS e da Cofins",
-"r": "Maioria entendeu que o imposto não constitui receita ou faturamento da empresa prestadora de serviços; matéria tem repercussão geral",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-decide-que-iss-nao-integra-base-de-calculo-do-pis-e-da-cofins/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/10/21182648/55602944932_498aedbe4b_c-768x513.jpg",
-"cred": "Foto: Antonio Augusto/STF",
-"alt": "Sessão plenária do STF"
 }
 ]
 }
