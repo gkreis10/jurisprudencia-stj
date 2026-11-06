@@ -46,5 +46,21 @@
 {"d":"2026-10-26","tp":"RG","n":1494,"ev":"situacao","de":"Em julgamento","para":"Analisada Preliminar de Repercussão Geral"},
 {"d":"2026-10-26","tp":"RG","n":1493,"ev":"rg","de":"Em definição","para":"Há repercussão geral"},
 {"d":"2026-10-26","tp":"RG","n":1493,"ev":"situacao","de":"Em julgamento","para":"Analisada Preliminar de Repercussão Geral"},
-{"d":"2026-10-26","tp":"RG","n":1482,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Trânsito em Julgado"}
+{"d":"2026-10-26","tp":"RG","n":1482,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Trânsito em Julgado"},
+{"d":"2026-11-06","tp":"RG","n":1500,"ev":"novo","para":"Em definição"},
+{"d":"2026-11-06","tp":"RG","n":1499,"ev":"novo","para":"Em definição"},
+{"d":"2026-11-06","tp":"RG","n":1498,"ev":"novo","para":"Em definição"},
+{"d":"2026-11-06","tp":"RG","n":1497,"ev":"novo","para":"Em definição"},
+{"d":"2026-11-06","tp":"RG","n":1496,"ev":"rg","de":"Em definição","para":"Há repercussão geral"},
+{"d":"2026-11-06","tp":"RG","n":1496,"ev":"situacao","de":"Em julgamento","para":"Analisada Preliminar de Repercussão Geral"},
+{"d":"2026-11-06","tp":"RG","n":1495,"ev":"rg","de":"Em definição","para":"Há repercussão geral"},
+{"d":"2026-11-06","tp":"RG","n":1495,"ev":"situacao","de":"Em julgamento","para":"Analisada Preliminar de Repercussão Geral"},
+{"d":"2026-11-06","tp":"RG","n":1488,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-11-06","tp":"RG","n":1487,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-11-06","tp":"RG","n":1486,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"},
+{"d":"2026-11-06","tp":"RG","n":1483,"ev":"situacao","de":"Mérito julgado","para":"Acórdão de mérito publicado"},
+{"d":"2026-11-06","tp":"RG","n":1478,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Trânsito em Julgado"},
+{"d":"2026-11-06","tp":"RG","n":1455,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"},
+{"d":"2026-11-06","tp":"RG","n":1427,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"},
+{"d":"2026-11-06","tp":"RG","n":1258,"ev":"situacao","de":"Mérito julgado","para":"Acórdão de mérito publicado"}
 ]
