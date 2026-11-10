@@ -62,5 +62,10 @@
 {"d":"2026-11-06","tp":"RG","n":1478,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Trânsito em Julgado"},
 {"d":"2026-11-06","tp":"RG","n":1455,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"},
 {"d":"2026-11-06","tp":"RG","n":1427,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"},
-{"d":"2026-11-06","tp":"RG","n":1258,"ev":"situacao","de":"Mérito julgado","para":"Acórdão de mérito publicado"}
+{"d":"2026-11-06","tp":"RG","n":1258,"ev":"situacao","de":"Mérito julgado","para":"Acórdão de mérito publicado"},
+{"d":"2026-11-10","tp":"RG","n":1494,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-11-10","tp":"RG","n":1493,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-11-10","tp":"RG","n":1492,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-11-10","tp":"RG","n":1490,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-11-10","tp":"RG","n":1309,"ev":"situacao","de":"Mérito julgado","para":"Acórdão de mérito publicado"}
 ]
