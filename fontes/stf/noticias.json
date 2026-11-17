@@ -1,83 +1,79 @@
 {
-"atualizado": "2026-11-10",
+"atualizado": "2026-11-17",
 "noticias": [
 {
-"id": 167659,
-"d": "2026-11-09 21:07",
-"t": "STF realiza escuta territorializada com comunidades ribeirinhas nas ilhas de Ananindeua (PA)",
-"r": "Encontro reuniu moradores e lideranças das ilhas para compartilhar experiências, apresentar demandas e dialogar com representantes da Justiça e da administração local",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-realiza-escuta-territorializada-com-comunidades-ribeirinhas-nas-ilhas-de-ananindeua-pa/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/11/09205813/55643543426_c699fa07cc_k-1024x683.jpg",
-"alt": "Fotografia das pessoas da comunidade sentadas em circulo no momento de escuta."
+"id": 167909,
+"d": "2026-11-16 19:37",
+"t": "CNI aciona STF contra suspensão de registros de agrotóxicos e farmacêuticos pela Justiça do Trabalho",
+"r": "Entidade de classe alega que Justiça trabalhista não tem competência para contestar autorizações concedidas por agências e ministérios federais",
+"url": "https://noticias.stf.jus.br/postsnoticias/cni-aciona-stf-contra-suspensao-de-registros-de-agrotoxicos-e-farmaceuticos-pela-justica-do-trabalho/"
 },
 {
-"id": 167665,
-"d": "2026-11-09 19:58",
-"t": "Presidente do STF arquiva inquérito das fake news (Inquérito 4781)",
-"r": "Decisão do ministro Edson Fachin acolhe manifestação da PGR, que indicou o esgotamento do objeto específico das investigações",
-"url": "https://noticias.stf.jus.br/postsnoticias/presidente-do-stf-arquiva-inquerito-das-fake-news-inquerito-4-781/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/04/23210716/7-Antonio-Augusto-e1776990669570-1024x632.jpg",
+"id": 167904,
+"d": "2026-11-16 16:17",
+"t": "STF mantém lei do RJ que protege dados pessoais de envolvidos em ocorrências policiais",
+"r": "Tribunal considerou constitucional a regra que restringe o acesso público a endereços, telefones e números de documentos de envolvidos e testemunhas",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-mantem-lei-do-rj-que-protege-dados-pessoais-de-envolvidos-em-ocorrencias-policiais/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/03/Fachada-do-STF-Antonio-7-1024x625.jpg",
 "cred": "Foto: Antonio Augusto/STF",
-"alt": "Fotografia colorida da fachada do STF. Em primeiro plano a estátua da Justiça"
+"alt": "Foto aérea da lateral do prédio do STF. Ao fundo, anexo IV da Câmara dos Deputados"
 },
 {
-"id": 167660,
-"d": "2026-11-09 19:33",
-"t": "Ouvidoria da Mulher do STF compartilha experiências de acolhimento e proteção em encontro nacional de ouvidorias",
-"r": "No encontro em Macapá, foram apresentados a Sala Lilás, protocolos de atendimento e materiais educativos voltados à prevenção da violência e ao acolhimento das mulheres",
-"url": "https://noticias.stf.jus.br/postsnoticias/ouvidoria-da-mulher-do-stf-compartilha-experiencias-de-acolhimento-e-protecao-em-encontro-nacional-de-ouvidorias/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/11/09193920/55635761547_5a07dc5866_k-1024x576.jpg",
-"cred": "Ouvidorias-Encontro",
-"alt": "Fotografia do auditório com as participantes do encontro. Ao centro, fazem sua apresentação a juíza-ouvidora do STF e a assessora-chefe da ouvidoria."
-},
-{
-"id": 167656,
-"d": "2026-11-09 17:12",
-"t": "STF lança programa de incentivo à preparação de pessoas negras, indígenas e quilombolas para a magistratura",
-"r": "Aprovados no Enam terão acesso a livros, publicações e materiais de estudo do acervo da biblioteca da Corte",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-lanca-programa-de-incentivo-a-preparacao-de-pessoas-negras-indigenas-e-quilombolas-para-a-magistratura/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/11/09171110/Fachada-biblioteca-768x512.webp",
+"id": 167894,
+"d": "2026-11-16 14:31",
+"t": "STF inaugura escultura Oxê de Xangô, símbolo da Justiça na tradição iorubá",
+"r": "Iniciativa tem o objetivo de promover a conscientização e o respeito sobre liberdade religiosa e diversidade cultural",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-inaugura-oxe-de-xango-simbolo-da-justica-na-tradicao-ioruba/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/03/Fachada-do-STF-Antonio-16-1024x683.jpg",
 "cred": "Foto: Antonio Augusto/STF",
-"alt": "Fotografia da fachada da Biblioteca Ministro Victor Nunes Leal"
+"alt": "Foto dos arcos do prédio do STF"
 },
 {
-"id": 167652,
-"d": "2026-11-09 15:39",
-"t": "STF suspende punição aplicada pelo CNJ à juíza Gabriela Hardt",
-"r": "Em análise preliminar do caso, ministro Luiz Fux considerou que processo disciplinar contra juíza que ocupou a 13ª Vara Federal de Curitiba foi aberto após prazo previsto em resolução do Conselho",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-suspende-punicao-aplicada-pelo-cnj-a-juiza-gabriela-hardt/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2024/12/24193535/B47A5593-1024x683.jpg",
-"cred": "Foto: Gustavo Moreno/STF",
-"alt": "Foto em formato paisagem da lateral do prédio do anexo I, na cor verde e a esquerda postes de iluminação e ao fundo o céu azul."
+"id": 167875,
+"d": "2026-11-16 12:14",
+"t": "Presidente do STF propõe aliança entre tribunais do Mercosul em defesa da democracia",
+"r": "Na abertura de encontro internacional no STF, ministro Fachin defendeu a independência judicial e a cooperação entre países latino-americanos",
+"url": "https://noticias.stf.jus.br/postsnoticias/presidente-do-stf-propoe-alianca-entre-tribunais-do-mercosul-em-defesa-da-democracia/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/55656510955_3ecdb3ff3f_o-1024x683.jpg",
+"cred": "Foto: Rosinei Coutinho/STF"
 },
 {
-"id": 167636,
-"d": "2026-11-09 10:54",
-"t": "Em curso internacional no STF, Fachin defende cooperação entre tribunais constitucionais",
-"r": "Evento reúne magistrados e assessores jurídicos de países de língua portuguesa para intercâmbio de experiências e debate sobre desafios do direito",
-"url": "https://noticias.stf.jus.br/postsnoticias/fachin-defende-cooperacao-entre-tribunais-constitucionais-durante-curso-internacional-no-stf/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/11/09110626/55641461647_8e41c63c0a_c-768x497.jpg",
-"cred": "Foto: Rosinei Coutinho/STF",
-"alt": "Foto: Rosinei Coutinho/STF"
+"id": 167838,
+"d": "2026-11-16 10:00",
+"t": "Em uma década, STF reduz pela metade estoque de ações constitucionais",
+"r": "Desde 2018, número de arquivamentos de ações de controle concentrado supera o de novas ações todos os anos",
+"url": "https://noticias.stf.jus.br/postsnoticias/em-uma-decada-stf-reduz-pela-metade-estoque-de-acoes-constitucionais/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/EXTRA-STF-Dados-Estoque-de-acoes-constitucionais-700x374-2-1.png"
 },
 {
-"id": 167598,
-"d": "2026-11-09 10:00",
-"t": "STF acolhe, em recursos extraordinários, 10 vezes mais pedidos do que em agravos",
-"r": "Em 2025, 25,7% das decisões de mérito em recursos extraordinários acolheram total ou parcialmente o pedido. Nos agravos, o percentual foi de 2,4%",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-acolhe-em-recursos-extraordinarios-10-vezes-mais-pedidos-do-que-em-agravos/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2026/11/06180136/EXTRA-STF-Dados-Provimentos-recursais-700x374-1.png",
-"alt": "Montagem com duas pilhas de processos em tamanhos distintos em fundo azul e verde, com o slogan STF Dados"
+"id": 167852,
+"d": "2026-11-13 21:00",
+"t": "Reconhecer papel do Judiciário na desigualdade racial é condição para superá-la, afirma Fachin",
+"r": "Presidente do STF e do CNJ participou do 9º Encontro Nacional de Juízas e Juízes Negros (Enajun), no Rio de Janeiro",
+"url": "https://noticias.stf.jus.br/postsnoticias/reconhecer-papel-do-judiciario-na-desigualdade-racial-e-condicao-para-supera-la-afirma-fachin/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/Enajun-1024x683.jpg",
+"cred": "Foto: Luiz Silveira/STF",
+"alt": "Ministro Edson Fachin, presidente do CNJ, participa do encerramento do 9º Enajun."
 },
 {
-"id": 167632,
-"d": "2026-11-09 08:49",
-"t": "STF suspende processos que questionam constitucionalidade de MP das bets",
-"r": "Medida busca evitar decisões judiciais divergentes e vale até o julgamento definitivo da questão pelo tribunal",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-suspende-processos-que-questionam-constitucionalidade-de-mp-das-bets/",
-"foto": "https://noticias-stf-wp-prd.s3.sa-east-1.amazonaws.com/wp-content/uploads/wpallimport/uploads/2025/11/06105459/Projeto-Cartao-Postal-Rosine-Coutinho-16-1024x708.jpg",
-"cred": "Foto: Bruno Carneiro/STF",
-"alt": "Estátua da Justiça com palmeiras do Congresso Nacional ao fundo"
+"id": 167836,
+"d": "2026-11-13 19:53",
+"t": "STF vai ao território do povo Kumaruara para ouvir lideranças indígenas no Pará",
+"r": "Encontro na aldeia Solimões, na região de Santarém, reuniu representantes de dez aldeias, que apresentaram reivindicações sobre direitos territoriais, educação, saúde e acesso a serviços públicos",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-vai-ao-territorio-do-povo-kumaruara-para-ouvir-liderancas-indigenas-no-para/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/IMG_20261111_122326501-2-scaled-e1794608738236-1024x573.jpg",
+"cred": "STF Escuta",
+"alt": "Fotografia de uma indígena falando para os participantes da escuta"
+},
+{
+"id": 167835,
+"d": "2026-11-13 18:54",
+"t": "STF invalida lei que dispensava pagamento de honorários a procuradores municipais",
+"r": "Por unanimidade, Plenário considerou inconstitucional a dispensa dos honorários a contribuintes que aderissem a programa de regularidade fiscal",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-invalida-lei-que-dispensava-pagamento-de-honorarios-a-procuradores-municipais/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2025/10/IMG_0281-1024x680.jpg",
+"cred": "Foto: Nelson Junior/STF",
+"alt": "Detalhe arquitetônico da fachada do STF"
 }
 ]
 }
