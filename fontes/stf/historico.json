@@ -81,5 +81,12 @@
 {"d":"2026-11-17","tp":"RG","n":1487,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Trânsito em Julgado"},
 {"d":"2026-11-17","tp":"RG","n":1483,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"},
 {"d":"2026-11-17","tp":"RG","n":1253,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"},
-{"d":"2026-11-17","tp":"RG","n":1113,"ev":"situacao","de":"Mérito julgado","para":"Acórdão de mérito publicado"}
+{"d":"2026-11-17","tp":"RG","n":1113,"ev":"situacao","de":"Mérito julgado","para":"Acórdão de mérito publicado"},
+{"d":"2026-11-24","tp":"RG","n":1502,"ev":"novo","para":"Em definição"},
+{"d":"2026-11-24","tp":"RG","n":1501,"ev":"rg","de":"Em definição","para":"Não há repercussão geral (questão infraconstitucional)"},
+{"d":"2026-11-24","tp":"RG","n":1501,"ev":"situacao","de":"Em julgamento","para":"Analisada Preliminar de Repercussão Geral"},
+{"d":"2026-11-24","tp":"RG","n":1500,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-11-24","tp":"RG","n":1490,"ev":"situacao","de":"Acórdão de Repercussão Geral publicado","para":"Trânsito em Julgado"},
+{"d":"2026-11-24","tp":"RG","n":1489,"ev":"situacao","de":"Analisada Preliminar de Repercussão Geral","para":"Acórdão de Repercussão Geral publicado"},
+{"d":"2026-11-24","tp":"RG","n":837,"ev":"situacao","de":"Acórdão de mérito publicado","para":"Trânsito em Julgado"}
 ]
