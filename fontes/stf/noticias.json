@@ -1,76 +1,82 @@
 {
-"atualizado": "2026-11-24",
+"atualizado": "2026-11-26",
 "noticias": [
 {
-"id": 168071,
-"d": "2026-11-23 20:29",
-"t": "STF vai definir alcance de regra do Código Florestal para proteção de entorno de reservatórios antigos",
-"r": "Corte decidirá se regra que estabelece limites das áreas protegidas vale apenas para a consolidação de ocupações ocorridas até julho de 2008",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-vai-definir-alcance-de-regra-do-codigo-florestal-para-protecao-de-entorno-de-reservatorios-antigos/",
-"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/Hidreletrica-Ilha-Solteira-MS-SP-no-rio-Parana-Foto-Raylton-Alves-Banco-de-Imagens-ANA.jpeg",
-"cred": "Foto: Raylton Alves/ANA",
-"alt": "Vista aérea da Hidrelétrica Ilha Solteira (MS/SP)"
+"id": 168150,
+"d": "2026-11-26 09:05",
+"t": "STF reconhece validade de resolução que criou Gaeco Nacional",
+"r": "Para o Tribunal, norma trata de organização administrativa e está dentro dos limites da competência normativa e da autonomia do MPF",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-reconhece-validade-de-resolucao-que-criou-gaeco-nacional/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2024/08/pgr-1024x613.webp",
+"cred": "Foto: STF",
+"alt": "Edifício-sede da PGR"
 },
 {
-"id": 168070,
-"d": "2026-11-23 18:11",
-"t": "PT questiona no STF regras da Assembleia do Paraná para punir deputados",
-"r": "Partido aponta uso seletivo de processos disciplinares, falta de critérios claros para punições e tratamento desigual a deputado da oposição",
-"url": "https://noticias.stf.jus.br/postsnoticias/pt-questiona-no-stf-regras-da-assembleia-do-parana-para-punir-deputados/"
+"id": 168148,
+"d": "2026-11-25 19:38",
+"t": "STF valida exigência de indicação de valor em ações trabalhistas",
+"r": "Decisão, no entanto, admite estimativas quando o trabalhador ainda não dispõe de elementos para calcular o valor exato do pedido",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-valida-exigencia-de-indicacao-de-valor-em-acoes-trabalhistas/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/55673811976_47c45af574_c-768x512.jpg",
+"cred": "Foto: Gustavo Moreno/STF",
+"alt": "Sessão plenária do STF"
 },
 {
-"id": 168067,
-"d": "2026-11-23 17:18",
-"t": "STF mantém prisão preventiva de Daniel Vorcaro",
-"r": "Ministro Edson Fachin seguiu parecer da PGR, que apontou risco à ordem pública e à instrução criminal",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-mantem-prisao-preventiva-de-daniel-vorcaro/"
-},
-{
-"id": 168066,
-"d": "2026-11-23 16:46",
-"t": "STF autoriza retomada de auxílio emergencial a vítimas de Brumadinho (MG)",
-"r": "Presidente do Corte, ministro Edson Fachin, suspendeu decisão do STJ que impedia o repasse de recursos às famílias afetadas pelo desastre de 2019",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-autoriza-retomada-de-auxilio-emergencial-a-vitimas-de-brumadinho-mg/",
-"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/Tragedia_Brumadinho_Agencia_Brasil_Credtio_Antonio_Cruz-1024x613.webp",
-"cred": "Foto: Antonio Cruz/Agência Brasil",
-"alt": "Foto área do desastre causado pelo rompimento da barragem de Brumadinho"
-},
-{
-"id": 168037,
-"d": "2026-11-21 12:00",
-"t": "Efeitos da decisão sobre crimes patrimoniais em família é destaque no Supremo na Semana",
-"r": "Episódio #211 está disponível nas principais plataformas de áudio e no YouTube",
-"url": "https://noticias.stf.jus.br/postsnoticias/efeitos-da-decisao-sobre-crimes-patrimoniais-em-familia-e-destaque-no-supremo-na-semana/",
-"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/noticia_portal_700x374_ep-211.png",
-"alt": "Arte gráfica do podcast Supremo na Semana, episódio 211"
-},
-{
-"id": 168033,
-"d": "2026-11-20 11:10",
-"t": "Confira os destaques do Plenário Virtual desta semana",
-"r": "Sessão virtual começou às 11h desta sexta-feira (20) e vai até 30 de novembro",
-"url": "https://noticias.stf.jus.br/postsnoticias/confira-os-destaques-do-plenario-virtual-desta-semana-9/",
-"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/01/plenario-virtual_700-374_imagem-home-1.png",
-"alt": "Arte com fundo azul e texto Plenário Virtual Destaques"
-},
-{
-"id": 168032,
-"d": "2026-11-20 09:00",
-"t": "Dia da Consciência Negra: confira decisões e ações do STF em favor da equidade racial",
-"r": "De políticas de cotas ao combate à intolerância religiosa, decisões do Supremo reforçam a proteção dos direitos da população negra e o enfrentamento do racismo estrutural",
-"url": "https://noticias.stf.jus.br/postsnoticias/dia-da-consciencia-negra-confira-decisoes-e-acoes-do-stf-em-favor-da-equidade-racial/",
-"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/EXTRA-Dia-da-Consciencia-Negra-700x374-1.png",
-"alt": "Card na cor ocre com o texto ao centro \"20 de novembro - Dia da Consciência Negra\""
-},
-{
-"id": 168043,
-"d": "2026-11-19 20:24",
-"t": "STF não terá expediente nesta sexta (20), Dia da Consciência Negra",
-"r": "Prazos processuais seguem regras do CPC e do CPP",
-"url": "https://noticias.stf.jus.br/postsnoticias/stf-nao-tera-expediente-nesta-sexta-20-dia-da-consciencia-negra/",
-"foto": "https://noticias.stf.jus.br/wp-content/uploads/2025/11/Rosinei-Coutinho-aa_48A6063-4-1024x624.jpg",
+"id": 168143,
+"d": "2026-11-25 17:04",
+"t": "Ministra Cármen Lúcia alerta para gravidade da violência contra mulheres no Brasil",
+"r": "No Dia Internacional pela Eliminação da Violência contra as Mulheres, ministra destacou a necessidade de mobilização da sociedade e o papel do Judiciário no enfrentamento à violência de gênero",
+"url": "https://noticias.stf.jus.br/postsnoticias/ministra-carmen-lucia-alerta-para-gravidade-da-violencia-contra-mulheres-no-brasil/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/ROSI9261-scaled-e1795636047838-1024x566.jpg",
 "cred": "Foto: Rosinei Coutinho/STF",
-"alt": "Edifício-sede do STF"
+"alt": "Fotografia da sessão plenária de 25 de novembro de 2026."
+},
+{
+"id": 168140,
+"d": "2026-11-25 16:30",
+"t": "STF nega nova prorrogação de contrato do BRB com Tribunal de Justiça da Bahia",
+"r": "Ministro Luiz Fux destacou que banco não comprovou o cumprimento das condições estabelecidas pelo STF para manter o contrato, que termina nesta sexta-feira (27)",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-nega-nova-prorrogacao-de-contrato-do-brb-com-tribunal-de-justica-da-bahia/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2025/11/Rosinei-Coutinho-aa_48A6063-1-1024x683.jpg",
+"cred": "Foto: Rosinei Coutinho/STF",
+"alt": "Anexo II do edifício-sede do STF"
+},
+{
+"id": 168113,
+"d": "2026-11-24 20:19",
+"t": "STF recebe mais uma ação sobre distribuição de sobras eleitorais",
+"r": "Apresentada pelo Solidariedade, ADI se soma a outra ação sobre o tema; ambas são relatadas pelo ministro Gilmar Mendes",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-recebe-mais-uma-acao-sobre-distribuicao-de-sobras-eleitorais/"
+},
+{
+"id": 168106,
+"d": "2026-11-24 18:28",
+"t": "STF homologa acordo para regularizar terras em benefício de mais de duas mil famílias no Pará",
+"r": "Construído a partir de negociações entre União e estado, acordo busca pôr fim a disputa que dura quase cinco décadas; solução foi homologada pelo ministro Nunes Marques, relator do caso",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-homologa-acordo-para-regularizar-terras-em-beneficio-de-mais-de-duas-mil-familias-no-para/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2026/11/55672027108_1d370f4fd0_k-1024x683.jpg",
+"cred": "Foto: Antonio Augusto/STF",
+"alt": "Ministro Nunes Marques homologa acordo sobre disputa de terras no Pará"
+},
+{
+"id": 168103,
+"d": "2026-11-24 18:01",
+"t": "STF revoga prisão de investigados na Operação Sem Desconto",
+"r": "Por decisão do ministro André Mendonça, eles continuam monitorados por tornozeleira eletrônica e não podem sair do país nem manter contato entre si",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-revoga-prisao-deinvestigados-na-operacao-sem-desconto/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2024/11/WhatsApp-Image-2024-11-27-at-17.57.19-1024x682.jpeg",
+"cred": "Foto: Mariana Mourão/STF",
+"alt": "Fachada do anexo II do STF"
+},
+{
+"id": 168100,
+"d": "2026-11-24 17:03",
+"t": "STF restabelece decreto que criou Parque Natural Municipal Sumidouro (SC)",
+"r": "O presidente da Corte, ministro Edson Fachin, considerou a relevância ecológica da área e a importância da norma ambiental protetiva",
+"url": "https://noticias.stf.jus.br/postsnoticias/stf-restabelece-decreto-que-criou-parque-natural-municipal-sumidouro-sc/",
+"foto": "https://noticias.stf.jus.br/wp-content/uploads/2025/11/Fachada2_Gil_Ferreira-1024x642.jpg",
+"cred": "Foto: Gil Ferreira/STF",
+"alt": "Foto das vidraças do edifício-sede do STF ao entardecer refletindo o prédio do Congresso Nacional"
 }
 ]
 }
